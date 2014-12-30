@@ -1,0 +1,17 @@
+snippet req
+	(require '[${1:name} :as ${2:alias}])
+snippet def
+	(def ${1:name} ${2:val})
+snippet defn
+	(defn ${1:name}
+		[${2:args}]
+		${0:body})
+snippet defm
+	(defmacro ${1:name}
+		[${2:args}]
+		${0:`(~@body)})
+snippet let
+	(let [${1:var} ${2:val}]
+		${0:body})
+snippet try
+	(try ${1:form} (catch ${2:Exception e} ${3:caught}))
