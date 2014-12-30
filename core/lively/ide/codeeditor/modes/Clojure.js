@@ -1,40 +1,41 @@
-module('lively.ide.codeeditor.modes.Clojure').requires('lively.ide.codeeditor.ace').toRun(function() {
+module('clojure.Runtime').requires().requiresLib({url: Config.codeBase + 'lib/ace/paredit-bundle.js',loadTest: function() { return !!Global.paredit; }}).toRun(function() {
 
+// "exports"
+// lively.ide.codeeditor.modes.Clojure.ReplServer = {};
+clojure.Runtime
+clojure.Runtime.ReplServer = {};
+clojure.StaticAnalyzer;
 
-lively.ide.codeeditor.modes.Clojure.RuntimeEnvironment = {};
+Object.extend(clojure.Runtime, {
 
-Object.extend(lively.ide.codeeditor.modes.Clojure, {
-  updateRuntime: function() {
-    var cljEds = lively.ide.allCodeEditors()
-      .filter(function(ea) { return ea.getTextMode() === 'clojure'; });
-    // cljEds.length
-    var aceEds = cljEds.pluck("aceEditor").compact();
-    aceEds.pluck("commands")
-          .invoke('addCommands', lively.ide.codeeditor.modes.Clojure.Commands);
-    aceEds.pluck("session")
-          .invoke("getMode")
-          .invoke("getKeyhandler").invoke("update");
-    $world.alertOK("updated clojure editors")
-  }
-});
+    _cache: {},
+    _defaultEnv: {
+        port: 7888,
+        host: "0.0.0.0",
+        session: null,
+        doAutoLoadSavedFiles: false
+    },
 
-Object.extend(lively.ide.codeeditor.modes.Clojure.RuntimeEnvironment, {
+    reset: function() {
+      var runtime = clojure.Runtime;
+      runtime._cache = {};
+      runtime._defaultEnv = {port: 7888, host: "0.0.0.0", session: null, doAutoLoadSavedFiles: false};
+    },
+
+    resetEditorState: function(ed) {
+      var runtime = clojure.Runtime;
+      runtime.ensureClojureStateInEditor(ed).env = null;
+    },
 
     currentEnv: function(codeEditor) {
-        var runtime = lively.ide.codeeditor.modes.Clojure.RuntimeEnvironment;
+        // clojure.Runtime.currentEnv(that);
+        var runtime = clojure.Runtime;
         if (codeEditor) {
             var st = runtime.ensureClojureStateInEditor(codeEditor);
             if (st.env) return st.env;
         }
 
-        var env = $morph('clojureEnv') && $morph('clojureEnv').getCurrentEnv()
-        if (env) return env;
-
-        return {
-            port: 7888,
-            host: "0.0.0.0",
-            session: null
-        }
+        return this._defaultEnv;
     },
 
     readEnv: function(inputString) {
@@ -51,200 +52,45 @@ Object.extend(lively.ide.codeeditor.modes.Clojure.RuntimeEnvironment, {
     },
 
     ensureClojureStateInEditor: function(editorMorph) {
-        var runtime = lively.ide.codeeditor.modes.Clojure.RuntimeEnvironment,
+        var runtime = clojure.Runtime,
             sess = editorMorph.getSession();
         return sess.$livelyClojureState || (sess.$livelyClojureState = {env: null});
     },
     
-    changeInEditor: function(editorMorph, newEnv) {
-        var runtime = lively.ide.codeeditor.modes.Clojure.RuntimeEnvironment;
-        return runtime.ensureClojureStateInEditor(editorMorph).env = newEnv;
-    }
-
-});
-
-lively.ide.codeeditor.modes.Clojure.ReplServer = {};
-
-Object.extend(lively.ide.codeeditor.modes.Clojure.ReplServer, {
-
-    livelyLeinProfile: "{:plugins [[lein-pprint \"1.1.1\"]]\n"
-                     + " :dependencies [[rksm/repl.utils \"0.1.1\"]\n"
-                     + "                ;; for vinyasa lein\n"
-                     + "                [leiningen #=(leiningen.core.main/leiningen-version)]\n"
-                     + "                ;; trace execution\n"
-                     + "                [org.clojure/tools.trace \"0.7.8\"]\n"
-                     + "                ;; install dependencies / packages without restart\n"
-                     + "                [com.cemerick/pomegranate \"0.3.0\"]\n"
-                     + "                ;; cljs repl ++\n"
-                     + "                [com.cemerick/piggieback \"0.1.4-SNAPSHOT\"]\n"
-                     + "                ;; \"quick and dirty debugging\n"
-                     + "                [spyscope \"0.1.4\"]\n"
-                     + "                ;; reload namespaces, recursively tracking dependencies\n"
-                     + "                [org.clojure/tools.namespace \"0.2.4\"]\n"
-                     + "                ;; java reflection\n"
-                     + "                [im.chit/iroh \"0.1.11\"]\n"
-                     + "                ;; pretty stacktraces\n"
-                     + "                [io.aviso/pretty \"0.1.8\"]\n"
-                     + "                ;; inject stuff in namespace + other goodies\n"
-                     + "                ;; see http://z.caudate.me/give-your-clojure-workflow-more-flow/\n"
-                     + "                [im.chit/vinyasa \"0.2.2\"]]\n"
-                     + " :injections [(require 'spyscope.core)\n"
-                     + "              (require 'vinyasa.inject)\n"
-                     + "              (require 'iroh.core)\n"
-                     + "              (vinyasa.inject/in\n"
-                     + "              clojure.core\n"
-                     + "              [rksm.repl.utils lein search-for-symbol get-stack print-stack dumb-stack traced-fn]\n"
-                     + "              [vinyasa.pull [pull pull]]\n"
-                     + "              [clojure.java.shell sh]\n"
-                     + "              [clojure.repl apropos dir doc find-doc source [root-cause cause]]\n"
-                     + "              [clojure.tools.namespace.repl [refresh refresh]]\n"
-                     + "              [clojure.pprint [pprint >pprint]]\n"
-                     + "              [iroh.core .% .%> .*]\n"
-                     + "              [clojure.tools.trace dotrace trace-ns untrace-ns])]}\n",
-
-    ensure: function(options, thenDo) {
-        if (!thenDo) { thenDo = options; options = {}; }
-        var cmd = this.getCurrentServerCommand();
-        if (cmd) {
-            Functions.waitFor(5000, function() {
-                return cmd.getStdout().include("nREPL server started");
-            }, function(err) { thenDo(err, cmd); });
-        } else this.start(options, thenDo);
-    },
-
-    getCurrentServerCommand: function() {
-        var cmdQueueName = "lively.clojure.replServer";
-        var q = lively.shell.commandQueue[cmdQueueName];
-        var cmd = q && q[0];
-        return cmd && String(cmd.getCommand()).include("+lively repl") ?
-            cmd : null;
-    },
-
-    start: function(options, thenDo) {
-        if (!thenDo) { thenDo = options; options = {}; }
-        var port = options.env ? options.env.port : "7888",
-            host = options.env ? options.env.host : "127.0.0.1",
-            cwd = options.cwd,
-            self = this,
-            cmdQueueName = "lively.clojure.replServer";
-
-        // FIXME
-        if (!["127.0.0.1", "0.0.0.0", "localhost"].include(host)) {
-            thenDo(new Error("Cannot start clj server " + host + ":" + port));
-            return;
+    changeInEditor: function(editorMorph, newEnvSpec) {
+        var runtime = clojure.Runtime;
+        var defaultEnv = runtime.currentEnv();
+        var editorEnv = runtime.currentEnv(editorMorph);
+        if (defaultEnv === editorEnv) {
+          editorEnv = Object.create(defaultEnv);
         }
-
-        Functions.composeAsync(
-            function(next) { lively.require("lively.ide.CommandLineInterface").toRun(function() { next(); }); },
-            this.stop.bind(this, port),
-            this.ensureLivelyProfile.bind(this),
-            function startServer(next) {
-                var cmdString = Strings.format(
-                    "lein with-profile +lively repl :headless :port %s", port);
-                var cmd = lively.shell.run(cmdString, {cwd: cwd, group: cmdQueueName});
-                next(null,cmd);
-            },
-            function waitForServerStart(cmd, next) {
-                Functions.waitFor(5000, function() {
-                    return cmd.getStdout().include("nREPL server started");
-                }, function(err) { next(null, cmd); });
-            }
-        )(thenDo);
+        Object.keys(newEnvSpec).forEach(function(k) {
+          if (newEnvSpec[k] !== editorEnv[k]) editorEnv[k] = newEnvSpec[k];
+        });
+        return runtime.ensureClojureStateInEditor(editorMorph).env = editorEnv;
     },
 
-    stop: function(env, thenDo) {
-        env = env || {};
-        // FIXME
-        if (env.host && !["127.0.0.1", "0.0.0.0", "localhost"].include(env.host)) {
-            thenDo(new Error("Cannot stop clj server " + env.host + ":" + port));
-            return;
-        }
-
-        var port = env ? env.port : "7888";
-        var cmdQueueName = "lively.clojure.replServer";
-        Functions.composeAsync(
-            function clearLivelyClojureCommands(next) {
-                var q = lively.shell.commandQueue[cmdQueueName];
-                if (!q || !q[0]) return next();
-                delete lively.shell.commandQueue[cmdQueueName];
-                q[0].kill("SIGKILL", function(err, answer) { next(); });
-            },
-            function stopRunningServer(next) {
-                var cmdString = Strings.format(
-                    "lsof -i tcp:%s -a -c ^node -a -c ^Google -t | xargs kill -9 ", port);
-                lively.shell.run(cmdString, {group: cmdQueueName}, function(err, cmd) { next(); });
-            }
-        )(thenDo);
+    change: function(newDefaultEnv) {
+      Object.extend(this._defaultEnv, newDefaultEnv);
     },
 
-    reset: function(thenDo) {
-        Global.URL.nodejsBase.withFilename("ClojureServer/reset").asWebResource().beAsync()
-            .post().whenDone(function(response, status) { thenDo(null,  show(status + '\n' + response)); });
+    // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    // helper for editors
+
+    detectNs: function(editorMorph) {
+      if (editorMorph.clojureGetNs) return editorMorph.clojureGetNs();
+      var nsDef = clojure.StaticAnalyzer.findNsForm(
+          editorMorph.getSession().$ast || editorMorph.textString);
+      return nsDef ? nsDef.nsName : null;
     },
 
-    ensureLivelyProfile: function(thenDo) {
-        var profilesDir, livelyClojureProfileFile;
-        var  livelyLeinProfile = this.livelyLeinProfile;
-        Functions.composeAsync(
-            function(next) {
-                lively.shell.run("echo $HOME", {}, function(err, cmd) {
-                    if (cmd.getCode()) next(cmd.resultString(true));
-                    else {
-                        var home = cmd.getStdout().trim()
-                        profilesDir = home + "/.lein/profiles.d";
-                        livelyClojureProfileFile = profilesDir + "/lively.clj";
-                        next();
-                    }
-                });
-            },
-            function(next) {
-                lively.shell.run("mkdir -p " + profilesDir, {}, function(err, cmd) { next(); });
-            },
-            function(next) {
-                lively.ide.CommandLineInterface.writeFile(
-                    livelyClojureProfileFile,
-                    {content: livelyLeinProfile},
-                    function() { next(); })
-            }
-        )(thenDo);
-    }
+    // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    // communicating with clojure runtimes via nrepl
 
-});
-
-Object.extend(lively.ide.codeeditor.modes.Clojure, {
-
-    prettyPrint: function(runtimeEnv, code, thenDo) {
-        // this is WORK IN PROGRESS!
-        var prettify = Strings.format(
-            "(require '(rewrite-clj parser printer))\n"
-          + "(rewrite-clj.printer/print-edn (rewrite-clj.parser/parse-string-all \"%s\"))",
-            code.replace(/"/g, '\\"'));
-
-        // var prettify = Strings.format(
-        //     "(clojure.pprint/write '%s :dispatch clojure.pprint/code-dispatch)",
-        //     code);
-        // var prettify = Strings.format(
-        //     "(require '[fipp.edn :refer (pprint) :rename {pprint fipp}]) (fipp '%s)",
-        //     code);
-
-        lively.ide.codeeditor.modes.Clojure.doEval(
-            prettify, {env: runtimeEnv, passError: true, resultIsJSON: false},
-            function(err, prettified) {
-                if (err) show(err);
-                if (err) prettified = code;
-                else {
-                    // try { prettified = eval(prettified); } catch (e) { prettified = code; }
-                    prettified = prettified.replace(/^(nil\s*)+/g, '');
-                    // FIXME pretty printer seems to add additional newlines after comments
-                    prettified = prettified.replace(/(;[^\n]*)[\n]+/gm, '$1\n');
-                    if (!prettified.length) prettified = code;
-                }
-                thenDo && thenDo(err, prettified);
-            });
-    },
-
-    fetchDoc: function(runtimeEnv, expr, thenDo) {
-        this.doEval("(doc " + expr + ")", {env: runtimeEnv, prettyPrint: true}, thenDo);
+    fetchDoc: function(runtimeEnv, ns, expr, thenDo) {
+      if (!expr.trim().length) thenDo(new Error("doc: no input"))
+      else this.doEval("(do (require '[clojure.repl]) (clojure.repl/doc " + expr + "))",
+        {ns:ns, env: runtimeEnv, prettyPrint: true, passError: true}, thenDo);
     },
 
     evalQueue: [],
@@ -263,30 +109,47 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
     },
 
     runEval: function(evalObject, thenDo) {
-        var clj = lively.ide.codeeditor.modes.Clojure;
-        var env = evalObject.env;
-        var options = evalObject.options;
-        var expr = evalObject.expr;
-        var pp = options.hasOwnProperty("prettyPrint") ? options.prettyPrint : false;
-        var ppLevel = options.hasOwnProperty("prettyPrintLevel") ? options.prettyPrintLevel : null;
-        var isJSON = options.hasOwnProperty("resultIsJSON") ? options.resultIsJSON : false;
-        var catchError = options.hasOwnProperty("catchError") ? options.catchError : true;
-
         if (!module('lively.net.SessionTracker').isLoaded() || !lively.net.SessionTracker.isConnected()) {
             thenDo(new Error('Lively2Lively not running, cannot connect to Clojure nREPL server!'));
             return;
         }
-        var sess = lively.net.SessionTracker.getSession();
-        var cljSession = env.session;
 
-        if (pp) expr = Strings.format("(with-out-str (clojure.pprint/write (do %s) %s))", expr, ppLevel ? ":level " + ppLevel : "");
-        if (catchError) expr = Strings.format("(try %s (catch Exception e (clojure.repl/pst e)))", expr);
+        var clj        = clojure.Runtime,
+            env        = evalObject.env,
+            options    = evalObject.options,
+            expr       = evalObject.expr,
+            ns         = evalObject.ns,
+            pp         = options.prettyPrint = options.hasOwnProperty("prettyPrint") ? options.prettyPrint : false,
+            ppLevel    = options.hasOwnProperty("prettyPrintLevel") ? options.prettyPrintLevel : null,
+            isJSON     = options.resultIsJSON = options.hasOwnProperty("resultIsJSON") ? options.resultIsJSON : false,
+            isFileLoad = !expr && evalObject["file-content"],
+            catchError = options.hasOwnProperty("catchError") ? options.catchError : true,
+            sess       = lively.net.SessionTracker.getSession(),
+            cljSession = env.session;
+
+        if (expr) {
+          if (pp) expr = Strings.format("(with-out-str (clojure.pprint/write (do %s) %s))", expr, ppLevel ? ":level " + ppLevel : "");
+          if (catchError) expr = Strings.format("(try %s (catch Exception e (clojure.repl/pst e)))", expr);
+        }
 
         evalObject.isRunning = true;
         var nreplOptions = {port: env.port || 7888, host: env.host || "127.0.0.1"};
         var nreplMessages = [];
+        var message = {
+          nreplOptions: nreplOptions,
+          session: cljSession,
+          ignoreMissingSession: true};
 
-        sess.send('clojureEval', {nreplOptions: nreplOptions, session: cljSession, ignoreMissingSession: true, code: expr}, function(answer) {
+        if (isFileLoad) {
+          message["file-content"] = evalObject["file-content"];
+          message["file-name"] = evalObject["file-name"];
+          message["file-path"] = evalObject["file-path"];
+        } else {
+          message.code = expr;
+          message.ns = ns;
+        }
+
+        sess.send('clojureEval', message, function(answer) {
             if (Object.isArray(answer.data)) {
                 nreplMessages.pushAll(answer.data);
             } else nreplMessages.push(answer.data);
@@ -300,67 +163,30 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             evalObject.isRunning = false;
 
             if (answer.data.error) thenDo && thenDo(answer.data.error, null);
-            else prepareRawResult(nreplMessages, thenDo); });
-
-        // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-
-        function prepareRawResult(messages, thenDo) {
-            if (Object.isString(messages) && messages.match(/error/i))
-                messages = [{err: messages}];
-
-            if (!Object.isArray(messages) || !messages.length) {
-                console.warn("strange clj eval messages: %o", messages);
-                return;
-            };
-
-            var status = messages.pluck("status").compact().flatten(),
-                errors = messages.pluck("error").compact()
-                    .concat(messages.pluck("err").compact())
-                    .concat(messages.pluck("ex").compact()),
-                isError = !!errors.length,
-                result = messages.pluck('value').concat(messages.pluck('out')).compact().join('\n'),
-                err;
-
-            if (status.include("interrupted")) result = result + "[interrupted eval]";
-
-            if (isError) {
-                errors.unshift(status.without("done"));
-                var cause = messages.pluck('root-ex').flatten().compact();
-                if (cause.length) errors.pushAll(["root-cause:"].concat(cause));
-                err = errors.flatten().compact().invoke('trim').join('\n');
-            }
-
-            if (!isError && pp) try { result = eval(result); } catch (e) {}
-            if (!isError && isJSON) try { result = JSON.parse(eval(result)); } catch (e) {
-                err = e;
-                result = {error: e};
-            }
-
-            if (isError && String(result).include("ECONNREFUSED")) {
-                result = "No clojure server listening?" + result;
-            }
-
-            thenDo && thenDo(options.passError ? err : null, err || result);
-        }
-
+            else clj.processNreplEvalAnswers(nreplMessages, options, thenDo); });
     },
 
     doEval: function(expr, options, thenDo) {
         if (!thenDo) { thenDo = options; options = null; };
-        this.evalQueue.push({
-            env: options.env || lively.ide.codeeditor.modes.Clojure.RuntimeEnvironment.currentEnv(),
-            expr: expr,
-            options: options || {},
-            isRunning: false,
-            "eval-id": null,
-            callback: thenDo});
+        var evalState = {
+          env: options.env || clojure.Runtime.currentEnv(),
+          expr: expr,
+          ns: options ? options.ns : undefined,
+          options: options || {},
+          isRunning: false,
+          "eval-id": null,
+          callback: thenDo
+        }
+        this.evalQueue.push(evalState);
         this.runEvalFromQueue();
+        return evalState;
     },
 
     evalInterrupt: function(env, thenDo) {
         // FIXME ... eval queue, eval objects should belong to a Clojure runtime env...!
         var clj = this;
         var evalObject = clj.evalQueue[0];
+        if (!evalObject) return thenDo(new Error("no evaluation in progress"));
         var env = evalObject.env || {};
         var nreplOptions = {port: env.port || 7888, host: env.host || "127.0.0.1"};
 
@@ -381,198 +207,320 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             clj.evalQueue.remove(evalObject);
             clj.runEvalFromQueue.bind(clj).delay(0);
         }
-    }
-
-  }
-
-};
-
-lively.ide.codeeditor.modes.Clojure.Mode = lively.ide.ace.require('ace/mode/clojure').Mode;
-
-var ClojureMode = lively.ide.ace.require('ace/mode/clojure').Mode;
-
-ClojureMode.addMethods({
-
-    commands: {
-        prettyPrint: {
-            exec: function(ed) {
-                var string = ed.$morph.getSelectionOrLineString();
-                var runtime = lively.ide.codeeditor.modes.Clojure.RuntimeEnvironment;
-                var env = runtime.currentEnv(ed.$morph);
-                lively.ide.codeeditor.modes.Clojure.prettyPrint(env, string, function(err, string) {
-                    ed.insert(string);
-                    // ed.$morph.printObject(ed, err ? err : string);
-                });
-
-            }
-        },
-
-        printDoc: {
-            bindKey: 'Command-Shift-/',
-            exec: function(ed) {
-                var string = ed.$morph.getSelectionOrLineString();
-                var runtime = lively.ide.codeeditor.modes.Clojure.RuntimeEnvironment;
-                var env = runtime.currentEnv(ed.$morph);
-                lively.ide.codeeditor.modes.Clojure.fetchDoc(env, string, function(err, docString) {
-                    ed.$morph.printObject(ed, err ? err : docString);
-                });
-            }
-        },
-
-        evalInterrupt: {
-            bindKey: 'Command-.',
-            exec: function(ed) {
-                ed.$morph.setStatusMessage("Interrupting eval...");
-                var runtime = lively.ide.codeeditor.modes.Clojure.RuntimeEnvironment;
-                var env = runtime.currentEnv(ed.$morph);
-                lively.ide.codeeditor.modes.Clojure.evalInterrupt(env, function(err, answer) {
-                    console.log("Clojure eval interrupt: ", Objects.inspect(err || answer));
-                    // ed.$morph.setStatusMessage(Objects.inspect(err || answer), err ? Color.red : null);
-                });
-            }
-        },
-
-        changeClojureEnv: {
-            bindKey: 'Command-e',
-            exec: function(ed) {
-                var runtime = lively.ide.codeeditor.modes.Clojure.RuntimeEnvironment;
-                var env = runtime.currentEnv(ed.$morph);
-                $world.prompt("Change clojure runtime environment:", function(input) {
-                    var env = runtime.readEnv(input);
-                    if (!env) show("not a valid host/port combo: " + input);
-                    else runtime.changeInEditor(ed.$morph, env);
-                }, {input: runtime.printEnv(env)})
-            }
-        }
     },
 
-    keybindings: {
-        "Command-Shift-/": "printDoc",
-        "Tab": "prettyPrint",
-        "Command-.": "evalInterrupt"
+    loadFile: function(content, pathToFile, options, thenDo) {
+        options = options || {};
+        options.passError = true;
+        var env = options.env || clojure.Runtime.currentEnv();
+        if (!env.doAutoLoadSavedFiles) return;
+        this.evalQueue.push({
+            env: env,
+            "file-content": content,
+            "file-name": pathToFile.split('\\').last(),
+            "file-path": pathToFile,
+            options: options,
+            isRunning: false,
+            "eval-id": null,
+            callback: thenDo});
+        this.runEvalFromQueue();
     },
 
-    morphMenuItems: function(items, editor) {
-        var mode = this;
-        items.push(['Clojure',[
-            ['change Clojure runtime environment (Command-e)', function() { mode.commands.changeClojureEnv.exec(editor.aceEditor); }],
-            ['interrupt eval (Command-.)', function() { mode.commands.evalInterrupt.exec(editor.aceEditor); }],
-            ['pretty print code (Tab)', function() { mode.commands.prettyPrint.exec(editor.aceEditor); }],
-            ['print doc for selected expression (Command-?)', function() { mode.commands.printDoc.exec(editor.aceEditor); }]
-        ]]);
-    
-        return items;
-    },
+    processNreplEvalAnswers: function(messages, options, thenDo) {
+      if (Object.isString(messages) && messages.match(/error/i))
+          messages = [{err: messages}];
 
-    evalAndPrint: function(codeEditor, insertResult, prettyPrint, prettyPrintLevel) {
-        var sourceString = codeEditor.getSelectionOrLineString(),
-            env = lively.ide.codeeditor.modes.Clojure.RuntimeEnvironment.currentEnv(codeEditor),
-            options = {env: env, prettyPrint: prettyPrint, prettyPrintLevel: prettyPrintLevel, catchError: false};
-        lively.ide.codeeditor.modes.Clojure.doEval(sourceString, options, printResult);
-
-        // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-        function printResult(err, result) {
-            if (err && !Object.isString(err)) err = Objects.inspect(err, {maxDepth: 3});
-            if (!insertResult && err) { codeEditor.world().alert(err); return;}
-            if (result && !Object.isString(result)) result = Objects.inspect(result, {maxDepth: 3});
-            if (insertResult) codeEditor.printObject(codeEditor.aceEditor, err ? err : result);
-            else codeEditor.collapseSelection("end");
-        }
-    },
-
-    doEval: function(codeEditor, insertResult) {
-        return this.evalAndPrint(codeEditor, insertResult, false);
-    },
-    
-    printInspect: function(codeEditor, options) {
-        return this.evalAndPrint(codeEditor, true, true, options.depth || 4);
-    },
-
-    doListProtocol: function(codeEditor) {
-      // codeEditor=that
-      var term = this.helper.identfierBeforeCursor(codeEditor);
-      var src = '(do (require \'clojure.data.json)'
-              + '    (clojure.data.json/json-str (user/get-completions "%s")))';
-      var sourceString = lively.lang.string.format(src, term),
-          env = clojure.Runtime.currentEnv(codeEditor),
-          options = {env: env, catchError: false, passError: true, resultIsJSON: true};
-      lively.ide.codeeditor.modes.Clojure.doEval(sourceString, options, function(err, result) {
-
-        if (err) {
-          var msg = "Completion error " + String(err);
-          codeEditor.setStatusMessage(msg, Color.red, 8);
-          show(msg);
+      if (!Object.isArray(messages) || !messages.length) {
+          console.warn("strange clj eval messages: %o", messages);
           return;
+      };
+
+      var status = messages.pluck("status").compact().flatten(),
+          errors = messages.pluck("error").compact()
+              .concat(messages.pluck("err").compact())
+              .concat(messages.pluck("ex").compact()),
+          isError = !!errors.length || status.include("error"),
+          result = messages.pluck('value').concat(messages.pluck('out')).compact().join('\n'),
+          err;
+
+      if (status.include("interrupted")) result = result + "[interrupted eval]";
+
+      if (isError) {
+          if (status.include("namespace-not-found")) {
+            errors.unshift("namespace not found" + (options.ns ? ": " + options.ns : ""))
+          } else {
+            errors.unshift(status.without("done"));
+            var cause = messages.pluck('root-ex').flatten().compact();
+            if (cause.length) errors.pushAll(["root-cause:"].concat(cause));
+            err = errors.flatten().compact().invoke('trim').join('\n');
+          }
+      }
+
+      if (!isError && options.prettyPrint) try { result = eval(result); } catch (e) {}
+      if (!isError && options.resultIsJSON) try { result = JSON.parse(eval(result)); } catch (e) {
+          err = e;
+          result = {error: e};
+      }
+
+      if (isError && String(result).include("ECONNREFUSED")) {
+          result = "No clojure server listening?" + result;
+      }
+
+      // "print" error if result is a string anyway
+      if (err && (!result || typeof result === 'string')) {
+        result = ("" || result) + "\n" + err;
+      }
+
+      thenDo && thenDo(options.passError ? err : null, result);
+  },
+
+  lookupIntern: function(nsName, symbol, options, thenDo) {
+    var code = Strings.format(
+          "(do (require 'rksm.system-navigator.ns-internals)\n"
+        + "    (rksm.system-navigator.ns-internals/symbol-info->json\n"
+        + "     %s '%s))\n",
+        nsName ? "(find-ns '"+nsName+")" : "*ns*", symbol);
+    this.doEval(code, lively.lang.obj.merge(options||{},{resultIsJSON: true}), thenDo);
+  },
+
+  retrieveDefinition: function(symbol, inns, options, thenDo) {
+    lively.lang.fun.composeAsync(
+      function(n) { clojure.Runtime.lookupIntern(inns, symbol, {}, n); },
+      function(intern, n) {
+        if (!intern) return n(new Error("Cannot retrieve meta data for " + symbol));
+        var cmd = lively.lang.string.format(
+          "(do\n"
+          + "  (require 'clojure.data.json)\n"
+          + "  (require 'rksm.system-navigator)\n"
+          + "  (-> '%s rksm.system-navigator/source-for-ns clojure.data.json/write-str))",
+          intern.ns);
+        clojure.Runtime.doEval(cmd, {resultIsJSON:true}, function(err,nsSrc) {
+          n(err,intern, nsSrc); });
+      },
+      function(intern, nsSrc, n) {
+        // lively.lang.string.lines(source).length
+        intern.line = intern.line && Number(intern.line);
+        if (!intern.line && intern.protocol) intern.line = Number(intern.protocol.line);
+        if (intern.line) {
+          var range = lively.lang.string.lineNumberToIndexesComputer(nsSrc)(Number(intern.line));
+          var ast = paredit.parse(nsSrc);
+          var rangeDef = range && paredit.navigator.rangeForDefun(ast, range[0]);
         }
-
-        var maxNameLength = 0;
-        var displaySpec = Object.keys(result).map(function(ea) {
-          var doc = result[ea].trim() || "",
-              docLines = doc.length ? lively.lang.string.lines(doc) : [ea];
-          maxNameLength = Math.max(maxNameLength, docLines[0].length);
-          return {
-            insertion: ea,
-            doc: result[ea],
-            docFirst: docLines.shift(),
-            docRest: docLines.join("\ ").truncate(120),
-          }
-        });
-
-        var candidates = displaySpec.map(function(ea) {
-          var string = lively.lang.string.pad(ea.docFirst, maxNameLength+1 - ea.docFirst.length)
-                     + ea.docRest;
-          return {isListItem: true,string: string,value: ea};
-        });
-
-        var n = lively.ide.tools.SelectionNarrowing.getNarrower({
-          spec: {
-            candidates: candidates,
-            actions: [
-              function insert(candidate) {
-                var slice = candidate.insertion.slice(candidate.insertion.indexOf(term)+term.length);
-                codeEditor.collapseSelection("end");
-                codeEditor.insertAtCursor(slice, false);
-              },
-              function openDoc(candidate) {
-                $world.addCodeEditor({
-                  title: "Clojure doc for " + candidate.insertion,
-                  textMode: "text",
-                  content: candidate.doc
-                }).getWindow().openInWorld().comeForward();
-              }
-            ]
-          }
-        })
-      });
-    },
-
-    doSave: function(codeEditor) {
-      var ed = codeEditor.aceEditor;
-      ed.execCommand("clojureLoadFile");
-      codeEditor.doSave();
-    }
+        n(null, {intern: intern, nsSource: nsSrc, defRange: rangeDef});
+      }
+    )(thenDo);
+  }
 });
 
+Object.extend(clojure.Runtime.ReplServer, {
 
-(function pareditSetup() {
-  var cljCmds = lively.ide.codeeditor.modes.Clojure.Commands;
-  var cmdsToAdd = Object.keys(cljCmds).reduce(function(cmds, name) {
-    cljCmds[name].name = name;
-    return cmds.concat([cljCmds[name]]);
-  }, [])
-  ace.ext.lang.paredit.commands = ace.ext.lang.paredit.commands
-    .filter(function(cmd) { return  !(cmd.name in cljCmds) })
-    .concat(cmdsToAdd);
-    
-  Object.extend(ace.ext.lang.paredit.keybindings, {
-    "Command-Shift-\/":                             "clojurePrintDoc",
-    "Alt-Shift-\/":                                 "clojurePrintDoc",
-    "¿":                                            "clojurePrintDoc",
-    "Ctrl-Shift-\\":                                "clojurePrettyPrint",
-    "Escape":                                       "clojureEvalInterrupt",
-    "Command-e":                                    "clojureChangeEnv"
-  });
+    ensure: function(options, thenDo) {
+        if (!thenDo) { thenDo = options; options = {}; }
+        var cmd = clojure.Runtime.ReplServer.getCurrentServerCommand();
+        if (cmd) {
+            Functions.waitFor(5000, function() {
+                return cmd.getStdout().match(/nREPL server started|nrepl server running on/i);
+            }, function(err) { thenDo(err, cmd); });
+        } else this.start(options, thenDo);
+    },
 
-})();
+    getCurrentServerCommand: function(port) {
+        var cmdQueueName = "lively.clojure.replServer";
+        if (port) cmdQueueName+":"+port;
+        else cmdQueueName = Object.keys(lively.shell.commandQueue)
+          .grep(new RegExp(cmdQueueName))
+          .detect(function(ea) {
+            return !!lively.shell.commandQueue[ea].length; })
+        || cmdQueueName;
+        var q = lively.shell.commandQueue[cmdQueueName];
+        var cmd = q && q[0];
+        return cmd && String(cmd.getCommand()).include("clj-feather-repl") ?
+            cmd : null;
+    },
+
+    start: function(options, thenDo) {
+        if (!thenDo) { thenDo = options; options = {}; }
+
+        var port = options.env ? options.env.port : "7888",
+            host = options.env ? options.env.host : "127.0.0.1",
+            cwd = options.cwd,
+            self = clojure.Runtime.ReplServer,
+            cmdQueueName = "lively.clojure.replServer:"+port;
+
+        // FIXME
+        if (!["127.0.0.1", "0.0.0.0", "localhost"].include(host)) {
+            thenDo(new Error("Cannot start clj server " + host + ":" + port));
+            return;
+        }
+
+        Functions.composeAsync(
+            function(next) { lively.require("lively.ide.CommandLineInterface").toRun(function() { next(); }); },
+            this.stop.bind(this, null, {port:port, host:host}),
+            function startServer(next) {
+                var cmdString = Strings.format("clj-feather-repl %s", port);
+                var cmd = lively.shell.run(cmdString, {cwd: cwd, group: cmdQueueName});
+                next(null,cmd);
+            },
+            function waitForServerStart(cmd, next) {
+                Functions.waitFor(5000, function() {
+                  return cmd.getStdout().match(/nREPL server started|nrepl server running on/);
+                }, function(err) { next(null, cmd); });
+            }
+        )(thenDo);
+    },
+
+    stop: function(cmd, env, thenDo) {
+      if (cmd) {
+        cmd.kill("SIGINT");
+        cmd.kill("SIGTERM");
+        lively.lang.fun.waitFor(1000,
+          function() { return !cmd.isRunning(); },
+          function(timeout) {
+            if (timeout) {
+              show("Forcing repl server shutdown.")
+              var cmdString = cmd.getCommand().grep(new RegExp("clj-feather-repl"))[0];
+              var port = cmdString && Number(cmdString.match(/[0-9]+$/))
+              forceStop("lively.clojure.replServer:"+port, port, thenDo);
+            } else thenDo();
+          });
+      } else {
+        env = env || {};
+        // FIXME
+        if (env.host && !["127.0.0.1", "0.0.0.0", "localhost"].include(env.host)) {
+            thenDo(new Error("Cannot stop clj server " + env.host + ":" + port));
+            return;
+        }
+  
+        var port = env ? env.port : "7888";
+        var cmdQueueName = "lively.clojure.replServer:"+port;
+        forceStop(cmdQueueName, port, thenDo);
+      }
+
+      // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+      function forceStop(cmdQueueName, port, thenDo) {
+        Functions.composeAsync(
+            function clearLivelyClojureCommands(next) {
+                var q = lively.shell.commandQueue[cmdQueueName];
+                if (!q || !q[0]) return next();
+                delete lively.shell.commandQueue[cmdQueueName];
+                q[0].kill("SIGKILL");
+                setTimeout(next, 400);
+            },
+            function stopRunningServer(next) {
+                var cmdString = Strings.format(
+                    "lsof -i tcp:%s -a -c ^node -a -c ^Google -t | xargs kill -9 ", port);
+                lively.shell.run(cmdString, {group: cmdQueueName}, function(err, cmd) { next(); });
+            }
+        )(thenDo);
+
+      }
+    }
+
+});
+
+clojure.StaticAnalyzer = {
+  
+  ensureAst: function(astOrSource) {
+    return typeof astOrSource === 'string' ?
+      paredit.parse(astOrSource) : astOrSource;
+  },
+
+  findFuncCallNode: function(parent, funcName) {
+    if (!parent.children) return;
+    var found;
+    parent.children.detect(function(n) {
+      return n.type === 'list' && n.children[0]
+          && n.children[0].source === "ns"
+          && (found = n);
+    });
+    return found;
+  },
+
+  findNsForm: function(astOrSource) {
+    // clojure.StaticAnalyzer.findNsForm(that.textString)
+    var ast = this.ensureAst(astOrSource);
+    var nsForm = this.findFuncCallNode(ast, 'ns');
+    var nsNameNode = nsForm && nsForm.children && nsForm.children.slice(1).detect(function(n) {
+      return n.type === 'symbol'; })
+    return nsForm ? {
+      nsName: nsNameNode ? nsNameNode.source : null,
+      node: nsForm
+    } : null;
+  },
+
+  nodeAtPoint: function(astOrSource, idx) {
+    return paredit.walk.sexpsAt(
+      this.ensureAst(astOrSource), idx).last();
+  },
+
+  nodeAtCursor: function(aceEd) {
+    // convenience for ace
+    var idx = aceEd.session.doc.positionToIndex(aceEd.getCursorPosition())
+    return this.nodeAtPoint(aceEd.session.$ast||aceEd.getValue(), idx);
+  },
+  
+  sourceForNodeAtCursor: function(aceEd) {
+    // convenience for ace
+    var node = this.nodeAtCursor(aceEd);
+    if (!node) return "";
+    return node.source || aceEd.getValue().slice(node.start,node.end);
+  },
+
+  createDefinitionQuery: function(astOrSource, idx, optNsName) {
+    var ast = this.ensureAst(astOrSource);
+    var thing = this.nodeAtPoint(ast, idx);
+    if (!thing || !thing.source) return null;
+    var ns = !optNsName && this.findNsForm(ast);
+    var nsName = optNsName || (ns && ns.nsName) || "user";
+    return {
+      nsName: nsName,
+      ns: ns,
+      node: thing,
+      source: thing.source.replace(/^'/,"")
+    };
+  },
+
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  // completion related
+  // -=-=-=-=-=-=-=-=-=-
+
+  buildElementCompletionForm: function(astOrSource, src, idx) {
+    if (typeof idx === "undefined") {
+      idx = src; src = astOrSource;
+    }
+
+    var ast = this.ensureAst(astOrSource);
+    var parent = paredit.walk.containingSexpsAt(ast, idx, paredit.walk.hasChildren).last();
+    if (!parent.type === "list" || !parent.children.length) return null;
+
+    if (!parent.children[0].source) return null;
+
+    var wrapExpr = "(do (require '[rksm.system-navigator.completions]) %s)";
+    var complFunc = "rksm.system-navigator.completions/instance-elements->json"
+
+    // simple dot completion
+    if (parent.children[0].source === ".") {
+      var expr = paredit.walk.source(src, parent);
+      var offs = -parent.start;
+      return lively.lang.string.format(wrapExpr,
+            expr.slice(0,parent.children[0].start+offs)
+          + complFunc
+          + expr.slice(parent.children[0].end+offs));
+    }
+
+    if (parent.children[0].source.include("->")
+     && parent.children.last().source === ".") {
+      var expr = paredit.walk.source(src, parent);
+      var offs = -parent.start;
+      return lively.lang.string.format(wrapExpr,
+            expr.slice(0,parent.children.last().start+offs)
+          + complFunc
+          + expr.slice(parent.children.last().end+offs));
+    }
+
+    return null
+  }
+}
 
 }) // end of module

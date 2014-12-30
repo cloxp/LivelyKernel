@@ -239,6 +239,7 @@ Object.extend(clojure.Runtime, {
           errors = messages.pluck("error").compact()
               .concat(messages.pluck("err").compact())
               .concat(messages.pluck("ex").compact()),
+
           isError = !!errors.length || status.include("error"),
           result = messages.pluck('value').concat(messages.pluck('out')).compact().join('\n'),
           err;
