@@ -124,7 +124,9 @@ function l2lActionWithNREPLConnection(l2lConnection, msg, nreplConFunc) {
         });
 }
 
-util._extend(require("./LivelyServices").services, {
+var services = require("./LivelyServices").services;
+
+util._extend(services, {
 
     clojureClone: function(sessionServer, c, msg) {
         l2lActionWithNREPLConnection(c, msg, function(con, whenDone) { con.clone(msg.data.session, whenDone); });
@@ -139,11 +141,12 @@ util._extend(require("./LivelyServices").services, {
     },
 
     clojureEval: function(sessionServer, c, msg) {
+        var isFileLoad = !!msg.data["file-content"];
         var code = msg.data.code;
         var session = msg.data.session;
         var ignoreMissingSession = msg.data.ignoreMissingSession;
         var sendResult, nreplCon;
-        debug && console.log("Clojure eval: ", code);
+        debug && console.log(isFileLoad ? "Clojure load file" + msg.data['file-name'] : "Clojure eval: " + code);
 
         async.waterfall([
             function(next) {
@@ -157,7 +160,7 @@ util._extend(require("./LivelyServices").services, {
                 else nreplCon.lsSessions(function(err, result) {
                     if (err) next(err, null);
                     else next(null, (result && result[0] && result[0].sessions) || []);
-                }); 
+                });
             },
             function testIfSessionIsAvailable(sessions, next) {
                 if (!session || sessions.indexOf(session) > -1) next(null);
@@ -169,23 +172,30 @@ util._extend(require("./LivelyServices").services, {
                 if (session) return next(null);
                 nreplCon.clone(function(err, msg) {
                     if (err || !msg[0]['new-session']) next(err || new Error("Could not create new nREPL session"));
-                    else {
-                        session = msg[0]['new-session'];
-                        next(null);
-                    }
+                    else { session = msg[0]['new-session']; next(null); }
                 });
             },
 
-            function doEval(next) {
-                var evalMsg = nreplCon.eval(code, session, function(err, result) {/*currently ignored*/}),
-                    id = evalMsg.id,
+            function doEvalOrLoadFile(next) {
+              var evalMsg;
+                if (isFileLoad) {
+                  evalMsg = nreplCon.loadFile(
+                    msg.data["file-content"],
+                    msg.data["file-name"],
+                    msg.data["file-path"], // relative
+                    session, function(err, result) {/*currently ignored*/});
+                } else {
+                  evalMsg = nreplCon.eval(code, session, function(err, result) {/*currently ignored*/});
+                }
+
+                var id = evalMsg.id,
                     messageSequenceListenerName = "messageSequence-"+evalMsg.id;
                 l2lAnswer(c, msg, true, {"eval-id": evalMsg.id, session: session});
                 nreplCon.messageStream.once("error", onError);
                 nreplCon.messageStream.on(messageSequenceListenerName, onMessageSequence);
-    
-                // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-            
-    
+
+                // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
                 function cleanup() {
                     nreplCon.messageStream.removeListener(messageSequenceListenerName, onMessageSequence);
                     nreplCon.messageStream.removeListener("onError", onError);
@@ -214,7 +224,9 @@ util._extend(require("./LivelyServices").services, {
         });
     },
 
-    clojureLoadFile: function(sessionServer, c, msg) { l2lAnswer(c, msg, false, {"error": "clojureLoadFile not yet implemented"}); },
+    clojureLoadFile: function(sessionServer, c, msg) {
+      services.clojureEval(sessionServer, c, msg);
+    },
 
     clojureLsSessions: function(sessionServer, c, msg) {
         l2lActionWithNREPLConnection(c, msg, function(con, whenDone) { con.lsSessions(whenDone); });
@@ -231,7 +243,7 @@ util._extend(require("./LivelyServices").services, {
 module.exports = function(route, app) {
 
     app.post(route + "reset", function(req, res) {
-        var ports = clientConnectionState.ports;
+        var ports = clientConnectionState.ports || {};
         Object.keys(ports).forEach(function(hostname) {
             ports[hostname].end();
             ports[hostname] = null;
