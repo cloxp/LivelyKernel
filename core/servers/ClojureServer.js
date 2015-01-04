@@ -10,7 +10,6 @@ var fs    = require("fs");
 // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 /*
-require("./ClojureServer").clientConnectionState
 
 require("./ClojureServer").clientConnectionState["7888"].lsSessions(function(err, sessions) { console.log(JSON.stringify(sessions)); })
 
@@ -144,6 +143,7 @@ util._extend(services, {
         var isFileLoad = !!msg.data["file-content"];
         var code = msg.data.code;
         var session = msg.data.session;
+        var ns = msg.data.ns;
         var ignoreMissingSession = msg.data.ignoreMissingSession;
         var sendResult, nreplCon;
         debug && console.log(isFileLoad ? "Clojure load file" + msg.data['file-name'] : "Clojure eval: " + code);
@@ -185,7 +185,7 @@ util._extend(services, {
                     msg.data["file-path"], // relative
                     session, function(err, result) {/*currently ignored*/});
                 } else {
-                  evalMsg = nreplCon.eval(code, session, function(err, result) {/*currently ignored*/});
+                  evalMsg = nreplCon.eval(code, ns, session, function(err, result) {/*currently ignored*/});
                 }
 
                 var id = evalMsg.id,
@@ -198,7 +198,8 @@ util._extend(services, {
 
                 function cleanup() {
                     nreplCon.messageStream.removeListener(messageSequenceListenerName, onMessageSequence);
-                    nreplCon.messageStream.removeListener("onError", onError);
+                    delete nreplCon.messageStream._events[messageSequenceListenerName];
+                    nreplCon.messageStream.removeListener("error", onError);
                 }
 
                 function onMessageSequence(messages) {
