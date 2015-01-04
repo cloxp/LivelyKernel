@@ -313,6 +313,7 @@ Object.extend(clojure.Runtime, {
   }
 });
 
+<<<<<<< HEAD
 Object.extend(clojure.Runtime.ReplServer, {
 
     livelyLeinProfile: "{:plugins [[lein-pprint \"1.1.1\"]]\n"
@@ -461,6 +462,8 @@ Object.extend(clojure.Runtime.ReplServer, {
 
 });
 
+=======
+>>>>>>> clojure static analyzer
 clojure.StaticAnalyzer = {
   
   ensureAst: function(astOrSource) {
@@ -480,10 +483,16 @@ clojure.StaticAnalyzer = {
   },
 
   findNsForm: function(astOrSource) {
+<<<<<<< HEAD
     // clojure.StaticAnalyzer.findNsForm(that.textString)
     var ast = this.ensureAst(astOrSource);
     var nsForm = this.findFuncCallNode(ast, 'ns');
     var nsNameNode = nsForm && nsForm.children && nsForm.children.slice(1).detect(function(n) {
+=======
+    var ast = this.ensureAst(astOrSource);
+    var nsForm = this.findFuncCallNode(ast, 'ns');
+    var nsNameNode = nsForm.children.slice(1).detect(function(n) {
+>>>>>>> clojure static analyzer
       return n.type === 'symbol'; })
     return nsForm ? {
       nsName: nsNameNode ? nsNameNode.source : null,
@@ -496,6 +505,7 @@ clojure.StaticAnalyzer = {
       this.ensureAst(astOrSource), idx).last();
   },
 
+<<<<<<< HEAD
   nodeAtCursor: function(aceEd) {
     // convenience for ace
     var idx = aceEd.session.doc.positionToIndex(aceEd.getCursorPosition())
@@ -561,6 +571,16 @@ clojure.StaticAnalyzer = {
 
     return null
   }
+=======
+  createDefinitionQuery: function(astOrSource, idx) {
+    var ast = this.ensureAst(astOrSource);
+    var thing = this.nodeAtPoint(ast, idx);
+    if (!thing || !thing.source) return null;
+    var ns = this.findNsForm(ast);
+    return {nsName: ns && ns.name, ns: ns, node: thing, source: thing.source};
+  }
+
+>>>>>>> clojure static analyzer
 }
 
 }) // end of module
