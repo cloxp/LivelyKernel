@@ -239,7 +239,6 @@ Object.extend(clojure.Runtime, {
           errors = messages.pluck("error").compact()
               .concat(messages.pluck("err").compact())
               .concat(messages.pluck("ex").compact()),
-
           isError = !!errors.length || status.include("error"),
           result = messages.pluck('value').concat(messages.pluck('out')).compact().join('\n'),
           err;
@@ -315,68 +314,38 @@ Object.extend(clojure.Runtime, {
 
 Object.extend(clojure.Runtime.ReplServer, {
 
-    livelyLeinProfile: "{:plugins [[lein-pprint \"1.1.1\"]]\n"
-                     + " :dependencies [[rksm/repl.utils \"0.1.1\"]\n"
-                     + "                ;; for vinyasa lein\n"
-                     + "                [leiningen #=(leiningen.core.main/leiningen-version)]\n"
-                     + "                ;; trace execution\n"
-                     + "                [org.clojure/tools.trace \"0.7.8\"]\n"
-                     + "                ;; install dependencies / packages without restart\n"
-                     + "                [com.cemerick/pomegranate \"0.3.0\"]\n"
-                     + "                ;; cljs repl ++\n"
-                     + "                [com.cemerick/piggieback \"0.1.4-SNAPSHOT\"]\n"
-                     + "                ;; \"quick and dirty debugging\n"
-                     + "                [spyscope \"0.1.4\"]\n"
-                     + "                ;; reload namespaces, recursively tracking dependencies\n"
-                     + "                [org.clojure/tools.namespace \"0.2.4\"]\n"
-                     + "                ;; java reflection\n"
-                     + "                [im.chit/iroh \"0.1.11\"]\n"
-                     + "                ;; pretty stacktraces\n"
-                     + "                [io.aviso/pretty \"0.1.8\"]\n"
-                     + "                ;; inject stuff in namespace + other goodies\n"
-                     + "                ;; see http://z.caudate.me/give-your-clojure-workflow-more-flow/\n"
-                     + "                [im.chit/vinyasa \"0.2.2\"]\n"
-                     + "                ;; for inspection\n"
-                     + "                [org.clojure/data.json \"0.2.5\"]]\n"
-                     + " :injections [(require 'spyscope.core)\n"
-                     + "              (require 'vinyasa.inject)\n"
-                     + "              (require 'iroh.core)\n"
-                     + "              (vinyasa.inject/in\n"
-                     + "              clojure.core\n"
-                     + "              [rksm.repl.utils lein search-for-symbol get-stack print-stack dumb-stack traced-fn]\n"
-                     + "              [vinyasa.pull [pull pull]]\n"
-                     + "              [clojure.java.shell sh]\n"
-                     + "              [clojure.repl apropos dir doc find-doc source [root-cause cause]]\n"
-                     + "              [clojure.tools.namespace.repl [refresh refresh]]\n"
-                     + "              [clojure.pprint [pprint >pprint]]\n"
-                     + "              [iroh.core .% .%> .*]\n"
-                     + "              [clojure.tools.trace dotrace trace-ns untrace-ns])]}\n",
-
     ensure: function(options, thenDo) {
         if (!thenDo) { thenDo = options; options = {}; }
-        var cmd = this.getCurrentServerCommand();
+        var cmd = clojure.Runtime.ReplServer.getCurrentServerCommand();
         if (cmd) {
             Functions.waitFor(5000, function() {
-                return cmd.getStdout().include("nREPL server started");
+                return cmd.getStdout().match(/nREPL server started|nrepl server running on/i);
             }, function(err) { thenDo(err, cmd); });
         } else this.start(options, thenDo);
     },
 
-    getCurrentServerCommand: function() {
+    getCurrentServerCommand: function(port) {
         var cmdQueueName = "lively.clojure.replServer";
+        if (port) cmdQueueName+":"+port;
+        else cmdQueueName = Object.keys(lively.shell.commandQueue)
+          .grep(new RegExp(cmdQueueName))
+          .detect(function(ea) {
+            return !!lively.shell.commandQueue[ea].length; })
+        || cmdQueueName;
         var q = lively.shell.commandQueue[cmdQueueName];
         var cmd = q && q[0];
-        return cmd && String(cmd.getCommand()).include("+lively repl") ?
+        return cmd && String(cmd.getCommand()).include("clj-feather-repl") ?
             cmd : null;
     },
 
     start: function(options, thenDo) {
         if (!thenDo) { thenDo = options; options = {}; }
+
         var port = options.env ? options.env.port : "7888",
             host = options.env ? options.env.host : "127.0.0.1",
             cwd = options.cwd,
-            self = this,
-            cmdQueueName = "lively.clojure.replServer";
+            self = clojure.Runtime.ReplServer,
+            cmdQueueName = "lively.clojure.replServer:"+port;
 
         // FIXME
         if (!["127.0.0.1", "0.0.0.0", "localhost"].include(host)) {
@@ -386,38 +355,57 @@ Object.extend(clojure.Runtime.ReplServer, {
 
         Functions.composeAsync(
             function(next) { lively.require("lively.ide.CommandLineInterface").toRun(function() { next(); }); },
-            this.stop.bind(this, port),
-            this.ensureLivelyProfile.bind(this),
+            this.stop.bind(this, null, {port:port, host:host}),
             function startServer(next) {
-                var cmdString = Strings.format(
-                    "lein with-profile +lively repl :headless :port %s", port);
+                var cmdString = Strings.format("clj-feather-repl %s", port);
                 var cmd = lively.shell.run(cmdString, {cwd: cwd, group: cmdQueueName});
                 next(null,cmd);
             },
             function waitForServerStart(cmd, next) {
                 Functions.waitFor(5000, function() {
-                    return cmd.getStdout().include("nREPL server started");
+                  return cmd.getStdout().match(/nREPL server started|nrepl server running on/);
                 }, function(err) { next(null, cmd); });
             }
         )(thenDo);
     },
 
-    stop: function(env, thenDo) {
+    stop: function(cmd, env, thenDo) {
+      if (cmd) {
+        cmd.kill("SIGINT");
+        cmd.kill("SIGTERM");
+        lively.lang.fun.waitFor(1000,
+          function() { return !cmd.isRunning(); },
+          function(timeout) {
+            if (timeout) {
+              show("Forcing repl server shutdown.")
+              var cmdString = cmd.getCommand().grep(new RegExp("clj-feather-repl"))[0];
+              var port = cmdString && Number(cmdString.match(/[0-9]+$/))
+              forceStop("lively.clojure.replServer:"+port, port, thenDo);
+            } else thenDo();
+          });
+      } else {
         env = env || {};
         // FIXME
         if (env.host && !["127.0.0.1", "0.0.0.0", "localhost"].include(env.host)) {
             thenDo(new Error("Cannot stop clj server " + env.host + ":" + port));
             return;
         }
-
+  
         var port = env ? env.port : "7888";
-        var cmdQueueName = "lively.clojure.replServer";
+        var cmdQueueName = "lively.clojure.replServer:"+port;
+        forceStop(cmdQueueName, port, thenDo);
+      }
+
+      // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+      function forceStop(cmdQueueName, port, thenDo) {
         Functions.composeAsync(
             function clearLivelyClojureCommands(next) {
                 var q = lively.shell.commandQueue[cmdQueueName];
                 if (!q || !q[0]) return next();
                 delete lively.shell.commandQueue[cmdQueueName];
-                q[0].kill("SIGKILL", function(err, answer) { next(); });
+                q[0].kill("SIGKILL");
+                setTimeout(next, 400);
             },
             function stopRunningServer(next) {
                 var cmdString = Strings.format(
@@ -425,38 +413,8 @@ Object.extend(clojure.Runtime.ReplServer, {
                 lively.shell.run(cmdString, {group: cmdQueueName}, function(err, cmd) { next(); });
             }
         )(thenDo);
-    },
 
-    reset: function(thenDo) {
-        Global.URL.nodejsBase.withFilename("ClojureServer/reset").asWebResource().beAsync()
-            .post().whenDone(function(response, status) { thenDo(null,  show(status + '\n' + response)); });
-    },
-
-    ensureLivelyProfile: function(thenDo) {
-        var profilesDir, livelyClojureProfileFile;
-        var  livelyLeinProfile = this.livelyLeinProfile;
-        Functions.composeAsync(
-            function(next) {
-                lively.shell.run("echo $HOME", {}, function(err, cmd) {
-                    if (cmd.getCode()) next(cmd.resultString(true));
-                    else {
-                        var home = cmd.getStdout().trim()
-                        profilesDir = home + "/.lein/profiles.d";
-                        livelyClojureProfileFile = profilesDir + "/lively.clj";
-                        next();
-                    }
-                });
-            },
-            function(next) {
-                lively.shell.run("mkdir -p " + profilesDir, {}, function(err, cmd) { next(); });
-            },
-            function(next) {
-                lively.ide.CommandLineInterface.writeFile(
-                    livelyClojureProfileFile,
-                    {content: livelyLeinProfile},
-                    function() { next(); })
-            }
-        )(thenDo);
+      }
     }
 
 });
@@ -535,6 +493,8 @@ clojure.StaticAnalyzer = {
     var ast = this.ensureAst(astOrSource);
     var parent = paredit.walk.containingSexpsAt(ast, idx, paredit.walk.hasChildren).last();
     if (!parent.type === "list" || !parent.children.length) return null;
+
+    if (!parent.children[0].source) return null;
 
     var wrapExpr = "(do (require '[rksm.system-navigator.completions]) %s)";
     var complFunc = "rksm.system-navigator.completions/instance-elements->json"
