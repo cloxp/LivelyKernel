@@ -1,1 +1,1 @@
-/Users/robert/Lively/paredit-js/paredit-bundle.js
+../../../node_modules/paredit.js/paredit-bundle.js

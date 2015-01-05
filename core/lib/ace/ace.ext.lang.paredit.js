@@ -1,1 +1,1 @@
-/Users/robert/Lively/paredit-js/examples/ace.ext.lang.paredit.js
+../../../node_modules/paredit.js/examples/ace.ext.lang.paredit.js
