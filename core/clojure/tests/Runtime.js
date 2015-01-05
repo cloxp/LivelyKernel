@@ -63,17 +63,17 @@ describe("Element completion", function() {
 
   it("constructs a form to send to the completer for simple . expr", function() {
     expect(clojure.StaticAnalyzer.buildElementCompletionForm("(. foo)", 2))
-    .to.equal("(instance-elements->json foo)");
+    .to.equal("(do (require \'[rksm.system-navigator.completions]) (rksm.system-navigator.completions/instance-elements->json foo))");
   });
 
   it("constructs a form to send to the completer for more complex . expr", function() {
     expect(clojure.StaticAnalyzer.buildElementCompletionForm("(. (foo 34 \\x))", 2))
-    .to.equal("(instance-elements->json (foo 34 \\x))");
+    .to.equal("(do (require \'[rksm.system-navigator.completions]) (rksm.system-navigator.completions/instance-elements->json (foo 34 \\x)))");
   });
 
   it("constructs a form to send to the completer for threaded expr", function() {
     expect(clojure.StaticAnalyzer.buildElementCompletionForm("(->>\nbla barf\n.)", 2))
-    .to.equal("(->>\nbla barf\ninstance-elements->json)");
+    .to.equal("(do (require \'[rksm.system-navigator.completions]) (->>\nbla barf\nrksm.system-navigator.completions/instance-elements->json))");
   });
 
 })
