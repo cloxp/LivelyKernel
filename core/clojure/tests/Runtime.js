@@ -35,4 +35,47 @@ describe("Clojure runtime environments", function() {
 
 });
 
+
+describe("Clojure static analyzer", function() {
+
+  describe("ns", function() {
+
+    it("finds and analyzes ns form", function() {
+      expect(clojure.StaticAnalyzer.findNsForm("(ns foo)\n(+ x y)"))
+      .to.containSubset({nsName: "foo"});
+    });
+
+   it("finds ns form with annotation", function() {
+      expect(clojure.StaticAnalyzer.findNsForm("(ns ^{:author \"foo\"} foo)\n(+ x y)"))
+      .to.containSubset({nsName: "foo"});
+    });
+
+  });
+
+  it("generates a find definition request for thing at point", function() {
+    expect(clojure.StaticAnalyzer.createDefinitionQuery("(ns foo)\n(map x y)", 10/*|map*/))
+          .to.containSubset({ns: {nsName: "foo"}, source: 'map'});
+  });
+
+})
+
+describe("Element completion", function() {
+
+  it("constructs a form to send to the completer for simple . expr", function() {
+    expect(clojure.StaticAnalyzer.buildElementCompletionForm("(. foo)", 2))
+    .to.equal("(instance-elements->json foo)");
+  });
+
+  it("constructs a form to send to the completer for more complex . expr", function() {
+    expect(clojure.StaticAnalyzer.buildElementCompletionForm("(. (foo 34 \\x))", 2))
+    .to.equal("(instance-elements->json (foo 34 \\x))");
+  });
+
+  it("constructs a form to send to the completer for threaded expr", function() {
+    expect(clojure.StaticAnalyzer.buildElementCompletionForm("(->>\nbla barf\n.)", 2))
+    .to.equal("(->>\nbla barf\ninstance-elements->json)");
+  });
+
+})
+
 }) // end of module
