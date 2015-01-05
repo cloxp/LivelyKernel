@@ -143,7 +143,7 @@ util._extend(services, {
         var isFileLoad = !!msg.data["file-content"];
         var code = msg.data.code;
         var session = msg.data.session;
-        var ns = msg.data.ns;
+        var ns = msg.data.ns || 'user';
         var ignoreMissingSession = msg.data.ignoreMissingSession;
         var sendResult, nreplCon;
         debug && console.log(isFileLoad ? "Clojure load file" + msg.data['file-name'] : "Clojure eval: " + code);
