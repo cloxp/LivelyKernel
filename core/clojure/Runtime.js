@@ -46,9 +46,7 @@ Object.extend(clojure.Runtime, {
     },
 
     printEnv: function(env) {
-        return Strings.format("%s:%s%s",
-            env.host, env.port,
-            env.session ? "(session: " + env.session + ")" : "");
+        return Strings.format("%s:%s%s", env.host, env.port);
     },
 
     ensureClojureStateInEditor: function(editorMorph) {
@@ -89,8 +87,8 @@ Object.extend(clojure.Runtime, {
 
     fetchDoc: function(runtimeEnv, ns, expr, thenDo) {
       if (!expr.trim().length) thenDo(new Error("doc: no input"))
-      else this.doEval("(do (require '[clojure.repl]) (clojure.repl/doc " + expr + "))",
-        {ns:ns, env: runtimeEnv, prettyPrint: true, passError: true}, thenDo);
+      else this.doEval("(clojure.repl/doc " + expr + ")",
+        {ns:ns, requiredNamespaces: ['clojure.repl'], env: runtimeEnv, prettyPrint: true, passError: true}, thenDo);
     },
 
     evalQueue: [],
@@ -114,23 +112,35 @@ Object.extend(clojure.Runtime, {
             return;
         }
 
-        var clj        = clojure.Runtime,
-            env        = evalObject.env,
-            options    = evalObject.options,
-            expr       = evalObject.expr,
-            ns         = evalObject.ns,
-            pp         = options.prettyPrint = options.hasOwnProperty("prettyPrint") ? options.prettyPrint : false,
-            ppLevel    = options.hasOwnProperty("prettyPrintLevel") ? options.prettyPrintLevel : null,
-            isJSON     = options.resultIsJSON = options.hasOwnProperty("resultIsJSON") ? options.resultIsJSON : false,
-            isFileLoad = !expr && evalObject["file-content"],
-            catchError = options.hasOwnProperty("catchError") ? options.catchError : true,
-            sess       = lively.net.SessionTracker.getSession(),
-            cljSession = env.session;
+        var clj                = clojure.Runtime,
+            env                = evalObject.env,
+            options            = evalObject.options,
+            expr               = evalObject.expr,
+            ns                 = evalObject.ns,
+            requiredNamespaces = evalObject.requiredNamespaces || [],
+            pp                 = options.prettyPrint = options.hasOwnProperty("prettyPrint") ? options.prettyPrint : false,
+            ppLevel            = options.hasOwnProperty("prettyPrintLevel") ? options.prettyPrintLevel : null,
+            isJSON             = options.resultIsJSON = options.hasOwnProperty("resultIsJSON") ? options.resultIsJSON : false,
+            isFileLoad         = !expr && evalObject["file-content"],
+            catchError         = options.hasOwnProperty("catchError") ? options.catchError : true,
+            sess               = lively.net.SessionTracker.getSession(),
+            cljSession         = env.session;
 
+        var reqNs = requiredNamespaces;
+        
         if (expr) {
-          if (pp) expr = Strings.format("(do (require 'clojure.pprint) (with-out-str (clojure.pprint/write (do %s) %s)))", expr, ppLevel ? ":level " + ppLevel : "");
-          if (catchError) expr = Strings.format("(do (require 'clojure.repl) (try %s (catch Exception e (clojure.repl/pst e))))", expr);
+          if (pp) {
+            reqNs.pushIfNotIncluded('clojure.pprint');
+            expr = Strings.format("(with-out-str (clojure.pprint/write (do %s) %s))", expr, ppLevel ? ":level " + ppLevel : "");
+          }
+          if (catchError) {
+            reqNs.pushIfNotIncluded('clojure.repl');
+            expr = Strings.format("(try %s (catch Exception e (clojure.repl/pst e)))", expr);
+          }
+          expr = "(do " + requiredNamespaces.map(function(ea) {
+            return "(require '" + ea + ")"; }).join(" ") + expr + ")";
         }
+
 
         evalObject.isRunning = true;
         var nreplOptions = {port: env.port || 7888, host: env.host || "127.0.0.1"};
@@ -175,6 +185,7 @@ Object.extend(clojure.Runtime, {
           options: options || {},
           isRunning: false,
           "eval-id": null,
+          requiredNamespaces: options.requiredNamespaces || [],
           callback: thenDo
         }
         this.evalQueue.push(evalState);
@@ -276,11 +287,10 @@ Object.extend(clojure.Runtime, {
 
   lookupIntern: function(nsName, symbol, options, thenDo) {
     var code = Strings.format(
-          "(do (require 'rksm.system-navigator.ns-internals)\n"
-        + "    (rksm.system-navigator.ns-internals/symbol-info->json\n"
-        + "     %s '%s))\n",
+          "(rksm.system-navigator.ns-internals/symbol-info->json\n %s '%s)\n",
         nsName ? "(find-ns '"+nsName+")" : "*ns*", symbol);
-    this.doEval(code, lively.lang.obj.merge(options||{},{resultIsJSON: true}), thenDo);
+    this.doEval(code, lively.lang.obj.merge(
+      options||{}, {requiredNamespaces: ["rksm.system-navigator"], resultIsJSON: true}), thenDo);
   },
 
   retrieveDefinition: function(symbol, inns, options, thenDo) {
@@ -289,13 +299,11 @@ Object.extend(clojure.Runtime, {
       function(intern, n) {
         if (!intern) return n(new Error("Cannot retrieve meta data for " + symbol));
         var cmd = lively.lang.string.format(
-          "(do\n"
-          + "  (require 'clojure.data.json)\n"
-          + "  (require 'rksm.system-navigator)\n"
-          + "  (-> '%s rksm.system-navigator/source-for-ns clojure.data.json/write-str))",
+          "(-> '%s rksm.system-navigator.namespaces/source-for-ns clojure.data.json/write-str)",
           intern.ns);
-        clojure.Runtime.doEval(cmd, {resultIsJSON:true}, function(err,nsSrc) {
-          n(err,intern, nsSrc); });
+        clojure.Runtime.doEval(cmd,
+          {requiredNamespaces: ["rksm.system-navigator.namespaces", "clojure.data.json"], resultIsJSON:true},
+          function(err,nsSrc) { n(err,intern, nsSrc); });
       },
       function(intern, nsSrc, n) {
         // lively.lang.string.lines(source).length
@@ -496,27 +504,24 @@ clojure.StaticAnalyzer = {
 
     if (!parent.children[0].source) return null;
 
-    var wrapExpr = "(do (require '[rksm.system-navigator.completions]) %s)";
     var complFunc = "rksm.system-navigator.completions/instance-elements->json"
 
     // simple dot completion
     if (parent.children[0].source === ".") {
       var expr = paredit.walk.source(src, parent);
       var offs = -parent.start;
-      return lively.lang.string.format(wrapExpr,
-            expr.slice(0,parent.children[0].start+offs)
-          + complFunc
-          + expr.slice(parent.children[0].end+offs));
+      return expr.slice(0,parent.children[0].start+offs)
+            + complFunc
+            + expr.slice(parent.children[0].end+offs);
     }
 
     if (parent.children[0].source.include("->")
      && parent.children.last().source === ".") {
       var expr = paredit.walk.source(src, parent);
       var offs = -parent.start;
-      return lively.lang.string.format(wrapExpr,
-            expr.slice(0,parent.children.last().start+offs)
-          + complFunc
-          + expr.slice(parent.children.last().end+offs));
+      return expr.slice(0,parent.children.last().start+offs)
+           + complFunc
+           + expr.slice(parent.children.last().end+offs);
     }
 
     return null

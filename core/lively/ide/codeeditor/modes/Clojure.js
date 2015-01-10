@@ -375,7 +375,7 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
 
       if (memberComplForm) {
         lively.lang.fun.composeAsync(
-          callClojure.curry(memberComplForm),
+          callClojure.curry(memberComplForm, {requiredNamespaces: ["rksm.system-navigator.completions"]}),
           processMemberCompletions,
           createCandidates,
           openNarrower
@@ -407,10 +407,9 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
       }
 
       function fetchGenericCompletions(term, thenDo) {
-        var src = '(do (require \'rksm.system-navigator.completions)'
-                + '    (rksm.system-navigator.completions/get-completions->json "%s"))';
+        var src = '(rksm.system-navigator.completions/get-completions->json "%s")';
         var sourceString = lively.lang.string.format(src, term);
-        callClojure(sourceString, function(err, result) {
+        callClojure(sourceString, {requiredNamespaces: ["rksm.system-navigator.completions"]}, function(err, result) {
           if (!result || !lively.lang.obj.isObject(result))
             err = "No completion for \'" + term + "'";
           thenDo(err, result);
@@ -473,10 +472,12 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
         thenDo && thenDo(null, n);
       }
 
-      function callClojure(code, thenDo) {
+      function callClojure(code, options, thenDo) {
         var env = clojure.Runtime.currentEnv(codeEditor),
             ns = clojure.Runtime.detectNs(codeEditor),
-            options = {ns:ns, env: env, catchError: false, passError: true, resultIsJSON: true};
+            options = lively.lang.obj.merge({
+              ns:ns, env: env, catchError: false,
+              passError: true, resultIsJSON: true}, options || {});
         clojure.Runtime.doEval(code, options, thenDo);
       }
     },
