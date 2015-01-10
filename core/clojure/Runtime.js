@@ -13,7 +13,7 @@ Object.extend(clojure.Runtime, {
         port: 7888,
         host: "0.0.0.0",
         session: null,
-        doAutoLoadSavedFiles: false
+        doAutoLoadSavedFiles: true
     },
 
     reset: function() {
@@ -128,8 +128,8 @@ Object.extend(clojure.Runtime, {
             cljSession = env.session;
 
         if (expr) {
-          if (pp) expr = Strings.format("(with-out-str (clojure.pprint/write (do %s) %s))", expr, ppLevel ? ":level " + ppLevel : "");
-          if (catchError) expr = Strings.format("(try %s (catch Exception e (clojure.repl/pst e)))", expr);
+          if (pp) expr = Strings.format("(do (require 'clojure.pprint) (with-out-str (clojure.pprint/write (do %s) %s)))", expr, ppLevel ? ":level " + ppLevel : "");
+          if (catchError) expr = Strings.format("(do (require 'clojure.repl) (try %s (catch Exception e (clojure.repl/pst e))))", expr);
         }
 
         evalObject.isRunning = true;
