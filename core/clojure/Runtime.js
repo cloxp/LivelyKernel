@@ -221,6 +221,7 @@ Object.extend(clojure.Runtime, {
     },
 
     loadFile: function(content, pathToFile, options, thenDo) {
+        if (!pathToFile) return thenDo && thenDo(new Error("Cannot load clojure file without a path!"));
         options = options || {};
         options.passError = true;
         var env = options.env || clojure.Runtime.currentEnv();
@@ -334,6 +335,39 @@ Object.extend(clojure.Runtime, {
 
 Object.extend(clojure.Runtime.ReplServer, {
 
+    cloxpLeinProfile:  "; do not modify, this file is auto-generated\n{\n"
+                     + " :dependencies [[org.rksm/system-navigator \"0.1.6\"]]\n"
+                     + " :injections [(require 'rksm.system-navigator)]}\n",
+
+    ensureCloxpLeinProfile: function(thenDo) {
+        var profilesDir, profileFile;
+        var  profileCode = this.cloxpLeinProfile;
+        lively.lang.fun.composeAsync(
+            function(next) {
+                lively.shell.run("echo $HOME", {}, function(err, cmd) {
+                    if (cmd.getCode()) next(cmd.resultString(true));
+                    else {
+                        var home = cmd.getStdout().trim()
+                        profilesDir = home + "/.lein/profiles.d";
+                        profileFile = profilesDir + "/cloxp.clj";
+                        next();
+                    }
+                });
+            },
+            function(next) {
+                lively.shell.run("mkdir -p " + profilesDir, {}, function(err, cmd) { next(); });
+            },
+            function(next) {
+                lively.ide.CommandLineInterface.writeFile(
+                    profileFile, {content: profileCode}, function() { next(); })
+            }
+        )(function(err) {
+          if (err)
+            $world.setStatusMessage("Could not create cloxp leiningen profile\ncloxp functionality will be limited");
+          thenDo && thenDo(null)
+        });
+    },
+
     ensure: function(options, thenDo) {
         if (!thenDo) { thenDo = options; options = {}; }
         var cmd = clojure.Runtime.ReplServer.getCurrentServerCommand();
@@ -354,7 +388,7 @@ Object.extend(clojure.Runtime.ReplServer, {
         || cmdQueueName;
         var q = lively.shell.commandQueue[cmdQueueName];
         var cmd = q && q[0];
-        return cmd && String(cmd.getCommand()).include("clj-feather-repl") ?
+        return cmd && String(cmd.getCommand()).match(/clj-feather-repl|lein with-profile \+cloxp/i) ?
             cmd : null;
     },
 
@@ -364,6 +398,8 @@ Object.extend(clojure.Runtime.ReplServer, {
         var port = options.env ? options.env.port : "7888",
             host = options.env ? options.env.host : "127.0.0.1",
             cwd = options.cwd,
+            useLein = options.useLein,
+            useCljFeather = options.useCljFeather || !useLein,
             self = clojure.Runtime.ReplServer,
             cmdQueueName = "lively.clojure.replServer:"+port;
 
@@ -373,17 +409,19 @@ Object.extend(clojure.Runtime.ReplServer, {
             return;
         }
 
-        Functions.composeAsync(
+        lively.lang.fun.composeAsync(
             function(next) { lively.require("lively.ide.CommandLineInterface").toRun(function() { next(); }); },
             this.stop.bind(this, null, {port:port, host:host}),
+            this.ensureCloxpLeinProfile.bind(this),
             function startServer(next) {
-                var cmdString = Strings.format("clj-feather-repl %s", port);
+                var cmdString = Strings.format(
+                  useLein ? "lein with-profile +cloxp repl :headless :port %s" : "clj-feather-repl %s", port);
                 var cmd = lively.shell.run(cmdString, {cwd: cwd, group: cmdQueueName});
                 next(null,cmd);
             },
             function waitForServerStart(cmd, next) {
                 Functions.waitFor(5000, function() {
-                  return cmd.getStdout().match(/nREPL server started|nrepl server running on/);
+                  return cmd.getStdout().match(/nREPL server started|nrepl server running on/i);
                 }, function(err) { next(null, cmd); });
             }
         )(thenDo);
@@ -391,6 +429,8 @@ Object.extend(clojure.Runtime.ReplServer, {
 
     stop: function(cmd, env, thenDo) {
       if (cmd) {
+        cmd.kill("SIGINT");
+        cmd.kill("SIGINT");
         cmd.kill("SIGINT");
         cmd.kill("SIGTERM");
         lively.lang.fun.waitFor(1000,
