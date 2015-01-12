@@ -139,11 +139,11 @@ lively.ide.codeeditor.modes.Clojure.Commands = {
       if (!fn) {
         // return;
         var win = ed.$morph.getWindow();
-        if (win) fn = win.getTitle().replace(/\s/g, "_")
+        if (win) fn = win.getTitle().replace(/\s/g, "_");
         else fn = "clojure-workspace";
         fn += "-" + lively.lang.date.format(new Date, "yy-mm-dd_HH-MM-ss");
       }
-  
+
       doLoad(ed.$morph.getTargetFilePath(), ed.$morph.textString);
 
       function doLoad(filePath, content) {
