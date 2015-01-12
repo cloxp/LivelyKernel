@@ -317,7 +317,19 @@ Object.extend(clojure.Runtime, {
         n(null, {intern: intern, nsSource: nsSrc, defRange: rangeDef});
       }
     )(thenDo);
-  }
+  },
+  
+  lsSessions: function(options, thenDo) {
+    // clojure.Runtime.lsSessions();
+    var sess = lively.net.SessionTracker.getSession();
+    var env = options.env || {};
+    var nreplOptions = {port: env.port || 7888, host: env.host || "127.0.0.1"};
+    if (!sess || !sess.isConnected()) return thenDo && thenDo(new Error("lively2lively not connected"));
+    sess.send('clojureLsSessions', {nreplOptions: nreplOptions}, function(answer) {
+      var err = answer.data && answer.data.error;
+      thenDo && thenDo(err, answer.data);
+    });
+  },
 });
 
 Object.extend(clojure.Runtime.ReplServer, {
