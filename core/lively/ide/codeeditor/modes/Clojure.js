@@ -135,25 +135,23 @@ lively.ide.codeeditor.modes.Clojure.Commands = {
     exec: function(ed) {
       var runtime = clojure.Runtime;
       var env = runtime.currentEnv(ed.$morph);
-      if (!ed.$morph.getTargetFilePath) {
-      $world.prompt("File name to load clj file under?", function(input) {
-        if (!input) return;
-        doLoad(input, ed.$morph.textString);
-      }, {
-        input: runtime.printEnv(env),
-        historyId: 'lively.ide.codeeditor.modes.Clojure.loadFileName'});
-      } else {
-      doLoad(ed.$morph.getTargetFilePath(), ed.$morph.textString);
+      var fn = ed.$morph.getTargetFilePath && ed.$morph.getTargetFilePath();
+      if (!fn) {
+        // return;
+        var win = ed.$morph.getWindow();
+        if (win) fn = win.getTitle().replace(/\s/g, "_")
+        else fn = "clojure-workspace";
+        fn += "-" + lively.lang.date.format(new Date, "yy-mm-dd_HH-MM-ss");
       }
   
+      doLoad(ed.$morph.getTargetFilePath(), ed.$morph.textString);
+
       function doLoad(filePath, content) {
         clojure.Runtime.loadFile(content, filePath, {env: env}, function(err, answer) {
           var msg = err ?
-          "Error loading file " + filePath + ":\n" + err :
-          filePath + " loaded";
+          "Error loading file " + filePath + ":\n" + err : filePath + " loaded";
           setTimeout(function() {
-          ed.$morph.setStatusMessage(msg, err ? Color.red : Color.green, err ? 8 : 3)
-          err && show(answer);
+            ed.$morph.setStatusMessage(msg, err ? Color.red : Color.green, err ? 8 : 3)
           }, 1000);
         });
       }
@@ -501,7 +499,7 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
     "Command-e":                                    "clojureChangeEnv",
     "Alt-.":                                        "clojureFindDefinition",
     "Ctrl-x Ctrl-e":                                "clojureEvalLastSexp",
-    "Ctrl-x Ctrl-a":                                "clojureEvalBuffer",
+    "Ctrl-x Ctrl-a":                                "clojureLoadFile",
     "Ctrl-x Ctrl-n":                                "clojureEvalNsForm",
     "Ctrl-x Ctrl-p":                                "clojureEvalPrintLastSexp",
     "Ctrl-x Ctrl-w":                                "clojureEvalLastSexpAndReplace",
