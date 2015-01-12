@@ -310,23 +310,21 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
     },
 
     morphMenuItems: function(items, editor) {
-    return [
-      ['evaluate selection or line (Cmd-d)', function() { editor.aceEditor.execCommand("clojureEvalSelectionOrLine"); }],
-      ['help for thing at point (Command-?)', function() { editor.aceEditor.execCommand("clojurePrintDoc"); }],
-      ['find definition for thing at point (Alt-.)', function() { editor.aceEditor.execCommand("clojureFindDefinition"); }],
-      ['interrupt eval (Ctrl-x Ctrl-b)', function() { editor.aceEditor.execCommand("clojureEvalInterrupt"); }],
-      ['indent selection (Tab)', function() { editor.aceEditor.execCommand("paredit-indent"); }],
-      ['change Clojure runtime environment (Command-e)', function() { editor.aceEditor.execCommand("clojureChangeEnv"); }],
-    ];
-        var mode = this;
-        items.push(['Clojure',[
-            ['change Clojure runtime environment (Command-e)', function() { editor.aceEditor.execCommand("clojureChangeEnv"); }],
-            ['interrupt eval (Escape)', function() { editor.aceEditor.execCommand("clojureEvalInterrupt"); }],
-            ['pretty print code (Tab)', function() { editor.aceEditor.execCommand("clojurePrettyPrint"); }],
-            ['print doc for selected expression (Command-?)', function() { editor.aceEditor.execCommand("clojurePrintDoc"); }]
-        ]]);
-
-        return items;
+      var platform = editor.aceEditor.getKeyboardHandler().platform;
+      var isMac = platform == 'mac';
+      return [
+        ['evaluate selection or line (Cmd-d)',         function() { editor.aceEditor.execCommand("clojureEvalSelectionOrLine"); }],
+        ['help for thing at point (Alt-?)',            function() { editor.aceEditor.execCommand("clojurePrintDoc"); }],
+        ['find definition for thing at point (Alt-.)', function() { editor.aceEditor.execCommand("clojureFindDefinition"); }],
+        ['Completion for thing at point (Cmd-Shift-p)', function() { editor.aceEditor.execCommand("list protocol"); }],
+        ['interrupt eval (Esc)',                       function() { editor.aceEditor.execCommand("clojureEvalInterrupt"); }],
+        ['indent selection (Tab)',                     function() { editor.aceEditor.execCommand("paredit-indent"); }],
+        items.detect(function(ea) { return ea[0] === "settings"})
+      ].map(function(ea) {
+        if (isMac) return ea;
+        ea[0] = ea[0].replace(/Cmd-/g, "Ctrl-");
+        return ea;
+      });
     },
 
     evalAndPrint: function(codeEditor, insertResult, prettyPrint, prettyPrintLevel, thenDo) {
@@ -480,12 +478,6 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
               passError: true, resultIsJSON: true}, options || {});
         clojure.Runtime.doEval(code, options, thenDo);
       }
-    },
-
-    doSave: function(codeEditor) {
-      var ed = codeEditor.aceEditor;
-      ed.execCommand("clojureLoadFile");
-      codeEditor.doSave();
     }
 });
 
