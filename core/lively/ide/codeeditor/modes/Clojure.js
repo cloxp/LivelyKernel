@@ -9,6 +9,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       (function() {
         cljEds.forEach(function(editor) {
           editor.withAceDo(function(ed) {
+            ed.setValue(ed.getValue()); // trigger doc change + paredit reparse
             ed.commands.addCommands(lively.ide.codeeditor.modes.Clojure.Commands);
             var h = ed.session.getMode().getKeyhandler()
             h.update();
