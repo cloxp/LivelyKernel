@@ -288,7 +288,7 @@ Object.extend(clojure.Runtime, {
 
   lookupIntern: function(nsName, symbol, options, thenDo) {
     var code = Strings.format(
-          "(rksm.system-navigator.ns-internals/symbol-info->json\n %s '%s)\n",
+          "(rksm.system-navigator.ns.internals/symbol-info->json\n %s '%s)\n",
         nsName ? "(find-ns '"+nsName+")" : "*ns*", symbol);
     this.doEval(code, lively.lang.obj.merge(
       options||{}, {requiredNamespaces: ["rksm.system-navigator"], resultIsJSON: true}), thenDo);
@@ -300,10 +300,10 @@ Object.extend(clojure.Runtime, {
       function(intern, n) {
         if (!intern) return n(new Error("Cannot retrieve meta data for " + symbol));
         var cmd = lively.lang.string.format(
-          "(-> '%s rksm.system-navigator.namespaces/source-for-ns clojure.data.json/write-str)",
+          "(-> '%s rksm.system-navigator.ns.filemapping/source-for-ns clojure.data.json/write-str)",
           intern.ns);
         clojure.Runtime.doEval(cmd,
-          {requiredNamespaces: ["rksm.system-navigator.namespaces", "clojure.data.json"], resultIsJSON:true},
+          {requiredNamespaces: ["rksm.system-navigator.ns.filemapping", "clojure.data.json"], resultIsJSON:true},
           function(err,nsSrc) { n(err,intern, nsSrc); });
       },
       function(intern, nsSrc, n) {
@@ -338,8 +338,8 @@ Object.extend(clojure.Runtime.ReplServer, {
     cloxpLeinProfile:  "; do not modify, this file is auto-generated\n{\n"
                      + " :dependencies [[org.rksm/system-navigator \"0.1.7-SNAPSHOT\"]]\n"
                      + " :injections [(require 'rksm.system-navigator)"
-                     + "              (require 'rksm.system-navigator.namespaces)\n"
-                     + "              (rksm.system-navigator.namespaces/add-common-project-classpath)]}\n",
+                     + "              (require 'rksm.system-navigator.ns.filemapping)\n"
+                     + "              (rksm.system-navigator.ns.filemapping/add-common-project-classpath)]}\n",
 
     ensureCloxpLeinProfile: function(thenDo) {
         var profilesDir, profileFile;
