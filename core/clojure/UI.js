@@ -1,4 +1,4 @@
-module('clojure.UI').requires('lively.ide.codeeditor.ace').requiresLib({url: Config.codeBase + 'lib/ace/ace.ext.lang.paredit.js',loadTest: function() { return lively.lang.Path("ext.lang.paredit").get(ace); }}).toRun(function() {
+module('clojure.UI').requires('clojure.Runtime', 'lively.ide.codeeditor.ace').toRun(function() {
 
 Object.extend(clojure.UI, {
 

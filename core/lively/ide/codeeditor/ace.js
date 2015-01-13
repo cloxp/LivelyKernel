@@ -18,6 +18,9 @@ var libs = [{
 }, {
   url: Config.codeBase + 'lib/ace/ace.ext.keys.js',
   loadTest: function() { return ace.ext && !!ace.ext.keys; }
+}, {
+  url: Config.codeBase + 'lib/ace/ace.ext.lang.paredit.js',
+  loadTest: function() { return lively.lang.Path("ext.lang.paredit").get(window.ace); }
 }];
 
 lively.lang.arr.mapAsyncSeries(libs,
