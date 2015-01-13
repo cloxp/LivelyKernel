@@ -144,7 +144,7 @@ lively.ide.codeeditor.modes.Clojure.Commands = {
         fn += "-" + lively.lang.date.format(new Date, "yy-mm-dd_HH-MM-ss");
       }
 
-      doLoad(ed.$morph.getTargetFilePath(), ed.$morph.textString);
+      doLoad(fn, ed.$morph.textString);
 
       function doLoad(filePath, content) {
         clojure.Runtime.loadFile(content, filePath, {env: env}, function(err, answer) {
