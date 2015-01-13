@@ -11,11 +11,6 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           editor.withAceDo(function(ed) {
             ed.setValue(ed.getValue()); // trigger doc change + paredit reparse
             ed.commands.addCommands(lively.ide.codeeditor.modes.Clojure.Commands);
-            var h = ed.session.getMode().getKeyhandler()
-            h.update();
-            h.takeOverEmacsBindings(ed);
-            if (!ed.keyBinding.$handlers.include(h))
-              ed.keyBinding.addKeyboardHandler(h);
           });
         });
       }).delay(.5);
@@ -35,7 +30,7 @@ lively.ide.codeeditor.modes.Clojure.Commands = {
       clojure.Runtime.fetchDoc(env, ns, string, function(err, docString) {
         // ed.$morph.printObject(ed, err ? err : docString);
         if (err) return ed.$morph.setStatusMessage(String(err), Color.red);
-        
+
         docString = docString.replace(/"?nil"?/,"").replace(/[-]+\n/m,"").trim()
         if (!docString.trim().length) ed.$morph.setStatusMessage("no doc found");
         else clojure.UI.showText({
@@ -60,7 +55,7 @@ lively.ide.codeeditor.modes.Clojure.Commands = {
         ed.$morph.setStatusMessage("Cannot extract code entity.");
         return;
       }
-      
+
       if (query.source.match(/^:/)) { ed.$morph.setStatusMessage("It's a keyword, no definition for it."); return; }
       var opts = {
         env: clojure.Runtime.currentEnv(ed.$morph),
@@ -73,7 +68,7 @@ lively.ide.codeeditor.modes.Clojure.Commands = {
       clojure.Runtime.retrieveDefinition(query.source, query.nsName, opts, function(err, data) {
         if (err) return ed.$morph.setStatusMessage(
           "Error retrieving definition for " + query.source + "n" + err);
-        
+
         try {
           if (data.intern.ns !== query.nsName) {
             var editor = clojure.UI.showSource({
@@ -87,7 +82,7 @@ lively.ide.codeeditor.modes.Clojure.Commands = {
 
           } catch (e) {
             return ed.$morph.setStatusMessage(
-              "Error preparing definition for " + query.source + "n" + err);            
+              "Error preparing definition for " + query.source + "n" + err);
           }
         // show(data.nsSource.slice(data.defRange[0],data.defRange[1]))
         // debugger;
@@ -365,7 +360,7 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
       var src = codeEditor.textString;
       var ast = ed.session.$ast || src;
       var pos = ed.getCursorIndex();
-      
+
       // // if this does not work let the system-nav figure out the rest...
       var term = this.helper.identfierBeforeCursor(codeEditor);
       var memberComplForm = clojure.StaticAnalyzer.buildElementCompletionForm(ast,src, pos);
@@ -441,7 +436,7 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
                      + ea.docRest;
           return {isListItem: true, string: string, value: ea};
         });
-        
+
         thenDo(null, candidates)
       }
 
@@ -482,31 +477,31 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
 
 
 (function pareditSetup() {
-  var cljCmds = lively.ide.codeeditor.modes.Clojure.Commands;
-  var cmdsToAdd = Object.keys(cljCmds).reduce(function(cmds, name) {
-    cljCmds[name].name = name;
-    return cmds.concat([cljCmds[name]]);
-  }, [])
-  ace.ext.lang.paredit.commands = ace.ext.lang.paredit.commands
-    .filter(function(cmd) { return  !(cmd.name in cljCmds) })
-    .concat(cmdsToAdd);
-
-
-  Object.extend(ace.ext.lang.paredit.keybindings, {
-    "Command-Shift-\/":                             "clojurePrintDoc",
-    "Alt-Shift-\/":                                 "clojurePrintDoc",
-    "¿":                                            "clojurePrintDoc",
-    "Escape|Ctrl-x Ctrl-b":                         "clojureEvalInterrupt",
-    "Command-e":                                    "clojureChangeEnv",
-    "Alt-.":                                        "clojureFindDefinition",
-    "Ctrl-x Ctrl-e":                                "clojureEvalLastSexp",
-    "Ctrl-x Ctrl-a":                                "clojureLoadFile",
-    "Ctrl-x Ctrl-n":                                "clojureEvalNsForm",
-    "Ctrl-x Ctrl-p":                                "clojureEvalPrintLastSexp",
-    "Ctrl-x Ctrl-w":                                "clojureEvalLastSexpAndReplace",
-    "Ctrl-x Ctrl-f|Alt-Shift-Space":                "clojureEvalDefun",
-    "Tab":                                          "pareditExpandSnippetOrIndent"
+  ace.ext.keys.addKeyCustomizationLayer("clojure-keys", {
+    modes: ["ace/mode/clojure"],
+    commandKeyBinding: {
+      "clojurePrintDoc":               "Command-Shift-\/",
+      "clojurePrintDoc":               "Alt-Shift-\/",
+      "clojurePrintDoc":               "¿",
+      "clojureEvalInterrupt":          "Escape|Ctrl-x Ctrl-b",
+      "clojureChangeEnv":              "Command-e",
+      "clojureFindDefinition":         "Alt-.",
+      "clojureEvalLastSexp":           "Ctrl-x Ctrl-e",
+      "clojureLoadFile":               "Ctrl-x Ctrl-a",
+      "clojureEvalNsForm":             "Ctrl-x Ctrl-n",
+      "clojureEvalPrintLastSexp":      "Ctrl-x Ctrl-p",
+      "clojureEvalLastSexpAndReplace": "Ctrl-x Ctrl-w",
+      "clojureEvalDefun":              "Ctrl-x Ctrl-f|Alt-Shift-Space",
+      "pareditExpandSnippetOrIndent":  "Tab"
+    }
   });
+  var cmdNames = Object.keys(lively.ide.codeeditor.modes.Clojure.Commands);
+  ace.ext.lang.paredit.commands = cmdNames.reduce(function(cmds, cmdName) {
+    cmds = cmds.filter(function(cmd2) { return cmdName !== cmd2.name; });
+    var cmd = lively.ide.codeeditor.modes.Clojure.Commands[cmdName];
+    cmd.name = cmdName;
+    return cmds.concat([cmd]);
+  }, ace.ext.lang.paredit.commands);
   lively.ide.codeeditor.modes.Clojure.updateRuntime();
 })();
 
