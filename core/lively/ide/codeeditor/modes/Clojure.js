@@ -48,7 +48,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         // 2. get the associated intern data and source of the ns the i is defined in
         clojure.Runtime.retrieveDefinition(query.source, query.nsName, opts, function(err, data) {
           if (err) return ed.$morph.setStatusMessage(
-            "Error retrieving definition for " + query.source + "n" + err);
+            "Error retrieving definition for " + query.source + "\n" + err);
   
           try {
             if (data.intern.ns !== query.nsName) {
@@ -87,14 +87,14 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         ed.$morph.setStatusMessage("Interrupting eval...");
         var env = clojure.Runtime.currentEnv(ed.$morph);
         clojure.Runtime.evalInterrupt(env, function(err, answer) {
-          if (err && String(err).include("no evaluation in progress"))
-            ed.execCommand("clearSelection");
-          else
-            console.log("Clojure eval interrupt: ", Objects.inspect(err || answer));
+          if (err && String(err).include("no evaluation in progress")) {
+            // lively.ide.codeeditor.modes.Clojure.update();
+            if (ed.inMultiSelectMode) ed.exitMultiSelectMode();
+            else ed.execCommand("clearSelection");
+          } else console.log("Clojure eval interrupt: ", Objects.inspect(err || answer));
           // ed.$morph.setStatusMessage(Objects.inspect(err || answer), err ? Color.red : null);
         });
-      },
-      multiSelectAction: 'forEach'
+      }
     }, {
       name: "clojureChangeEnv",
       exec: function(ed) {
@@ -128,7 +128,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             var msg = err ?
             "Error loading file " + filePath + ":\n" + err : filePath + " loaded";
             setTimeout(function() {
-              ed.$morph.setStatusMessage(msg, err ? Color.red : Color.green, err ? 8 : 3)
+              ed.$morph.setStatusMessage(msg, err ? Color.red : Color.green)
             }, 1000);
           });
         }
@@ -220,8 +220,38 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           ed.selection.setRange({
             start: ed.idxToPos(args.from),
             end: ed.idxToPos(args.to)});
-          ed.session.getMode().doEval(ed.$morph, !!args.print, function(err, result) {
-            ed.$morph.setStatusMessage((err ? String(err) : result||"").truncate(300), err ? Color.red : null);
+
+          var code = ed.session.getTextRange();
+          var env = clojure.Runtime.currentEnv(ed.$morph);
+          var ns = clojure.Runtime.detectNs(ed.$morph);
+          var errorRetrieval = lively.lang.fun.extractBody(function() {
+            clojure.Runtime.doEval("(clojure.repl/pst 500)",
+              {env: __ENV__, ns: __NS__, requiredNamespaces: ["clojure.repl"], passError: true},
+              function(err, result) {
+                  $world.hands[0].clickedOnMorph = null;
+                  $world.hands[0].draggedMorph = null;
+                (function() {
+                  $world.focusedMorph().blur();
+                }).delay(1);
+                var ed = $world.addCodeEditor({
+                  extent: pt(700, 500),
+                  title: "clojure stack trace",
+                  textMode: "text",
+                  content: String(err||result)
+                })//.getWindow().comeForward();
+              });
+          }).replace("__ENV__", JSON.stringify(env)).replace("__NS__", JSON.stringify(ns));
+
+          // lively.ide.codeeditor.modes.Clojure.update()
+          clojure.Runtime.doEval(code, {env: env, ns: ns, passError: true}, function(err, result) {
+            var msg;
+            if (err) {
+              msg = [
+                ["open full stack trace\n", {doit: {code: errorRetrieval}}],
+                [String(err).truncate(300)]];
+            } else msg = String(result).truncate(300);
+            ed.$morph.setStatusMessage(msg, err ? Color.red : null);
+            reset();
             args.thenDo && args.thenDo(err,result);
           });
         });
@@ -264,7 +294,9 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         "clojureEvalLastSexpAndReplace": "Ctrl-x Ctrl-w",
         "clojureEvalDefun":              "Ctrl-x Ctrl-f|Alt-Shift-Space",
         "pareditExpandSnippetOrIndent":  "Tab",
-        "exchangePointAndMark":          "Ctrl-x Ctrl-x" // emacs compat
+        // emacs compat
+        "exchangePointAndMark":          "Ctrl-x Ctrl-x",
+        "selectRectangularRegion":          "Ctrl-x r"
       }
     });
   },
