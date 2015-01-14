@@ -271,13 +271,16 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
 
   updateRuntime: function() {
     lively.whenLoaded(function(w) {
+      // FIXME we are piggiebacking the modeChange handler of paredit to inject the clojure commands
+      ace.ext.lang.paredit.commands = lively.ide.codeeditor.modes.Clojure.commands.concat(
+        ace.ext.lang.paredit.commands).uniqBy(function(a, b) { return a.name === b.name; });
       var cljEds = lively.ide.allCodeEditors()
         .filter(function(ea) { return ea.getTextMode() === 'clojure'; });
       // cljEds.length
       (function() {
         cljEds.forEach(function(editor) {
           editor.withAceDo(function(ed) {
-            ed.commands.addCommands(lively.ide.codeeditor.modes.Clojure.commands);
+            ed.onChangeMode();
             this.aceEditor.saveExcursion(function(reset) {
               ed.setValue(ed.getValue()); // trigger doc change + paredit reparse
               reset();
@@ -286,7 +289,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         });
       }).delay(.5);
       $world.alertOK("updated clojure editors");
-    })
+    });
   },
 
   update: function() {
@@ -318,7 +321,7 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
 
       identfierBeforeCursor: function(codeEditor) {
         var pos = codeEditor.getCursorPositionAce()
-        var termStart = ["(", " ", "'", ","].map(function(ea) {
+        var termStart = ["(", " ", "'", ",", "[", "{"].map(function(ea) {
             return codeEditor.find({preventScroll: true, backwards: true, needle: ea}); })
           .filter(function(ea) { return !!ea && ea.end.row === pos.row; })
           .max(function(ea) { return ea.end.column; });
