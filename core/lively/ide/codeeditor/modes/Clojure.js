@@ -1,6 +1,273 @@
 module('lively.ide.codeeditor.modes.Clojure').requires('lively.ide.codeeditor.ace', 'clojure.Runtime', 'clojure.UI').toRun(function() {
 
 Object.extend(lively.ide.codeeditor.modes.Clojure, {
+
+  commands: [{
+      name: "clojurePrintDoc",
+      exec: function(ed) {
+        var string = clojure.StaticAnalyzer.sourceForNodeAtCursor(ed),
+            runtime = clojure.Runtime,
+            env = runtime.currentEnv(ed.$morph),
+            ns = clojure.Runtime.detectNs(ed.$morph);
+        clojure.Runtime.fetchDoc(env, ns, string, function(err, docString) {
+          // ed.$morph.printObject(ed, err ? err : docString);
+          if (err) return ed.$morph.setStatusMessage(String(err), Color.red);
+  
+          docString = docString.replace(/"?nil"?/,"").replace(/[-]+\n/m,"").trim()
+          if (!docString.trim().length) ed.$morph.setStatusMessage("no doc found");
+          else clojure.UI.showText({
+            title: "clojure doc",
+            content: err ? String(err).truncate(300) : docString,
+            extent: pt(560,250),
+            textMode: "text"
+          });
+        });
+      },
+      multiSelectAction: 'forEach'
+    }, {
+      name: "clojureFindDefinition",
+      exec: function(ed) {
+        if (ed.$morph.clojureFindDefinition)
+          return ed.$morph.clojureFindDefinition();
+  
+        var query = clojure.StaticAnalyzer.createDefinitionQuery(
+          ed.session.$ast||ed.getValue(),ed.getCursorIndex());
+        if (!query) {
+          ed.$morph.setStatusMessage("Cannot extract code entity.");
+          return;
+        }
+  
+        if (query.source.match(/^:/)) { ed.$morph.setStatusMessage("It's a keyword, no definition for it."); return; }
+        var opts = {
+          env: clojure.Runtime.currentEnv(ed.$morph),
+          ns: query.nsName
+        }
+  
+        // 1. get static information for the node at point
+  
+        // 2. get the associated intern data and source of the ns the i is defined in
+        clojure.Runtime.retrieveDefinition(query.source, query.nsName, opts, function(err, data) {
+          if (err) return ed.$morph.setStatusMessage(
+            "Error retrieving definition for " + query.source + "n" + err);
+  
+          try {
+            if (data.intern.ns !== query.nsName) {
+              var editor = clojure.UI.showSource({
+                title: data.intern.ns + "/" + data.intern.name,
+                content: data.nsSource
+              });
+              if (data.defRange) scrollToAndSelect(editor, data.defRange);
+            } else {
+              if (data.defRange) scrollToAndSelect(ed.$morph, data.defRange);
+            }
+  
+            } catch (e) {
+              return ed.$morph.setStatusMessage(
+                "Error preparing definition for " + query.source + "n" + err);
+            }
+          // show(data.nsSource.slice(data.defRange[0],data.defRange[1]))
+          // debugger;
+          // show(err?String(err):data)
+        });
+  
+        function scrollToAndSelect(editMorph, defRange) {
+          editMorph.withAceDo(function(ed) {
+            ed.selection.setRange({
+              start: ed.idxToPos(defRange[0]),
+              end: ed.idxToPos(defRange[1])}, true);
+            setTimeout(function() { ed.centerSelection(); }, 100);
+          });
+  
+        }
+      },
+      multiSelectAction: 'forEach'
+    }, {
+      name: "clojureEvalInterrupt",
+      exec: function(ed) {
+        ed.$morph.setStatusMessage("Interrupting eval...");
+        var env = clojure.Runtime.currentEnv(ed.$morph);
+        clojure.Runtime.evalInterrupt(env, function(err, answer) {
+          if (err && String(err).include("no evaluation in progress"))
+            ed.execCommand("clearSelection");
+          else
+            console.log("Clojure eval interrupt: ", Objects.inspect(err || answer));
+          // ed.$morph.setStatusMessage(Objects.inspect(err || answer), err ? Color.red : null);
+        });
+      },
+      multiSelectAction: 'forEach'
+    }, {
+      name: "clojureChangeEnv",
+      exec: function(ed) {
+        var runtime = clojure.Runtime;
+        var env = runtime.currentEnv(ed.$morph);
+        $world.prompt("Change clojure runtime environment:", function(input) {
+          var env = runtime.readEnv(input);
+          if (!env) show("not a valid host/port combo: " + input);
+          else runtime.changeInEditor(ed.$morph, env);
+        }, {input: runtime.printEnv(env)})
+      },
+      multiSelectAction: 'forEach'
+    }, {
+      name: "clojureLoadFile",
+      exec: function(ed) {
+        var runtime = clojure.Runtime;
+        var env = runtime.currentEnv(ed.$morph);
+        var fn = ed.$morph.getTargetFilePath && ed.$morph.getTargetFilePath();
+        if (!fn) {
+          // return;
+          var win = ed.$morph.getWindow();
+          if (win) fn = win.getTitle().replace(/\s/g, "_");
+          else fn = "clojure-workspace";
+          fn += "-" + lively.lang.date.format(new Date, "yy-mm-dd_HH-MM-ss");
+        }
+  
+        doLoad(fn, ed.$morph.textString);
+  
+        function doLoad(filePath, content) {
+          clojure.Runtime.loadFile(content, filePath, {env: env}, function(err, answer) {
+            var msg = err ?
+            "Error loading file " + filePath + ":\n" + err : filePath + " loaded";
+            setTimeout(function() {
+              ed.$morph.setStatusMessage(msg, err ? Color.red : Color.green, err ? 8 : 3)
+            }, 1000);
+          });
+        }
+      },
+      multiSelectAction: 'forEach'
+    }, {
+      name: "clojureToggleAutoLoadSavedFiles",
+      exec: function(ed) {
+        var runtime = clojure.Runtime,
+          env = runtime.currentEnv(ed.$morph);
+        runtime.changeInEditor(ed.$morph, {doAutoLoadSavedFiles: !env.doAutoLoadSavedFiles});
+        $world.alertOK("Auto load clj files " + (env.doAutoLoadSavedFiles ? "enabled" : "disabled"));
+      },
+      multiSelectAction: 'forEach'
+    }, {
+      name: "clojureResetLocalState",
+      exec: function(ed) {
+        var runtime = clojure.Runtime;
+        runtime.resetEditorState(ed.$morph);
+      },
+      multiSelectAction: 'forEach'
+    }, {
+      name: "clojureEvalSelectionOrLine",
+      exec: function(ed, args) {
+        ed.session.getMode().evalAndPrint(ed.$morph, false, false, null, function(err, result) {
+          ed.$morph.setStatusMessage((err ? String(err) : result).truncate(300), err ? Color.red : null);
+        })
+      },
+      multiSelectAction: 'forEach'
+    }, {
+      name: "clojureEvalLastSexp",
+      exec: function(ed, args) {
+        var lastSexp = ed.session.$ast && paredit.walk.prevSexp(ed.session.$ast,ed.getCursorIndex());
+        lastSexp && ed.execCommand("clojureEval", {from: lastSexp.start, to: lastSexp.end})
+      },
+      multiSelectAction: 'forEach'
+    }, {
+      name: "clojureEvalPrintLastSexp",
+      exec: function(ed, args) {
+        var lastSexp = ed.session.$ast && paredit.walk.prevSexp(ed.session.$ast,ed.getCursorIndex());
+        lastSexp && ed.execCommand("clojureEval", {print: true, from: lastSexp.start, to: lastSexp.end})
+      },
+      multiSelectAction: 'forEach'
+    }, {
+      name: "clojureEvalNsForm",
+      exec: function(ed, args) {
+        show("clojureEvalNsForm no yet implemented")
+      },
+      multiSelectAction: 'forEach'
+    }, {
+      name: "clojureEvalBuffer",
+      exec: function(ed, args) {
+        show("clojureEvalBuffer no yet implemented")
+      },
+      multiSelectAction: 'forEach'
+    }, {
+      name: "clojureEvalDefun",
+      exec: function(ed, args) {
+        var defun = ed.session.$ast && paredit.navigator.rangeForDefun(ed.session.$ast,ed.getCursorIndex());
+        defun && ed.execCommand("clojureEval", {from: defun[0], to: defun[1]})
+      },
+      multiSelectAction: 'forEach'
+    }, {
+      name: "clojureEvalLastSexpAndReplace",
+      exec: function(ed, args) {
+        var lastSexp = ed.session.$ast && paredit.walk.prevSexp(ed.session.$ast,ed.getCursorIndex());
+        lastSexp && ed.execCommand("clojureEval", {
+          print: false, from: lastSexp.start, to: lastSexp.end,
+          thenDo: function(err, result) {
+            ed.session.replace({
+              start: ed.idxToPos(lastSexp.start),
+              end: ed.idxToPos(lastSexp.end)}, err ? String(err) : result)
+          }
+        })
+      },
+      multiSelectAction: 'forEach'
+    }, {
+      name: "clojureEval",
+      exec: function(ed, args) {
+        // var ed = that.aceEditor
+        args = args || {};
+        if (typeof args.from !== 'number' || typeof args.to !== 'number') {
+          console.warn("clojureEval needs from/to args");
+          show("clojureEval needs from/to args")
+          return;
+        }
+  
+        ed.saveExcursion(function(reset) {
+          ed.selection.setRange({
+            start: ed.idxToPos(args.from),
+            end: ed.idxToPos(args.to)});
+          ed.session.getMode().doEval(ed.$morph, !!args.print, function(err, result) {
+            ed.$morph.setStatusMessage((err ? String(err) : result||"").truncate(300), err ? Color.red : null);
+            args.thenDo && args.thenDo(err,result);
+          });
+        });
+      },
+      multiSelectAction: 'forEach'
+    }, {
+      name: "pareditExpandSnippetOrIndent",
+      exec: function(ed, args) {
+        var success = ed.$morph.getSnippets()
+          .getSnippetManager().expandWithTab(ed);
+        if (!success)
+          ed.session.getMode().getCodeNavigator().indent(ed,args);
+      },
+      multiSelectAction: 'forEach'
+    }
+  ],
+  
+  addCustomCommands: function(cmds) {
+    var oldCmds = lively.ide.codeeditor.modes.Clojure.commands.filter(function(existingCmd) {
+      return cmds.every(function(newCmd) { return newCmd.name !== existingCmd.name; });
+    });
+    lively.ide.codeeditor.modes.Clojure.commands = oldCmds.concat(cmds);
+    lively.ide.codeeditor.modes.Clojure.update();
+  },
+
+  defineKeyBindings: function() {
+    ace.ext.keys.addKeyCustomizationLayer("clojure-keys", {
+      modes: ["ace/mode/clojure"],
+      commandKeyBinding: {
+        "clojurePrintDoc":               "Command-Shift-\/",
+        "clojurePrintDoc":               "Alt-Shift-\/",
+        "clojurePrintDoc":               "¿",
+        "clojureEvalInterrupt":          "Escape|Ctrl-x Ctrl-b",
+        "clojureChangeEnv":              "Command-e",
+        "clojureFindDefinition":         "Alt-.",
+        "clojureEvalLastSexp":           "Ctrl-x Ctrl-e",
+        "clojureLoadFile":               "Ctrl-x Ctrl-a",
+        "clojureEvalNsForm":             "Ctrl-x Ctrl-n",
+        "clojureEvalPrintLastSexp":      "Ctrl-x Ctrl-p",
+        "clojureEvalLastSexpAndReplace": "Ctrl-x Ctrl-w",
+        "clojureEvalDefun":              "Ctrl-x Ctrl-f|Alt-Shift-Space",
+        "pareditExpandSnippetOrIndent":  "Tab"
+      }
+    });
+  },
+
   updateRuntime: function() {
     lively.whenLoaded(function(w) {
       var cljEds = lively.ide.allCodeEditors()
@@ -9,266 +276,25 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       (function() {
         cljEds.forEach(function(editor) {
           editor.withAceDo(function(ed) {
-            ed.setValue(ed.getValue()); // trigger doc change + paredit reparse
-            ed.commands.addCommands(lively.ide.codeeditor.modes.Clojure.Commands);
+            ed.commands.addCommands(lively.ide.codeeditor.modes.Clojure.commands);
+            this.aceEditor.saveExcursion(function(reset) {
+              ed.setValue(ed.getValue()); // trigger doc change + paredit reparse
+              reset();
+            })
           });
         });
       }).delay(.5);
       $world.alertOK("updated clojure editors");
     })
+  },
+
+  update: function() {
+    // updates the clojure ide setup, keybindings, commands, etc
+    lively.ide.codeeditor.modes.Clojure.defineKeyBindings();
+    lively.ide.codeeditor.modes.Clojure.updateRuntime();
   }
+
 });
-
-lively.ide.codeeditor.modes.Clojure.Commands = {
-
-  clojurePrintDoc: {
-    exec: function(ed) {
-      var string = clojure.StaticAnalyzer.sourceForNodeAtCursor(ed),
-          runtime = clojure.Runtime,
-          env = runtime.currentEnv(ed.$morph),
-          ns = clojure.Runtime.detectNs(ed.$morph);
-      clojure.Runtime.fetchDoc(env, ns, string, function(err, docString) {
-        // ed.$morph.printObject(ed, err ? err : docString);
-        if (err) return ed.$morph.setStatusMessage(String(err), Color.red);
-
-        docString = docString.replace(/"?nil"?/,"").replace(/[-]+\n/m,"").trim()
-        if (!docString.trim().length) ed.$morph.setStatusMessage("no doc found");
-        else clojure.UI.showText({
-          title: "clojure doc",
-          content: err ? String(err).truncate(300) : docString,
-          extent: pt(560,250),
-          textMode: "text"
-        });
-      });
-    },
-    multiSelectAction: 'forEach'
-  },
-
-  clojureFindDefinition: {
-    exec: function(ed) {
-      if (ed.$morph.clojureFindDefinition)
-        return ed.$morph.clojureFindDefinition();
-
-      var query = clojure.StaticAnalyzer.createDefinitionQuery(
-        ed.session.$ast||ed.getValue(),ed.getCursorIndex());
-      if (!query) {
-        ed.$morph.setStatusMessage("Cannot extract code entity.");
-        return;
-      }
-
-      if (query.source.match(/^:/)) { ed.$morph.setStatusMessage("It's a keyword, no definition for it."); return; }
-      var opts = {
-        env: clojure.Runtime.currentEnv(ed.$morph),
-        ns: query.nsName
-      }
-
-      // 1. get static information for the node at point
-
-      // 2. get the associated intern data and source of the ns the i is defined in
-      clojure.Runtime.retrieveDefinition(query.source, query.nsName, opts, function(err, data) {
-        if (err) return ed.$morph.setStatusMessage(
-          "Error retrieving definition for " + query.source + "n" + err);
-
-        try {
-          if (data.intern.ns !== query.nsName) {
-            var editor = clojure.UI.showSource({
-              title: data.intern.ns + "/" + data.intern.name,
-              content: data.nsSource
-            });
-            if (data.defRange) scrollToAndSelect(editor, data.defRange);
-          } else {
-            if (data.defRange) scrollToAndSelect(ed.$morph, data.defRange);
-          }
-
-          } catch (e) {
-            return ed.$morph.setStatusMessage(
-              "Error preparing definition for " + query.source + "n" + err);
-          }
-        // show(data.nsSource.slice(data.defRange[0],data.defRange[1]))
-        // debugger;
-        // show(err?String(err):data)
-      });
-
-      function scrollToAndSelect(editMorph, defRange) {
-        editMorph.withAceDo(function(ed) {
-          ed.selection.setRange({
-            start: ed.idxToPos(defRange[0]),
-            end: ed.idxToPos(defRange[1])}, true);
-          setTimeout(function() { ed.centerSelection(); }, 100);
-        });
-
-      }
-    },
-    multiSelectAction: 'forEach'
-  },
-
-  clojureEvalInterrupt: {
-    exec: function(ed) {
-      ed.$morph.setStatusMessage("Interrupting eval...");
-      var env = clojure.Runtime.currentEnv(ed.$morph);
-      clojure.Runtime.evalInterrupt(env, function(err, answer) {
-        console.log("Clojure eval interrupt: ", Objects.inspect(err || answer));
-        // ed.$morph.setStatusMessage(Objects.inspect(err || answer), err ? Color.red : null);
-      });
-    },
-    multiSelectAction: 'forEach'
-  },
-
-  clojureChangeEnv: {
-    exec: function(ed) {
-      var runtime = clojure.Runtime;
-      var env = runtime.currentEnv(ed.$morph);
-      $world.prompt("Change clojure runtime environment:", function(input) {
-        var env = runtime.readEnv(input);
-        if (!env) show("not a valid host/port combo: " + input);
-        else runtime.changeInEditor(ed.$morph, env);
-      }, {input: runtime.printEnv(env)})
-    },
-    multiSelectAction: 'forEach'
-  },
-
-  clojureLoadFile: {
-    exec: function(ed) {
-      var runtime = clojure.Runtime;
-      var env = runtime.currentEnv(ed.$morph);
-      var fn = ed.$morph.getTargetFilePath && ed.$morph.getTargetFilePath();
-      if (!fn) {
-        // return;
-        var win = ed.$morph.getWindow();
-        if (win) fn = win.getTitle().replace(/\s/g, "_");
-        else fn = "clojure-workspace";
-        fn += "-" + lively.lang.date.format(new Date, "yy-mm-dd_HH-MM-ss");
-      }
-
-      doLoad(fn, ed.$morph.textString);
-
-      function doLoad(filePath, content) {
-        clojure.Runtime.loadFile(content, filePath, {env: env}, function(err, answer) {
-          var msg = err ?
-          "Error loading file " + filePath + ":\n" + err : filePath + " loaded";
-          setTimeout(function() {
-            ed.$morph.setStatusMessage(msg, err ? Color.red : Color.green, err ? 8 : 3)
-          }, 1000);
-        });
-      }
-    },
-    multiSelectAction: 'forEach'
-  },
-
-  clojureToggleAutoLoadSavedFiles: {
-    exec: function(ed) {
-      var runtime = clojure.Runtime,
-        env = runtime.currentEnv(ed.$morph);
-      runtime.changeInEditor(ed.$morph, {doAutoLoadSavedFiles: !env.doAutoLoadSavedFiles});
-      $world.alertOK("Auto load clj files " + (env.doAutoLoadSavedFiles ? "enabled" : "disabled"));
-    },
-    multiSelectAction: 'forEach'
-  },
-
-  clojureResetLocalState: {
-    exec: function(ed) {
-      var runtime = clojure.Runtime;
-      runtime.resetEditorState(ed.$morph);
-    },
-    multiSelectAction: 'forEach'
-  },
-
-  clojureEvalSelectionOrLine: {
-    exec: function(ed, args) {
-      ed.session.getMode().evalAndPrint(ed.$morph, false, false, null, function(err, result) {
-        ed.$morph.setStatusMessage((err ? String(err) : result).truncate(300), err ? Color.red : null);
-      })
-    },
-    multiSelectAction: 'forEach'
-  },
-
-  clojureEvalLastSexp: {
-    exec: function(ed, args) {
-      var lastSexp = ed.session.$ast && paredit.walk.prevSexp(ed.session.$ast,ed.getCursorIndex());
-      lastSexp && ed.execCommand("clojureEval", {from: lastSexp.start, to: lastSexp.end})
-    },
-    multiSelectAction: 'forEach'
-  },
-
-  clojureEvalPrintLastSexp: {
-    exec: function(ed, args) {
-      var lastSexp = ed.session.$ast && paredit.walk.prevSexp(ed.session.$ast,ed.getCursorIndex());
-      lastSexp && ed.execCommand("clojureEval", {print: true, from: lastSexp.start, to: lastSexp.end})
-    },
-    multiSelectAction: 'forEach'
-  },
-
-  clojureEvalNsForm: {
-    exec: function(ed, args) {
-      show("clojureEvalNsForm no yet implemented")
-    },
-    multiSelectAction: 'forEach'
-  },
-
-  clojureEvalBuffer: {
-    exec: function(ed, args) {
-      show("clojureEvalBuffer no yet implemented")
-    },
-    multiSelectAction: 'forEach'
-  },
-
-  clojureEvalDefun: {
-    exec: function(ed, args) {
-      var defun = ed.session.$ast && paredit.navigator.rangeForDefun(ed.session.$ast,ed.getCursorIndex());
-      defun && ed.execCommand("clojureEval", {from: defun[0], to: defun[1]})
-    },
-    multiSelectAction: 'forEach'
-  },
-
-  clojureEvalLastSexpAndReplace: {
-    exec: function(ed, args) {
-      var lastSexp = ed.session.$ast && paredit.walk.prevSexp(ed.session.$ast,ed.getCursorIndex());
-      lastSexp && ed.execCommand("clojureEval", {
-        print: false, from: lastSexp.start, to: lastSexp.end,
-        thenDo: function(err, result) {
-          ed.session.replace({
-            start: ed.idxToPos(lastSexp.start),
-            end: ed.idxToPos(lastSexp.end)}, err ? String(err) : result)
-        }
-      })
-    },
-    multiSelectAction: 'forEach'
-  },
-
-  clojureEval: {
-    exec: function(ed, args) {
-      // var ed = that.aceEditor
-      args = args || {};
-      if (typeof args.from !== 'number' || typeof args.to !== 'number') {
-        console.warn("clojureEval needs from/to args");
-        show("clojureEval needs from/to args")
-        return;
-      }
-
-      ed.saveExcursion(function(reset) {
-        ed.selection.setRange({
-          start: ed.idxToPos(args.from),
-          end: ed.idxToPos(args.to)});
-        ed.session.getMode().doEval(ed.$morph, !!args.print, function(err, result) {
-          ed.$morph.setStatusMessage((err ? String(err) : result||"").truncate(300), err ? Color.red : null);
-          args.thenDo && args.thenDo(err,result);
-        });
-      });
-    },
-    multiSelectAction: 'forEach'
-  },
-
-  pareditExpandSnippetOrIndent: {
-    exec: function(ed, args) {
-      var success = ed.$morph.getSnippets()
-        .getSnippetManager().expandWithTab(ed);
-      if (!success)
-        ed.session.getMode().getCodeNavigator().indent(ed,args);
-    },
-    multiSelectAction: 'forEach'
-  }
-
-};
 
 lively.ide.codeeditor.modes.Clojure.Mode = lively.ide.ace.require('ace/mode/clojure').Mode;
 
@@ -483,32 +509,7 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
 
 
 (function pareditSetup() {
-  ace.ext.keys.addKeyCustomizationLayer("clojure-keys", {
-    modes: ["ace/mode/clojure"],
-    commandKeyBinding: {
-      "clojurePrintDoc":               "Command-Shift-\/",
-      "clojurePrintDoc":               "Alt-Shift-\/",
-      "clojurePrintDoc":               "¿",
-      "clojureEvalInterrupt":          "Escape|Ctrl-x Ctrl-b",
-      "clojureChangeEnv":              "Command-e",
-      "clojureFindDefinition":         "Alt-.",
-      "clojureEvalLastSexp":           "Ctrl-x Ctrl-e",
-      "clojureLoadFile":               "Ctrl-x Ctrl-a",
-      "clojureEvalNsForm":             "Ctrl-x Ctrl-n",
-      "clojureEvalPrintLastSexp":      "Ctrl-x Ctrl-p",
-      "clojureEvalLastSexpAndReplace": "Ctrl-x Ctrl-w",
-      "clojureEvalDefun":              "Ctrl-x Ctrl-f|Alt-Shift-Space",
-      "pareditExpandSnippetOrIndent":  "Tab"
-    }
-  });
-  var cmdNames = Object.keys(lively.ide.codeeditor.modes.Clojure.Commands);
-  ace.ext.lang.paredit.commands = cmdNames.reduce(function(cmds, cmdName) {
-    cmds = cmds.filter(function(cmd2) { return cmdName !== cmd2.name; });
-    var cmd = lively.ide.codeeditor.modes.Clojure.Commands[cmdName];
-    cmd.name = cmdName;
-    return cmds.concat([cmd]);
-  }, ace.ext.lang.paredit.commands);
-  lively.ide.codeeditor.modes.Clojure.updateRuntime();
+  lively.ide.codeeditor.modes.Clojure.update();
 })();
 
 }) // end of module
