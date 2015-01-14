@@ -6,6 +6,7 @@ var async = require("async");
 var path  = require("path");
 var util  = require("util");
 var fs    = require("fs");
+var nreplClient = require("nrepl-client");
 
 // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
@@ -33,54 +34,13 @@ b=require("/home/lively/clojure-om/node-nrepl-client/node_modules/bencode")
 b.
 */
 
-var clientConnectionState = module.exports.clientConnectionState || {}
-
-var requiredVersion = "0.2.1";
-function isNREPLVersionOK(thenDo) {
-    async.waterfall([
-        function(next) { next(null, path.join(require.resolve("nrepl-client"), '../../package.json')); },
-        fs.readFile,
-        function(content, next) {
-            try { next(null, JSON.parse(content)); } catch (e) { next(e); }
-        },
-        function(json, next) { next(null, json && json.version); }
-    ], function(err, version) {
-        if (err) console.error("Cannot find nrepl version:", err);
-        thenDo(null, err ? false : version === requiredVersion);
-    });
-}
-
-function installNREPLModule(thenDo) {
-    console.log("Installing nodejs module nrepl-client");
-    var path = require('path'),
-        fs = require('fs'),
-        node_modules = path.join(process.env.WORKSPACE_LK, 'node_modules');
-    exec("if [[ -d nrepl-client ]]; then cd nrepl-client; git pull; npm install; else git clone https://github.com/rksm/node-nrepl-client nrepl-client; cd nrepl-client; npm install; fi",
-        {cwd: node_modules},
-        function(code, out, err) {
-            try { var nreplClient = require("nrepl-client"); } catch (e) { thenDo(e, null); return; }
-            console.log("nrepl-client installed");
-            thenDo(null, nreplClient);
-        });
-
-}
-function ensureNreplModule(thenDo) {
-    try {
-        var nreplClient = require("nrepl-client");
-        process.nextTick(function() { thenDo(null, nreplClient); });
-    } catch (e) { installNREPLModule(thenDo); return; }
-    isNREPLVersionOK(function(err, isOK) {
-        console.log("ClojureServer: nREPL version is %sOK", isOK ? "" : "not ");
-        if (isOK) thenDo(null, nreplClient);
-        else installNREPLModule(thenDo);
-    })
-}
+var clientConnectionState = module.exports.clientConnectionState || {};
 
 function ensureNreplConnection(options, thenDo) {
     options = options || {};
-    var port = options.port || 7888;
-    var host = options.host || "0.0.0.0";
-    var name = host + ":" + port
+    var port = options.port || 7888,
+        host = options.host || "0.0.0.0",
+        name = host + ":" + port;
 
     if (clientConnectionState[name]) {
         thenDo(null, clientConnectionState[name]);
@@ -89,8 +49,7 @@ function ensureNreplConnection(options, thenDo) {
 
     debug && console.log("ClojureServer has no nREPL connection yet. Looking for nREPL server");
     async.waterfall([
-        ensureNreplModule,
-        function(nreplClient, next) {
+        function(next) {
             var nreplOpts = {host: host, port: port, verbose: debug};
             var c = clientConnectionState[name] = nreplClient.connect(nreplOpts);
             c.on("error", function(err) { next(err); });
@@ -153,10 +112,10 @@ util._extend(services, {
                 l2lActionWithNREPLConnection(c, msg, function(_nreplCon, _sendResult) {
                     nreplCon = _nreplCon; sendResult = _sendResult;
                     next(null);
-                })
+                });
             },
             function findSession(next) {
-                if (!session || nreplCon.sessions.indexOf(session) > -1) next(null, nreplCon.sessions)
+                if (!session || nreplCon.sessions.indexOf(session) > -1) next(null, nreplCon.sessions);
                 else nreplCon.lsSessions(function(err, result) {
                     if (err) next(err, null);
                     else next(null, (result && result[0] && result[0].sessions) || []);
