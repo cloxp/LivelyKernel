@@ -225,11 +225,12 @@ Object.extend(clojure.Runtime, {
         options = options || {};
         options.passError = true;
         var env = options.env || clojure.Runtime.currentEnv();
-        if (!env.doAutoLoadSavedFiles) return;
+        
+        // pathToFile = "rksm/system_navigator/ns/filemapping.clj";
         this.evalQueue.push({
             env: env,
             "file-content": content,
-            "file-name": pathToFile.split('\\').last(),
+            // "file-name": pathToFile.split('\\').last(),
             "file-path": pathToFile,
             options: options,
             isRunning: false,
