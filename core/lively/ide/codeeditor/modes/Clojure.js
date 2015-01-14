@@ -263,7 +263,8 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         "clojureEvalPrintLastSexp":      "Ctrl-x Ctrl-p",
         "clojureEvalLastSexpAndReplace": "Ctrl-x Ctrl-w",
         "clojureEvalDefun":              "Ctrl-x Ctrl-f|Alt-Shift-Space",
-        "pareditExpandSnippetOrIndent":  "Tab"
+        "pareditExpandSnippetOrIndent":  "Tab",
+        "exchangePointAndMark":          "Ctrl-x Ctrl-x" // emacs compat
       }
     });
   },
