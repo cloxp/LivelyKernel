@@ -106,6 +106,7 @@ util._extend(services, {
         var ignoreMissingSession = msg.data.ignoreMissingSession;
         var sendResult, nreplCon;
         debug && console.log(isFileLoad ? "Clojure load file" + msg.data['file-name'] : "Clojure eval: " + code);
+        addManualLogMessage(isFileLoad ? "Clojure load file" + msg.data['file-name'] : "Clojure eval: " + code);
 
         async.waterfall([
             function(next) {
@@ -193,9 +194,95 @@ util._extend(services, {
     },
 
     clojureStdin: function(sessionServer, c, msg) { l2lAnswer(c, msg, false, {"error": "clojureStdin not yet implemented"}); },
+    
+    nreplLogStartReading: function(sessionServer, c, msg) {
+      addLogConsumer(c.id, function(data, expectMore) { l2lAnswer(c, msg, expectMore, data); })
+      // when l2l ends:
+      c.once("close", function() { removeLogConsumer(c.id); });
+      // when nrepl ends:
+      l2lActionWithNREPLConnection(c, msg, function(nreplCon) {
+        nreplCon.once("end", function() {
+          removeLogConsumer(c.id); 
+          l2lAnswer(c, msg, false, {status: "nrepl connection closed"});
+        });
+      });
+    },
+    
+    nreplLogStopReading: function(sessionServer, c, msg) {
+      removeLogConsumer(c.id);      
+      l2lAnswer(c, msg, false, {status: "OK"});
+    }
 });
 
 
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+// logging
+// -=-=-=-=-
+var howManyMessagesToKeep = 100;
+var logQueue = [];
+nreplClient.log.currentLogger = {
+  log: function(response, length) {
+    if (logQueue.length > howManyMessagesToKeep) logQueue.shift();
+    logQueue.push({
+      time: Date.now(),
+      message: nreplClient.log.messageLogPrinter(response, length),
+      length: length
+    });
+  }
+}
+
+function readAndClearLog(nMsgs, tail) {
+  var n = nMsgs || howManyMessagesToKeep;
+  var tail = typeof tail === "undefined" || tail;
+  
+  var data = n === howManyMessagesToKeep ?
+    logQueue : (tail ? logQueue.slice(-n) : logQueue.slice(0, n));
+  logQueue = [];
+  return data;  
+}
+
+var logConsumers = {};
+var readLogProcess = 0;
+function removeLogConsumer(id) {
+  if (!logConsumers[id]);
+  logConsumers[id]([], false);
+  delete logConsumers[id];
+}
+
+function addLogConsumer(id, consumer) {
+  if (logConsumers[id]) {
+    console.log("nrepl log consumer %s already exists", id);
+    return;
+  }
+  logConsumers[id] = consumer;
+  ensureReadProcess();
+}
+
+function ensureReadProcess() {
+  if (!readLogProcess) readLogContinuously();
+  
+  function readLogContinuously() {
+    var data = readAndClearLog();
+    readLogProcess = setTimeout(readLogContinuously, 1000);
+    if (!data || !data.length) return;
+    Object.keys(logConsumers).forEach(function(id) {
+      var cons = logConsumers[id];
+      try {
+        cons(data, true);
+      } catch(e) {
+        console.error("Error calling nrepl log consumer: ", e);
+      }
+    });
+  }
+}
+
+function addManualLogMessage(message) {
+  if (!readLogProcess) return;
+  logQueue.push({
+    time: Date.now(),
+    message: message
+  });
+}
 // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 // HTTP
 // -=-=-
@@ -210,6 +297,13 @@ module.exports = function(route, app) {
         });
         delete require.cache[require.resolve("nrepl-client")];
         res.end("OK");
+    });
+
+    app.get(route+"log", function(req, res) {
+      var q = require("url").parse(req.url, true).query,
+          n = q.n || howManyMessagesToKeep,
+          tail = q.hasOwnProperty("tail") ? q.tail : true;
+      res.json(readAndClearLog(n, tail));
     });
 
     app.get(route, function(req, res) {
