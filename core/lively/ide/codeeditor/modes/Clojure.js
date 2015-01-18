@@ -475,6 +475,7 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
           isMac = platform == 'mac',
           file = editor.getTargetFilePath && editor.getTargetFilePath(),
           fn = file && file.split(/\\|\//).last();
+      var ns = clojure.Runtime.detectNs(editor);
       return [].concat([
         ['evaluate selection or line (Cmd-d)',         function() { editor.aceEditor.execCommand("clojureEvalSelectionOrLine"); }],
         ['evaluate top level entity (Alt-Shift-Space)', function() { editor.aceEditor.execCommand("clojureEvalDefun"); }],
@@ -482,9 +483,11 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
         ['load entire file ' + fn + ' (Ctrl-x Ctrl-a)',            function() { editor.aceEditor.execCommand("clojureLoadFile"); }]] : []
       ).concat([
         ['interrupt eval (Esc)',                       function() { editor.aceEditor.execCommand("clojureEvalInterrupt"); }],
+        {isMenuItem: true, isDivider: true},
         ['help for thing at point (Alt-?)',            function() { editor.aceEditor.execCommand("clojurePrintDoc"); }],
         ['find definition for thing at point (Alt-.)', function() { editor.aceEditor.execCommand("clojureFindDefinition"); }],
         ['Completion for thing at point (Cmd-Shift-p)', function() { editor.aceEditor.execCommand("list protocol"); }],
+        {isMenuItem: true, isDivider: true},
         ['indent selection (Tab)',                     function() { editor.aceEditor.execCommand("paredit-indent"); }],
         items.detect(function(ea) { return ea[0] === "settings"})
       ]).map(function(ea) {
