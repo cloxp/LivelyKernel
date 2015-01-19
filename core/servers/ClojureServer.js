@@ -1,6 +1,6 @@
 /*global Buffer, module, require, setTimeout*/
 
-var debug = true;
+var debug = false;
 var exec  = require("child_process").exec;
 var async = require("async");
 var path  = require("path");
@@ -251,7 +251,7 @@ function removeLogConsumer(id) {
 
 function addLogConsumer(id, consumer) {
   if (logConsumers[id]) {
-    console.log("nrepl log consumer %s already exists", id);
+    debug && console.log("nrepl log consumer %s already exists", id);
     return;
   }
   logConsumers[id] = consumer;
