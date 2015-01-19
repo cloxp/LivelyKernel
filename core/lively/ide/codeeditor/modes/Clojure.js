@@ -417,23 +417,23 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
     ace.ext.keys.addKeyCustomizationLayer("clojure-keys", {
       modes: ["ace/mode/clojure"],
       commandKeyBinding: {
-        "clojurePrintDoc":               "Command-Shift-\/",
-        "clojurePrintDoc":               "Alt-Shift-\/",
-        "clojurePrintDoc":               "¿",
-        "clojureEvalInterrupt":          "Escape|Ctrl-x Ctrl-b",
-        "clojureChangeEnv":              "Command-e",
-        "clojureFindDefinition":         "Alt-.",
-        "clojureEvalSelectionOrLastSexp":           "Ctrl-x Ctrl-e|Command-d|Alt-Enter",
-        "null":           "Command-p|Alt-p",
-        "clojureLoadFile":               "Ctrl-x Ctrl-a",
-        "clojureEvalNsForm":             "Ctrl-x Ctrl-n",
-        "clojureEvalAndInspect":      "Command-i|Ctrl-x Ctrl-i",
-        "clojureEvalDefun":              "Ctrl-x Ctrl-f|Alt-Shift-Space",
-        "clojureOpenEvalResult":              "Alt-o|Command-o",
-        "pareditExpandSnippetOrIndent":  "Tab",
+        "Command-Shift-\/":                  "clojurePrintDoc",
+        "Alt-Shift-\/":                      "clojurePrintDoc",
+        "¿":                                 "clojurePrintDoc",
+        "Escape|Ctrl-x Ctrl-b":              "clojureEvalInterrupt",
+        "Command-e":                         "clojureChangeEnv",
+        "Alt-.":                             "clojureFindDefinition",
+        "Ctrl-x Ctrl-e|Command-d|Alt-Enter": "clojureEvalSelectionOrLastSexp",
+        "Command-p|Alt-p":                   "null",
+        "Ctrl-x Ctrl-a":                     "clojureLoadFile",
+        "Ctrl-x Ctrl-n":                     "clojureEvalNsForm",
+        "Command-i|Ctrl-x Ctrl-i":           "clojureEvalAndInspect",
+        "Ctrl-x Ctrl-f|Alt-Shift-Space":     "clojureEvalDefun",
+        "Alt-o|Command-o":                   "clojureOpenEvalResult",
+        "Tab":                               "pareditExpandSnippetOrIndent",
         // emacs compat
-        "exchangePointAndMark":          "Ctrl-x Ctrl-x",
-        "selectRectangularRegion":          "Ctrl-x r"
+        "Ctrl-x Ctrl-x":                     "exchangePointAndMark",
+        "Ctrl-x r":                          "selectRectangularRegion"
       }
     });
   },
