@@ -337,10 +337,13 @@ Object.extend(clojure.Runtime, {
 Object.extend(clojure.Runtime.ReplServer, {
 
     cloxpLeinProfile:  "; do not modify, this file is auto-generated\n{\n"
-                     + " :dependencies [[org.rksm/system-navigator \"0.1.7-SNAPSHOT\"]]\n"
+                     + " :dependencies [[org.rksm/system-navigator \"0.1.7-SNAPSHOT\"]\n"
+                     + '                [pjstadig/humane-test-output "0.6.0"]]'
                      + " :injections [(require 'rksm.system-navigator)"
                      + "              (require 'rksm.system-navigator.ns.filemapping)\n"
-                     + "              (rksm.system-navigator.ns.filemapping/add-common-project-classpath)]}\n",
+                     + "              (rksm.system-navigator.ns.filemapping/add-common-project-classpath)\n"
+                     + "              (require 'pjstadig.humane-test-output)\n"
+                     + "              (pjstadig.humane-test-output/activate!)]}\n",
 
     ensureCloxpLeinProfile: function(thenDo) {
         var profilesDir, profileFile;
