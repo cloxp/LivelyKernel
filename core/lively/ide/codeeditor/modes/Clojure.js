@@ -175,6 +175,39 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
     },
 
     {
+      name: "clojureEvalLetBindingsAsDefs",
+      exec: function(ed, args) {
+        // var ed = that.aceEditor
+        var ast = ed.session.$ast;
+        var pos = ed.getCursorIndex()
+        var sexp = ed.session.$ast && paredit.walk.sexpsAt(ast,pos).last();
+        var code = ed.getValue();
+
+        if (!sexp || sexp.source !== 'let') {
+          ed.setStatusMessage("No let binding at cursor!");
+          return;
+        }
+        var bindings = paredit.walk.nextSexp(ast, pos);
+        var bindingNames = [];
+        var src = bindings.children.toTuples(2).map(function(ea) {
+          bindingNames.push(ea[0].source);
+          return "(def " + (ea[0].source + " " + code.slice(ea[1].start, ea[1].end)) + ")";
+        }).join("\n");
+
+// lively.ide.codeeditor.modes.Clojure.update();        
+        var env = clojure.Runtime.currentEnv(ed.$morph);
+        var ns = clojure.Runtime.detectNs(ed.$morph);
+        clojure.Runtime.doEval(src,
+            {env: env, ns: ns, passError: true},
+            function(err, result) {
+              if (!err) ed.$morph.setStatusMessage("Defined " + bindingNames.join(", "));
+              else ed.$morph.setStatusMessage(String(err), Color.red)
+            });
+      },
+      multiSelectAction: 'forEach'
+    },
+    
+    {
       name: "clojureEvalSelectionOrLine",
       exec: function(ed, args) {
         ed.session.getMode().evalAndPrint(ed.$morph, false, false, null, function(err, result) {
@@ -222,7 +255,6 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           return;
         }
 
-// lively.ide.codeeditor.modes.Clojure.update();
         var options = {
           prettyPrint: true,
           prettyPrintLevel: (args && args.count) || 3,
@@ -474,13 +506,20 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
       var platform = editor.aceEditor.getKeyboardHandler().platform,
           isMac = platform == 'mac',
           file = editor.getTargetFilePath && editor.getTargetFilePath(),
-          fn = file && file.split(/\\|\//).last();
-      var ns = clojure.Runtime.detectNs(editor);
+          fn = file && file.split(/\\|\//).last(),
+          ast = editor.aceEditor.session.$ast,
+          pos = editor.aceEditor.getCursorIndex(),
+          sexp = editor.aceEditor.session.$ast && paredit.walk.sexpsAt(ast,pos).last(),
+          ns = clojure.Runtime.detectNs(editor);
+      
+      
       return [].concat([
         ['evaluate selection or line (Cmd-d)',         function() { editor.aceEditor.execCommand("clojureEvalSelectionOrLine"); }],
         ['evaluate top level entity (Alt-Shift-Space)', function() { editor.aceEditor.execCommand("clojureEvalDefun"); }],
       ]).concat(fn ? [
         ['load entire file ' + fn + ' (Ctrl-x Ctrl-a)',            function() { editor.aceEditor.execCommand("clojureLoadFile"); }]] : []
+      ).concat(sexp && sexp.source === 'let' ? [
+        ['load let bindings as defs',            function() { editor.aceEditor.execCommand("clojureEvalLetBindingsAsDefs"); }]] : []
       ).concat([
         ['interrupt eval (Esc)',                       function() { editor.aceEditor.execCommand("clojureEvalInterrupt"); }],
         {isMenuItem: true, isDivider: true},
