@@ -46,7 +46,7 @@ Object.extend(clojure.Runtime, {
     },
 
     printEnv: function(env) {
-        return Strings.format("%s:%s%s", env.host, env.port);
+        return Strings.format("%s:%s", env.host, env.port);
     },
 
     ensureClojureStateInEditor: function(editorMorph) {
