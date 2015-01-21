@@ -245,7 +245,9 @@ var logConsumers = {};
 var readLogProcess = 0;
 function removeLogConsumer(id) {
   if (!logConsumers[id]);
-  logConsumers[id]([], false);
+  try {
+    logConsumers[id]([], false);
+  } catch (e) {}
   delete logConsumers[id];
 }
 
