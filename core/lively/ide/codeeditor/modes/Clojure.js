@@ -3,6 +3,17 @@ module('lively.ide.codeeditor.modes.Clojure').requires('lively.ide.codeeditor.ac
 Object.extend(lively.ide.codeeditor.modes.Clojure, {
 
   commands: [{
+      name: "clojureOpenWorkspace",
+      exec: function(ed) {
+        $world.addCodeEditor({
+            title: "Clojure workspace",
+            content: "(+ 3 4)",
+            textMode: "clojure"
+        }).getWindow().comeForward();
+      }
+    },
+
+    {
       name: "clojurePrintDoc",
       exec: function(ed) {
         var string = clojure.StaticAnalyzer.sourceForNodeAtCursor(ed),
@@ -433,7 +444,8 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         "Tab":                               "pareditExpandSnippetOrIndent",
         // emacs compat
         "Ctrl-x Ctrl-x":                     "exchangePointAndMark",
-        "Ctrl-x r":                          "selectRectangularRegion"
+        "Ctrl-x r":                          "selectRectangularRegion",
+        "Command-k|Alt-k":                  "clojureOpenWorkspace"
       }
     });
   },
