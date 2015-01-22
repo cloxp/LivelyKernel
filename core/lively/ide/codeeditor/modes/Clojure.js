@@ -522,8 +522,10 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
           ast = editor.aceEditor.session.$ast,
           pos = editor.aceEditor.getCursorIndex(),
           sexp = editor.aceEditor.session.$ast && paredit.walk.sexpsAt(ast,pos).last(),
-          ns = clojure.Runtime.detectNs(editor);
-      
+          ns = clojure.Runtime.detectNs(editor),
+          settings = items.detect(function(ea) { return ea[0] === "settings"});
+
+      settings[1].splice(2, 0, [lively.lang.string.format("[%s] use paredit", lively.Config.pareditCorrectionsEnabled ? "X" : " "), function() { lively.Config.toggle("pareditCorrectionsEnabled"); }]);
       
       return [].concat([
         ['evaluate selection or line (Cmd-d)',         function() { editor.aceEditor.execCommand("clojureEvalSelectionOrLine"); }],
@@ -540,7 +542,7 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
         ['Completion for thing at point (Cmd-Shift-p)', function() { editor.aceEditor.execCommand("list protocol"); }],
         {isMenuItem: true, isDivider: true},
         ['indent selection (Tab)',                     function() { editor.aceEditor.execCommand("paredit-indent"); }],
-        items.detect(function(ea) { return ea[0] === "settings"})
+        settings
       ]).map(function(ea) {
         if (isMac) return ea;
         ea[0] = ea[0].replace(/Cmd-/g, "Ctrl-");
