@@ -268,7 +268,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
 
         var options = {
           prettyPrint: true,
-          prettyPrintLevel: (args && args.count) || 3,
+          prettyPrintLevel: (args && args.count) || 6,
           offerInsertAndOpen: true
         }
         ed.execCommand("clojureEvalSelectionOrLastSexp", options);
@@ -327,6 +327,130 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         show("clojureEvalBuffer no yet implemented")
       },
       multiSelectAction: 'forEach'
+    },
+
+    {
+      name: "clojureListCompletions",
+      exec: function(ed, args) {
+          // codeEditor=that
+          // First try to do a "member" completion
+          var src = ed.getValue();
+          var ast = ed.session.$ast || src;
+          var pos = ed.getCursorIndex();
+    
+          // // if this does not work let the system-nav figure out the rest...
+          
+          var term = ed.session.getMode().helper.identfierBeforeCursor(ed.$morph);
+          var memberComplForm = clojure.StaticAnalyzer.buildElementCompletionForm(ast,src, pos);
+    
+          if (memberComplForm) {
+            lively.lang.fun.composeAsync(
+              callClojure.curry(memberComplForm, {requiredNamespaces: ["rksm.system-navigator.completions"]}),
+              processMemberCompletions,
+              createCandidates,
+              openNarrower
+            )(handlerError)
+          } else {
+            lively.lang.fun.composeAsync(
+              fetchGenericCompletions.curry(term),
+              processGenericCompletions,
+              createCandidates,
+              openNarrower
+            )(handlerError)
+          }
+    
+          // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    
+          function handlerError(err) {
+            if (err) {
+              var msg = "Completion error: " + String(err);
+              ed.$morph.setStatusMessage(msg, Color.red);
+              return;
+            }
+          }
+    
+          function processMemberCompletions(result, thenDo) {
+            thenDo(null, result.map(function(ea) {
+              return [ea.name, lively.lang.string.format("%s\n[(%s)] -> %s",
+                  ea.name, ea.params.join(","), ea.type)];
+            }));
+          }
+    
+          function fetchGenericCompletions(term, thenDo) {
+            var src = '(rksm.system-navigator.completions/get-completions->json "%s")';
+            var sourceString = lively.lang.string.format(src, term);
+            callClojure(sourceString, {requiredNamespaces: ["rksm.system-navigator.completions"]}, function(err, result) {
+              if (!result || !lively.lang.obj.isObject(result))
+                err = "No completion for \'" + term + "'";
+              thenDo(err, result);
+            });
+          }
+    
+          function processGenericCompletions(result, thenDo) {
+            var namesAndDoc = Object.keys(result).reduce(function(namesAndDoc, name) {
+              return namesAndDoc.concat([[name, result[name]]])
+            }, []);
+            thenDo(null, namesAndDoc);
+          }
+    
+          function createCandidates(namesAndInfo, thenDo) {
+            // namesAndInfo = [[nameOfThing, docString]]
+            var maxNameLength = 0;
+            var displaySpec = namesAndInfo.map(function(ni) {
+              var name = ni[0], docString = ni[1];
+              var doc = docString.trim() || "",
+                  docLines = doc.length ? lively.lang.string.lines(doc) : [name];
+              maxNameLength = Math.max(maxNameLength, docLines[0].length);
+              return {
+                insertion: name,
+                doc: docString,
+                docFirst: docLines.shift(),
+                docRest: docLines.join("\ ").truncate(120),
+              }
+            });
+    
+            var candidates = displaySpec.map(function(ea) {
+              var string = lively.lang.string.pad(ea.docFirst, maxNameLength+1 - ea.docFirst.length)
+                         + ea.docRest;
+              return {isListItem: true, string: string, value: ea};
+            });
+    
+            thenDo(null, candidates)
+          }
+    
+          function openNarrower(candidates, thenDo) {
+            var n = lively.ide.tools.SelectionNarrowing.getNarrower({
+              name: "lively.ide.codeEditor.modes.Clojure.Completer",
+              spec: {
+                candidates: candidates,
+                actions: [
+                  function insert(candidate) {
+                    var slice = candidate.insertion.slice(candidate.insertion.indexOf(term)+term.length);
+                    ed.$morph.collapseSelection("end");
+                    ed.$morph.insertAtCursor(slice, false);
+                  },
+                  function openDoc(candidate) {
+                    $world.addCodeEditor({
+                      title: "Clojure doc for " + candidate.insertion,
+                      textMode: "text",
+                      content: candidate.doc
+                    }).getWindow().openInWorld().comeForward();
+                  }
+                ]
+              }
+            });
+            thenDo && thenDo(null, n);
+          }
+    
+          function callClojure(code, options, thenDo) {
+            var env = clojure.Runtime.currentEnv(ed.$morph),
+                ns = clojure.Runtime.detectNs(ed.$morph),
+                options = lively.lang.obj.merge({
+                  ns:ns, env: env, catchError: false,
+                  passError: true, resultIsJSON: true}, options || {});
+            clojure.Runtime.doEval(code, options, thenDo);
+          }
+      }
     },
 
     {
@@ -428,24 +552,23 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
     ace.ext.keys.addKeyCustomizationLayer("clojure-keys", {
       modes: ["ace/mode/clojure"],
       commandKeyBinding: {
-        "Command-Shift-\/":                  "clojurePrintDoc",
-        "Alt-Shift-\/":                      "clojurePrintDoc",
-        "¿":                                 "clojurePrintDoc",
-        "Escape|Ctrl-x Ctrl-b":              "clojureEvalInterrupt",
-        "Command-e":                         "clojureChangeEnv",
-        "Alt-.":                             "clojureFindDefinition",
-        "Ctrl-x Ctrl-e|Command-d|Alt-Enter": "clojureEvalSelectionOrLastSexp",
-        "Command-p|Alt-p":                   "null",
-        "Ctrl-x Ctrl-a":                     "clojureLoadFile",
-        "Ctrl-x Ctrl-n":                     "clojureEvalNsForm",
-        "Command-i|Ctrl-x Ctrl-i":           "clojureEvalAndInspect",
-        "Ctrl-x Ctrl-f|Alt-Shift-Space":     "clojureEvalDefun",
-        "Alt-o|Command-o":                   "clojureOpenEvalResult",
-        "Tab":                               "pareditExpandSnippetOrIndent",
-        // emacs compat
-        "Ctrl-x Ctrl-x":                     "exchangePointAndMark",
-        "Ctrl-x r":                          "selectRectangularRegion",
-        "Command-k|Alt-k":                  "clojureOpenWorkspace"
+        "Command-Shift-\/|Alt-Shift-\/|¿":         "clojurePrintDoc",
+        "Command-Shift-p|Alt-Shift-p":             "clojureListCompletions",
+        "Escape|Ctrl-x Ctrl-b":                    "clojureEvalInterrupt",
+        "Command-e":                               "clojureChangeEnv",
+        "Alt-.":                                   "clojureFindDefinition",
+        "Ctrl-x Ctrl-e|Command-d|Alt-Enter":       "clojureEvalSelectionOrLastSexp",
+        "Command-p|Alt-p":                         "null",
+        "Ctrl-x Ctrl-a":                           "clojureLoadFile",
+        "Ctrl-x Ctrl-n":                           "clojureEvalNsForm",
+        "Command-i|Ctrl-x Ctrl-i|Alt-Shift-Enter": "clojureEvalAndInspect",
+        "Ctrl-x Ctrl-f|Alt-Shift-Space":           "clojureEvalDefun",
+        "Alt-o|Command-o":                         "clojureOpenEvalResult",
+        "Tab":                                     "pareditExpandSnippetOrIndent",
+        // emacs                                   compat
+        "Ctrl-x Ctrl-x":                           "exchangePointAndMark",
+        "Ctrl-x r":                                "selectRectangularRegion",
+        "Command-k|Alt-k":                         "clojureOpenWorkspace"
       }
     });
   },
@@ -528,7 +651,7 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
       settings[1].splice(2, 0, [lively.lang.string.format("[%s] use paredit", lively.Config.pareditCorrectionsEnabled ? "X" : " "), function() { lively.Config.toggle("pareditCorrectionsEnabled"); }]);
       
       return [].concat([
-        ['evaluate selection or line (Cmd-d)',         function() { editor.aceEditor.execCommand("clojureEvalSelectionOrLine"); }],
+        ['evaluate last expression or selection (Alt-[Shift-]Enter)',         function() { editor.aceEditor.execCommand("clojureEvalSelectionOrLine"); }],
         ['evaluate top level entity (Alt-Shift-Space)', function() { editor.aceEditor.execCommand("clojureEvalDefun"); }],
       ]).concat(fn ? [
         ['load entire file ' + fn + ' (Ctrl-x Ctrl-a)',            function() { editor.aceEditor.execCommand("clojureLoadFile"); }]] : []
@@ -586,124 +709,9 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
     },
 
     doListProtocol: function(codeEditor) {
-      // codeEditor=that
-      // First try to do a "member" completion
-      var ed = codeEditor.aceEditor;
-      var src = codeEditor.textString;
-      var ast = ed.session.$ast || src;
-      var pos = ed.getCursorIndex();
-
-      // // if this does not work let the system-nav figure out the rest...
-      var term = this.helper.identfierBeforeCursor(codeEditor);
-      var memberComplForm = clojure.StaticAnalyzer.buildElementCompletionForm(ast,src, pos);
-
-      if (memberComplForm) {
-        lively.lang.fun.composeAsync(
-          callClojure.curry(memberComplForm, {requiredNamespaces: ["rksm.system-navigator.completions"]}),
-          processMemberCompletions,
-          createCandidates,
-          openNarrower
-        )(handlerError)
-      } else {
-        lively.lang.fun.composeAsync(
-          fetchGenericCompletions.curry(term),
-          processGenericCompletions,
-          createCandidates,
-          openNarrower
-        )(handlerError)
-      }
-
-      // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-
-      function handlerError(err) {
-        if (err) {
-          var msg = "Completion error: " + String(err);
-          codeEditor.setStatusMessage(msg, Color.red);
-          return;
-        }
-      }
-
-      function processMemberCompletions(result, thenDo) {
-        thenDo(null, result.map(function(ea) {
-          return [ea.name, lively.lang.string.format("%s\n[(%s)] -> %s",
-              ea.name, ea.params.join(","), ea.type)];
-        }));
-      }
-
-      function fetchGenericCompletions(term, thenDo) {
-        var src = '(rksm.system-navigator.completions/get-completions->json "%s")';
-        var sourceString = lively.lang.string.format(src, term);
-        callClojure(sourceString, {requiredNamespaces: ["rksm.system-navigator.completions"]}, function(err, result) {
-          if (!result || !lively.lang.obj.isObject(result))
-            err = "No completion for \'" + term + "'";
-          thenDo(err, result);
-        });
-      }
-
-      function processGenericCompletions(result, thenDo) {
-        var namesAndDoc = Object.keys(result).reduce(function(namesAndDoc, name) {
-          return namesAndDoc.concat([[name, result[name]]])
-        }, []);
-        thenDo(null, namesAndDoc);
-      }
-
-      function createCandidates(namesAndInfo, thenDo) {
-        // namesAndInfo = [[nameOfThing, docString]]
-        var maxNameLength = 0;
-        var displaySpec = namesAndInfo.map(function(ni) {
-          var name = ni[0], docString = ni[1];
-          var doc = docString.trim() || "",
-              docLines = doc.length ? lively.lang.string.lines(doc) : [name];
-          maxNameLength = Math.max(maxNameLength, docLines[0].length);
-          return {
-            insertion: name,
-            doc: docString,
-            docFirst: docLines.shift(),
-            docRest: docLines.join("\ ").truncate(120),
-          }
-        });
-
-        var candidates = displaySpec.map(function(ea) {
-          var string = lively.lang.string.pad(ea.docFirst, maxNameLength+1 - ea.docFirst.length)
-                     + ea.docRest;
-          return {isListItem: true, string: string, value: ea};
-        });
-
-        thenDo(null, candidates)
-      }
-
-      function openNarrower(candidates, thenDo) {
-        var n = lively.ide.tools.SelectionNarrowing.getNarrower({
-          name: "lively.ide.codeEditor.modes.Clojure.Completer",
-          spec: {
-            candidates: candidates,
-            actions: [
-              function insert(candidate) {
-                var slice = candidate.insertion.slice(candidate.insertion.indexOf(term)+term.length);
-                codeEditor.collapseSelection("end");
-                codeEditor.insertAtCursor(slice, false);
-              },
-              function openDoc(candidate) {
-                $world.addCodeEditor({
-                  title: "Clojure doc for " + candidate.insertion,
-                  textMode: "text",
-                  content: candidate.doc
-                }).getWindow().openInWorld().comeForward();
-              }
-            ]
-          }
-        });
-        thenDo && thenDo(null, n);
-      }
-
-      function callClojure(code, options, thenDo) {
-        var env = clojure.Runtime.currentEnv(codeEditor),
-            ns = clojure.Runtime.detectNs(codeEditor),
-            options = lively.lang.obj.merge({
-              ns:ns, env: env, catchError: false,
-              passError: true, resultIsJSON: true}, options || {});
-        clojure.Runtime.doEval(code, options, thenDo);
-      }
+      codeEditor.withAceDo(function(ed) {
+        ed.execCommand("clojureListCompletions");
+      });
     }
 });
 
