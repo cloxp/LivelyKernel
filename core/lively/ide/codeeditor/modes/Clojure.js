@@ -249,7 +249,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         var options = lively.lang.obj.merge(
           {from: range[0], to: range[1], offerInsertAndOpen: true},
           args || {});
-        ed.execCommand("clojureEval", options);
+        return ed.execCommand("clojureEval", options);
       },
       multiSelectAction: 'forEach'
     },
@@ -271,7 +271,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           prettyPrintLevel: (args && args.count) || 6,
           offerInsertAndOpen: true
         }
-        ed.execCommand("clojureEvalSelectionOrLastSexp", options);
+        return ed.execCommand("clojureEvalSelectionOrLastSexp", options);
       },
       multiSelectAction: 'forEach'
     },
@@ -309,6 +309,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         } else {
           ed.$morph.setStatusMessage("nothing to " + (insert ? "insert" : "open"));
         }
+        return true;
       },
       multiSelectAction: 'forEach'
     },
@@ -358,7 +359,8 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
               openNarrower
             )(handlerError)
           }
-    
+
+          return true;
           // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     
           function handlerError(err) {
@@ -457,7 +459,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       name: "clojureEvalDefun",
       exec: function(ed, args) {
         var defun = ed.session.$ast && paredit.navigator.rangeForDefun(ed.session.$ast,ed.getCursorIndex());
-        defun && ed.execCommand("clojureEval", {from: defun[0], to: defun[1]})
+        return defun && ed.execCommand("clojureEval", {from: defun[0], to: defun[1]})
       },
       multiSelectAction: 'forEach'
     },
@@ -523,6 +525,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             args.thenDo && args.thenDo(err,result);
           });
         });
+        return true;
       },
       multiSelectAction: 'forEach'
     },
@@ -534,6 +537,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           .getSnippetManager().expandWithTab(ed);
         if (!success)
           ed.session.getMode().getCodeNavigator().indent(ed,args);
+        return true;
       },
       multiSelectAction: 'forEach'
     }
