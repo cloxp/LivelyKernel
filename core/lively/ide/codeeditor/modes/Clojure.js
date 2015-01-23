@@ -195,7 +195,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         var code = ed.getValue();
 
         if (!sexp || sexp.source !== 'let') {
-          ed.setStatusMessage("No let binding at cursor!");
+          ed.$morph.setStatusMessage("No let binding at cursor!");
           return;
         }
         var bindings = paredit.walk.nextSexp(ast, pos);
