@@ -10,9 +10,9 @@ Object.extend(lively.ide.codeeditor.EmacsConfig, {
 
     ace.config.loadModule(["keybinding", 'ace/keyboard/emacs'], function(emacsKeys) {
       editor.keyBinding.addKeyboardHandler(emacsKeys.handler);
-    });    
+    });
   },
-  
+
   disable: function(editor, thenDo) {
     var handler = editor.keyBinding.$handlers.detect(function(ea) { return !!ea.isEmacs; });
     if (!handler) return;
@@ -25,10 +25,12 @@ Object.extend(lively.ide.codeeditor.EmacsConfig, {
 
 (function loadEmacsHandler() {
   // ace.require('ace/keyboard/emacs').handler
-  ace.config.loadModule(["keybinding", 'ace/keyboard/emacs'], function(emacsKeys) {
-    var handler = emacsKeys.handler;
-    handler.platform = UserAgent.isLinux || UserAgent.isWindows ? 'win' : 'mac';
-    setupEmacsSpecificCommands(handler)
+  module("lively.ide.codeeditor.ace").runWhenLoaded(function() {
+    ace.config.loadModule(["keybinding", 'ace/keyboard/emacs'], function(emacsKeys) {
+      var handler = emacsKeys.handler;
+      handler.platform = UserAgent.isLinux || UserAgent.isWindows ? 'win' : 'mac';
+      setupEmacsSpecificCommands(handler);
+    });
   });
 })();
 
@@ -243,7 +245,7 @@ function setupEmacsSpecificCommands(kbd) {
       var focused = lively.morphic.Morph.focusedMorph();
       return focused && focused.isCodeEditor && focused;
   }
-  
+
 }
 
 }) // end of module
