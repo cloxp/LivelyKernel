@@ -335,7 +335,7 @@ Object.extend(clojure.Runtime, {
 Object.extend(clojure.Runtime.ReplServer, {
 
     cloxpLeinProfile:  "; do not modify, this file is auto-generated\n{\n"
-                     + " :dependencies [[org.rksm/system-navigator \"0.1.7-SNAPSHOT\"]\n"
+                     + " :dependencies [[org.rksm/system-navigator \"0.1.7\"]\n"
                      + '                [pjstadig/humane-test-output "0.6.0"]]'
                      + " :injections [(require 'rksm.system-navigator)"
                      + "              (require 'rksm.system-navigator.ns.filemapping)\n"
