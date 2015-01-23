@@ -132,7 +132,6 @@ function addMorphicExtensions() {
               ['Git Control', cmd('lively.ide.openGitControl')]
           ]],
           ['Preferences', [
-              ['']
               ['Show login info', function() {
                   lively.require("lively.net.Wiki").toRun(function() { lively.net.Wiki.showLoginInfo(); })
               }],
