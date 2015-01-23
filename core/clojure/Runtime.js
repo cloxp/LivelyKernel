@@ -255,7 +255,6 @@ Object.extend(clojure.Runtime, {
           isError = !!errors.length || status.include("error"),
           result = messages.pluck('value').concat(messages.pluck('out')).compact().join('\n'),
           err;
-
       if (status.include("interrupted")) result = result + "[interrupted eval]";
 
       if (isError) {
@@ -265,8 +264,8 @@ Object.extend(clojure.Runtime, {
             errors.unshift(status.without("done"));
             var cause = messages.pluck('root-ex').flatten().compact();
             if (cause.length) errors.pushAll(["root-cause:"].concat(cause));
-            err = errors.flatten().compact().invoke('trim').join('\n');
           }
+          err = errors.flatten().compact().invoke('trim').join('\n');
       }
 
       if (!isError && options.prettyPrint) try { result = eval(result); } catch (e) {}
@@ -283,7 +282,6 @@ Object.extend(clojure.Runtime, {
       if (err && (!result || typeof result === 'string')) {
         result = ("" || result) + "\n" + err;
       }
-
       thenDo && thenDo(options.passError ? err : null, result);
   },
 
