@@ -191,21 +191,45 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         // var ed = that.aceEditor
         var ast = ed.session.$ast;
         var pos = ed.getCursorIndex()
-        var sexp = ed.session.$ast && paredit.walk.sexpsAt(ast,pos).last();
+        var sexps = ed.session.$ast && paredit.walk.sexpsAt(ast,pos);
         var code = ed.getValue();
 
-        if (!sexp || sexp.source !== 'let') {
+        var letSexp;
+        if (sexps.length && sexps.last().source === 'let') {
+          letSexp = sexps.last();
+        } else {
+          var letParent = sexps.reverse().detect(function(ea) {
+            return ea.type === "list" && ea.children[0] && ea.children[0].source === 'let';
+          });
+          if (letParent) letSexp = letParent.children[0];
+        }
+
+        if (!letSexp) {
           ed.$morph.setStatusMessage("No let binding at cursor!");
           return;
         }
-        var bindings = paredit.walk.nextSexp(ast, pos);
+        var bindings = paredit.walk.nextSexp(ast, letSexp.end);
+
+
+// lively.ide.codeeditor.modes.Clojure.update();
         var bindingNames = [];
-        var src = bindings.children.toTuples(2).map(function(ea) {
+        // note: there might be more than one paredit node on the val side of one binding
+        var src = bindings.children.reduce(function(tuples, ea) {
+          if (ea.type === "comment") return tuples;
+          var tuple = tuples.last();
+          if (tuple.length === 0
+           || (ea.source === "#" || ea.source === "'")) {
+             tuple.push(ea); return tuples;
+          }
+          tuple.push(ea);
+          tuples.push([]);
+          return tuples;
+        }, [[]]).map(function(ea) {
+          if (!ea.length) return "";
           bindingNames.push(ea[0].source);
-          return "(def " + (ea[0].source + " " + code.slice(ea[1].start, ea[1].end)) + ")";
+          return "(def " + (ea[0].source + " " + code.slice(ea[1].start, ea.last().end)) + ")";
         }).join("\n");
 
-// lively.ide.codeeditor.modes.Clojure.update();        
         var env = clojure.Runtime.currentEnv(ed.$morph);
         var ns = clojure.Runtime.detectNs(ed.$morph);
         clojure.Runtime.doEval(src,
