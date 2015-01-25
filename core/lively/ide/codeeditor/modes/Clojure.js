@@ -520,7 +520,6 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
               });
           });
 
-          // lively.ide.codeeditor.modes.Clojure.update()
           var options = {
             env: env, ns: ns, passError: true,
             prettyPrint: args.prettyPrint,
@@ -564,6 +563,99 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         return true;
       },
       multiSelectAction: 'forEach'
+    },
+    
+    {
+      name: "clojureCaptureSelection",
+      exec: function(ed, args) {
+        var src = ed.getValue();
+        var ast = ed.session.$ast;
+
+        var s,e;
+        if (ed.selection.isEmpty()) {
+          s = ed.getCursorIndex();
+        } else {
+          var r = ed.selection.getRange()
+          s = ed.posToIdx(r.start);
+          e = ed.posToIdx(r.end);
+        }
+
+        var spec = clojure.TraceFrontEnd.installTraceCode(ast, src, s, e);
+        if (!spec) {
+          ed.$morph.setStatusMessage("cannot find a node to trace");
+          return true;
+        }
+
+        var name = paredit.defName(spec.topLevelNode) || "no name";
+
+        var ns = clojure.Runtime.detectNs(ed.$morph) || "user";
+        var opts = {
+          env: clojure.Runtime.currentEnv(ed.$morph),
+          ns: ns,
+          passError: true,
+          requiredNamespaces: ["rksm.cloxp-trace"]};
+
+        var code = lively.lang.string.format("(rksm.cloxp-trace/install-capture! (read-string \"%s\") :ns (find-ns '%s) :name \"%s\" :ast-idx %s)",
+            spec.topLevelSource
+              .replace(/\\([^"])/g, '\\\\$1')
+              .replace(/\\"/g, '\\\\\\"')
+              .replace(/""/g, '\\"\\"')
+              .replace(/([^\\])"/g, '$1\\"'), ns, name, spec.idx);
+
+        clojure.TraceFrontEnd.ensureUpdateProc();
+        clojure.Runtime.doEval(code, opts, function(err, result) {
+          if (err) ed.$morph.setStatusMessage("error installing tracer:\n"+ err);
+          else ed.$morph.setStatusMessage("installed tracer into "+ spec.annotatedSource.truncate(50));
+        });
+        return true;
+      },
+      multiSelectAction: 'forEach'
+    },
+
+    {
+      name: "clojureCaptureShowAll",
+      exec: function(ed, args) {
+        var ed = clojure.TraceFrontEnd.createCaptureOverview();
+        ed.getWindow().comeForward();
+        return true;
+      }
+    },
+    
+    {
+      name: "clojureCaptureInspectOne",
+      exec: function(ed, args) {
+        args = args || {};
+
+        lively.lang.fun.composeAsync(
+          args.id ? function(n) { n(null, args.id, args.all); } : chooseCapture,
+          function(id, all, n) { fetchAndShow({id: id, all: !!all}, n); }
+        )(function(err, result) { })
+
+// lively.ide.codeeditor.modes.Clojure.update()
+
+        function fetchAndShow(options, thenDo) {
+          clojure.TraceFrontEnd.inspectCapturesValuesWithId(options, function(err, result) {
+            $world.addCodeEditor({
+              title: "values captured for " + options.id,
+              content: err || result,
+              textMode: "clojure"
+            }).getWindow().comeForward();
+            thenDo && thenDo(err);
+          });
+  
+        }
+
+        function chooseCapture(n) {
+          clojure.TraceFrontEnd.retrieveCaptures({}, function(err, captures) {
+            if (err) return n(err);
+            var candidates = captures.map(function(ea) {
+              return {string: ea.id, value: ea, isListItem: true}; });
+            lively.ide.tools.SelectionNarrowing.chooseOne(candidates, function(err, c) { n(err, c && c.id, true); });
+          })
+        }
+
+        return true;
+      }
     }
   ],
 
@@ -729,8 +821,9 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
       settings[1].splice(2, 0, [lively.lang.string.format("[%s] use paredit", lively.Config.pareditCorrectionsEnabled ? "X" : " "), function() { lively.Config.toggle("pareditCorrectionsEnabled"); }]);
       
       return [].concat([
-        ['evaluate last expression or selection (Alt-[Shift-]Enter)',         function() { editor.aceEditor.execCommand("clojureEvalSelectionOrLine"); }],
-        ['evaluate top level entity (Alt-Shift-Space)', function() { editor.aceEditor.execCommand("clojureEvalDefun"); }],
+        ['save (Cmd-s)', function() { editor.doSave(); }],
+        ['eval selection or last expr (Alt-[Shift-]Enter)',         function() { editor.aceEditor.execCommand("clojureEvalSelectionOrLine"); }],
+        ['eval top level entity (Alt-Shift-Space)', function() { editor.aceEditor.execCommand("clojureEvalDefun"); }],
       ]).concat(fn ? [
         ['load entire file ' + fn + ' (Ctrl-x Ctrl-a)',            function() { editor.aceEditor.execCommand("clojureLoadFile"); }]] : []
       ).concat(sexp && sexp.source === 'let' ? [
@@ -741,6 +834,9 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
         ['help for thing at point (Alt-?)',            function() { editor.aceEditor.execCommand("clojurePrintDoc"); }],
         ['find definition for thing at point (Alt-.)', function() { editor.aceEditor.execCommand("clojureFindDefinition"); }],
         ['Completion for thing at point (Cmd-Shift-p)', function() { editor.aceEditor.execCommand("list protocol"); }],
+        {isMenuItem: true, isDivider: true},
+        ['capture values of selection', function() { editor.aceEditor.execCommand("clojureCaptureSelection"); }],
+        ['show all captures', function() { editor.aceEditor.execCommand("clojureCaptureShowAll"); }],
         {isMenuItem: true, isDivider: true},
         ['indent selection (Tab)',                     function() { editor.aceEditor.execCommand("paredit-indent"); }],
         settings
@@ -790,6 +886,37 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
       codeEditor.withAceDo(function(ed) {
         ed.execCommand("clojureListCompletions");
       });
+    },
+    
+    onCaptureStateUpdate: function(ed, captures) {
+      // module('lively.ide.codeeditor.TextOverlay').load()
+
+      var m = ed.$morph;
+      var ns = clojure.Runtime.detectNs(m) || "user";
+      m.removeTextOverlay();
+
+      var rowOffsets = {};
+      var overlays = captures.forEach(function(c) {
+        if (c.ns !== ns) return null;
+        var found = ed.session.$ast.children.detect(function(ea) {
+          return paredit.defName(ea) === c.name; });
+        if (!found) return null;
+        var pos = clojure.TraceFrontEnd.astIdxToSourceIdx(found, c["ast-idx"]);
+        var acePos = ed.idxToPos(pos);
+        var rowEnd = ed.session.getLine(acePos.row).length;
+        var text = c['last-val'].truncate(70);
+        var offs = rowOffsets[acePos.row] || 0;
+        rowOffsets[acePos.row] = offs + (text.length * 9);
+        var overlay = {
+          start: {column: rowEnd, row: acePos.row},
+          text: text,
+          classNames: ["clojure-capture"],
+          offset: {x: 5+offs, y: 0},
+          data: {"clojure-capture": c.id}
+        }
+        ed.$morph.addTextOverlay(overlay);
+      });
+
     }
 });
 

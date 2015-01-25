@@ -1,4 +1,4 @@
-module('clojure.UI').requires('clojure.Runtime', 'lively.ide.codeeditor.ace').toRun(function() {
+module('clojure.UI').requires('clojure.Runtime', 'lively.ide.codeeditor.ace', 'clojure.TraceFrontEnd').toRun(function() {
 
 Object.extend(clojure.UI, {
 
