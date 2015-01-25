@@ -636,6 +636,56 @@ lively.ide.codeeditor.modes.Clojure.Mode = lively.ide.ace.require('ace/mode/cloj
 
 lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
 
+    attach: lively.ide.codeeditor.modes.Clojure.Mode.prototype.attach.getOriginal().wrap(function(proceed, ed) {
+      var self = this;
+      // react to changes
+      if (!ed.session["clojure.onContentChange"]) {
+        ed.session["clojure.onContentChange"] = function(evt) { self.onDocChange(evt); }
+        ed.session.on('change', ed.session["clojure.onContentChange"]);
+        ed.once("changeMode", function() { ed.session.off("change", ed.session["clojure.onContentChange"]); });
+      }
+      if (!ed.session["clojure.onSelectionChange"]) {
+        ed.session["clojure.onSelectionChange"] = function(evt) { self.onSelectionChange(evt); }
+        ed.on('changeSelection', ed.session["clojure.onSelectionChange"]);
+        ed.once("changeMode", function() { ed.off("change", ed.session["clojure.onSelectionChange"]); });
+      }
+      if (!ed.session["clojure.onMouseDown"]) {
+        ed.session["clojure.onMouseDown"] = function(evt) { self.onMouseDown(evt); }
+        ed.on('mousedown', ed.session["clojure.onMouseDown"]);
+        ed.once("changeMode", function() { ed.off("change", ed.session["clojure.onMouseDown"]); });
+      }
+
+      return proceed(ed);
+    }),
+
+    onDocChange: function(evt) {},
+
+    onSelectionChange: function(evt) {
+      clojure.TraceFrontEnd.updateEarly();
+    },
+
+    onMouseDown: function(evt) {
+      var t = evt.domEvent.target;
+      var captureId = t && t.dataset.clojureCapture;
+      if (!captureId) return false;
+      var ed = evt.editor;
+      document.addEventListener("mouseup", onup);
+      evt.stopPropagation(); evt.preventDefault();
+      return true;
+
+      function onup() {
+        document.removeEventListener("mouseup", onup);
+        lively.morphic.Menu.openAtHand(null, [
+          ["inspect last value", ed.execCommand.bind(ed, "clojureCaptureInspectOne", {id: captureId})],
+          ["inspect all values", ed.execCommand.bind(ed, "clojureCaptureInspectOne", {id: captureId, all: true})],
+          ["remove", function() { clojure.TraceFrontEnd.uninstallCapture(captureId, function() {}); }],
+          {isMenuItem: true, isDivider: true},
+          ["show all captures", ed.execCommand.bind(ed, "clojureCaptureShowAll")],
+        ])
+      }
+      
+    },
+
     helper: {
       clojureThingAtPoint: function(aceEd) {
         var pos = aceEd.getCursorPosition(),
