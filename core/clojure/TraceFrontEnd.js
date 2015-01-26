@@ -1,4 +1,4 @@
-module('clojure.TraceFrontEnd').requires().toRun(function() {
+module('clojure.TraceFrontEnd').requires('clojure.SystemNotifier').toRun(function() {
 
 // Using the rksm.cloxp-trace clojure package
 
@@ -7,11 +7,12 @@ Object.extend(clojure.TraceFrontEnd, {
   state: clojure.TraceFrontEnd.state || {lastUpdate: 0, updateTimeout: 2000, captureUpdateProc: null},
   
   ensureUpdateProc: function() {
+    // clojure.Runtime.evalQueue
     // clojure.TraceFrontEnd.state
     // clojure.TraceFrontEnd.ensureUpdateProc();
     // clojure.TraceFrontEnd.stopUpdateProc();
     var self = this;
-    if (self.state.captureUpdateProc || (Date.now() - self.state.lastUpdate > 1000*60)) return;
+    if (self.state.captureUpdateProc || (Date.now() - self.state.lastUpdate < 1000*60)) return;
     self.state.captureUpdateProc = setTimeout(function() {
       self.retrieveCapturesAndInformEditors({}, function(err, captures) {
         delete self.state.captureUpdateProc;
@@ -28,9 +29,9 @@ Object.extend(clojure.TraceFrontEnd, {
     }
   },
 
-  updateEarly: function() {
+  updateEarly: function(force) {
     var self = this;
-    if (!self.state.captureUpdateProc) return;
+    if (!force && !self.state.captureUpdateProc) return;
     lively.lang.fun.debounceNamed("clojure.TraceFrontEndUpdateCapture", 300, function() {
       self.retrieveCapturesAndInformEditors({});
     })();
@@ -59,6 +60,7 @@ Object.extend(clojure.TraceFrontEnd, {
         var val = (c['last-val'] || "no value").truncate(60);
         return attr.concat([
           ["[x]", {type: 'action', onClick: uninstall.curry([c.id])}],
+          ["[∅]", {type: 'action', onClick: empty.curry([c.id])}],
           ["[show] ", {type: 'action', capture: c, onClick: inspect.curry(c.id)}],
           [n + ": " + val + " "],
           ["\n"]]);
@@ -70,6 +72,10 @@ Object.extend(clojure.TraceFrontEnd, {
           function(err) {
             self.setStatusMessage(err ? "Error uninstalling capture" + err.stack :
               "Uninstalled " + ids.join(", ")); });
+      }
+      function empty(id) {
+        clojure.TraceFrontEnd.emptyCapture(id, function(err) {
+            self.setStatusMessage(err ? "Error emptying capture" + err.stack : "Emptied " + id); });
       }
     
       function inspect(id) {
@@ -108,10 +114,24 @@ Object.extend(clojure.TraceFrontEnd, {
   },
 
   uninstallCapture: function(id, thenDo) {
+    var self = this;
     clojure.Runtime.doEval(
-      lively.lang.string.format("(rksm.cloxp-trace/uninstall-capture! \"%s\")",
+      lively.lang.string.format("(rksm.cloxp-trace/uninstall-capture! \"%s\")", id),
+      {resultIsJSON: false, passError: true}, function(err) {
+        self. updateEarly(true);
+        thenDo && thenDo(err);
+      });
+  },
+
+  emptyCapture: function(id, thenDo) {
+    var self = this;
+    clojure.Runtime.doEval(
+      lively.lang.string.format("(rksm.cloxp-trace/empty-capture! \"%s\")",
         id),
-      {resultIsJSON: false, passError: true}, thenDo);
+      {resultIsJSON: false, passError: true}, function(err) {
+        self. updateEarly(true);
+        thenDo && thenDo(err);
+      });
   },
 
   astIdxToSourceIdx: function(node, i) {
@@ -151,6 +171,16 @@ Object.extend(clojure.TraceFrontEnd, {
         return n.type === 'list' && ['(', '[', '{'].include(n.open) && n.children;
       });
     return found ? {idx: idx-1, node: targetNode, topLevelNode: ast.type === "toplevel" ? parents[1] : ast} : undefined;
+  },
+
+  printEnumeratedNodes: function(ast, src) {
+    var idx = 0;
+    return lively.lang.tree.map(ast,
+      function(n) { idx++; return (idx-1) + ": " + src.slice(n.start,n.end); },
+      function(n) {
+        // ignore [] and {} for now
+        return n.type === 'list' && ['(', '[', '{'].include(n.open) && n.children;
+      });
   },
 
   installTraceCode: function(ast, src, pos, posEnd) {
