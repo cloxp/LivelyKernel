@@ -540,7 +540,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             var msg;
             if (err) {
               msg = [
-                ["open full stack trace\n", {context: {env: env, ns: ns}, doit: {code: errorRetrieval}}],
+                ["open full stack trace\n", {doit: {context: {env: env, ns: ns, err: err}, code: errorRetrieval}}],
                 [String(err).truncate(300)]];
             } else if (args.offerInsertAndOpen) {
               ed.$morph.ensureStatusMessageMorph().insertion = result;
@@ -780,7 +780,8 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
         lively.morphic.Menu.openAtHand(null, [
           ["inspect last value", ed.execCommand.bind(ed, "clojureCaptureInspectOne", {id: captureId})],
           ["inspect all values", ed.execCommand.bind(ed, "clojureCaptureInspectOne", {id: captureId, all: true})],
-          ["remove", function() { clojure.TraceFrontEnd.uninstallCapture(captureId, function() {}); }],
+          ["empty", function() { clojure.TraceFrontEnd.emptyCapture(captureId, function() {}); }],
+          ["uninstall", function() { clojure.TraceFrontEnd.uninstallCapture(captureId, function() {}); }],
           {isMenuItem: true, isDivider: true},
           ["show all captures", ed.execCommand.bind(ed, "clojureCaptureShowAll")],
         ])
