@@ -508,7 +508,17 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           var env = clojure.Runtime.currentEnv(ed.$morph);
           var ns = clojure.Runtime.detectNs(ed.$morph);
           var errorRetrieval = lively.lang.fun.extractBody(function() {
-            clojure.Runtime.doEval("(clojure.repl/pst 500)",
+            // simply printing what we have
+            // lively.ide.codeeditor.modes.Clojure.update()
+            var ed = $world.addCodeEditor({
+              extent: pt(700, 500),
+              title: "clojure stack trace",
+              textMode: "text",
+              content: String(this.err)
+            }).getWindow().comeForward();
+
+            // retrieves printed *e
+            false && clojure.Runtime.doEval("(clojure.repl/pst 500)",
               {env: this.env, ns: this.ns, requiredNamespaces: ["clojure.repl"], passError: true},
               function(err, result) {
                 var ed = $world.addCodeEditor({
