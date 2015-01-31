@@ -661,8 +661,6 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           function(id, all, n) { fetchAndShow({id: id, all: !!all}, n); }
         )(function(err, result) { })
 
-// lively.ide.codeeditor.modes.Clojure.update()
-
         function fetchAndShow(options, thenDo) {
           clojure.TraceFrontEnd.inspectCapturesValuesWithId(options, function(err, result) {
             $world.addCodeEditor({
@@ -680,8 +678,38 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             if (err) return n(err);
             var candidates = captures.map(function(ea) {
               return {string: ea.id, value: ea, isListItem: true}; });
-            lively.ide.tools.SelectionNarrowing.chooseOne(candidates, function(err, c) { n(err, c && c.id, true); });
+            lively.ide.tools.SelectionNarrowing.chooseOne(candidates,
+              function(err, c) { n(err, c && c.id, true); });
           })
+        }
+
+        return true;
+      }
+    },
+
+    {
+      name: "clojureCaptureReset",
+      exec: function(ed, args) {
+        args = args || {};
+
+        lively.lang.fun.composeAsync(
+          fetchCaptureIds,
+          uninstall
+        )(function(err) {
+          ed.$morph.setStatusMessage(err ? "Error uninstalling capture" + err.stack :
+            "Uninstalled captures");
+        });
+
+        function fetchCaptureIds(next) {
+          clojure.TraceFrontEnd.retrieveCaptures({}, function(err, result) {
+            next(err, result ? result.pluck("id") : null);
+          })
+        }
+
+        function uninstall(ids, next) {
+          lively.lang.arr.mapAsyncSeries(ids,
+            function(ea, _, n) { clojure.TraceFrontEnd.uninstallCapture(ea, n); },
+            next);
         }
 
         return true;
