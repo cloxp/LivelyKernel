@@ -732,10 +732,13 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         "Ctrl-x Ctrl-f|Alt-Shift-Space":           "clojureEvalDefun",
         "Alt-o|Command-o":                         "clojureOpenEvalResult",
         "Tab":                                     "pareditExpandSnippetOrIndent",
+        "Ctrl-x Ctrl-r":                           "clojureRefreshClasspathDirs",
         // emacs                                   compat
         "Ctrl-x Ctrl-x":                           "exchangePointAndMark",
         "Ctrl-x r":                                "selectRectangularRegion",
-        "Command-k|Alt-k":                         "clojureOpenWorkspace"
+        "Command-k|Alt-k":                         "clojureOpenWorkspace",
+        // capturing
+        "Ctrl-x Ctrl-c a":                         "clojureCaptureSelection"
       }
     });
   },
@@ -777,6 +780,8 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
 
     attach: lively.ide.codeeditor.modes.Clojure.Mode.prototype.attach.getOriginal().wrap(function(proceed, ed) {
       var self = this;
+      ed.setDisplayIndentGuides(false);
+
       // react to changes
       if (!ed.session["clojure.onContentChange"]) {
         ed.session["clojure.onContentChange"] = function(evt) { self.onDocChange(evt); }
