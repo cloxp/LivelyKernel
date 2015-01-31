@@ -17,6 +17,17 @@ describe("Clojure trace front end", function() {
     it("  (+| 23 x|)", function() { expect(sut.findSelectedNode(ast, 20, 25).idx)            .equals(7); });
     it("|(defn ...)|", function() { expect(sut.findSelectedNode(ast, 0, testCode.length).idx).equals(0); });
     it("|(+ 23 x)|",   function() { expect(sut.findSelectedNode(ast, 29).idx)                .equals(9); });
+    
+    describe("derefs", function() {
+      it("(foo |@bar)", function() { expect(sut.findSelectedNode(paredit.parse("(foo @bar)"), 5).idx).equals(2); });
+      it("(foo @|bar)", function() { expect(sut.findSelectedNode(paredit.parse("(foo @bar)"), 6).idx).equals(4); });
+      it("(foo @bar |baz)", function() { expect(sut.findSelectedNode(paredit.parse("(foo @bar baz)"), 9).idx).equals(5); });
+    });
+
+    describe("quoting", function() {
+      it("('foo |bar)", function() { expect(sut.findSelectedNode(paredit.parse("('foo |bar)"), 6).idx).equals(4); });
+      it("(`foo |bar)", function() { expect(sut.findSelectedNode(paredit.parse("(`foo |bar)"), 6).idx).equals(4); });
+    });
   });
 
   describe("ast index to source pos", function() {

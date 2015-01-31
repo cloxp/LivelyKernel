@@ -162,15 +162,35 @@ Object.extend(clojure.TraceFrontEnd, {
     
     if (parent.type === "toplevel") return {idx: 0, node: targetNode, topLevelNode: parent};
 
-    // 3. Find the ast index (linear, prewalk enumeration) of targetNode
+    // 3.1 Find if the code can be traced...
+    var unsupported = lively.lang.tree.detect(
+      ast.type === "toplevel" ? parents[1] : ast,
+      function(n) { return n.source === "#"; }, childGetter)
+    if (unsupported) {
+      return {error: "currently cannot trace code with reader expressions, sorry!"};
+    }
+
+    // 3.2 Find the ast index (linear, prewalk enumeration) of targetNode
     var idx = 0;
     var found = lively.lang.tree.detect(ast.type === "toplevel" ? parents[1] : ast,
-      function(n) { idx++; return targetNode === n; },
       function(n) {
-        // ignore [] and {} for now
-        return n.type === 'list' && ['(', '[', '{'].include(n.open) && n.children;
-      });
-    return found ? {idx: idx-1, node: targetNode, topLevelNode: ast.type === "toplevel" ? parents[1] : ast} : undefined;
+        if (targetNode === n) return true;
+        idx++;
+        if (n.source === "@") idx++; // counts as [1 @x] [2 clojure.core/deref] [3 x]
+        return false;
+      }, childGetter);
+
+    return found ? {
+      idx: idx, node: targetNode,
+      topLevelNode: ast.type === "toplevel" ? parents[1] : ast
+    } : undefined;
+    
+    // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    
+    function childGetter(n) {
+      // ignore [] and {} for now
+      return n.type === 'list' && ['(', '[', '{'].include(n.open) && n.children;
+    }
   },
 
   printEnumeratedNodes: function(ast, src) {
@@ -186,9 +206,11 @@ Object.extend(clojure.TraceFrontEnd, {
   installTraceCode: function(ast, src, pos, posEnd) {
     var sel = this.findSelectedNode(ast, pos, posEnd);
     if (!sel) return null;
+    if (sel.error) return sel;
     return lively.lang.obj.merge(sel, {
       topLevelSource: src.slice(sel.topLevelNode.start, sel.topLevelNode.end),
-      annotatedSource: src.slice(sel.topLevelNode.start, sel.node.start) + "->" + src.slice(sel.node.start, sel.topLevelNode.end)
+      annotatedSource: src.slice(sel.topLevelNode.start, sel.node.start)
+        + "->" + src.slice(sel.node.start, sel.topLevelNode.end)
     });
   }
 
