@@ -418,12 +418,24 @@ Object.extend(clojure.Runtime.ReplServer, {
 
     ensure: function(options, thenDo) {
         if (!thenDo) { thenDo = options; options = {}; }
+        var self = this;
         var cmd = clojure.Runtime.ReplServer.getCurrentServerCommand();
-        if (cmd) {
-            Functions.waitFor(5000, function() {
-                return cmd.getStdout().match(/nREPL server started|nrepl server running on/i);
-            }, function(err) { thenDo(err, cmd); });
-        } else this.start(options, thenDo);
+        if (!cmd) return self.start(options, thenDo);
+        lively.lang.fun.composeAsync(
+          function(n) {
+            lively.lang.fun.waitFor(5000, function() {
+              return cmd.getStdout().match(/nREPL server started|nrepl server running on/i);
+            }, function() { n(); });
+          },
+          function(n) {
+            lively.shell.run("ps -p " + cmd.getPid(), function(err, cmd) {
+              n(cmd.getCode() ? "server not really running" : null);
+            });
+          }
+        )(function(err) {
+          if (err) self.start(options, thenDo);
+          else thenDo(err, cmd); 
+        });
     },
 
     getCurrentServerCommand: function(port) {
@@ -476,6 +488,7 @@ Object.extend(clojure.Runtime.ReplServer, {
     },
 
     stop: function(cmd, env, thenDo) {
+      clojure.Runtime.evalQueue = [];
       if (cmd) {
         cmd.kill("SIGINT");
         cmd.kill("SIGINT");
