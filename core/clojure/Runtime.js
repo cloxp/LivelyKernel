@@ -147,7 +147,7 @@ Object.extend(clojure.Runtime, {
           }
           if (catchError) {
             reqNs.pushIfNotIncluded('clojure.repl');
-            expr = Strings.format("(try %s (catch Exception e (clojure.repl/pst e)))", expr);
+            expr = Strings.format("(try %s (catch Exception e (clojure.repl/pst e 999)))", expr);
           }
           expr = "(do " + requiredNamespaces.map(function(ea) {
             return "(require '" + ea + ")"; }).join(" ") + expr + ")";
@@ -189,7 +189,7 @@ Object.extend(clojure.Runtime, {
     },
 
     doEval: function(expr, options, thenDo) {
-        if (!thenDo) { thenDo = options; options = null; };
+        if (!thenDo && typeof options === "function") { thenDo = options; options = null; };
         var evalState = {
           env: options.env || clojure.Runtime.currentEnv(),
           expr: expr,
@@ -342,6 +342,24 @@ Object.extend(clojure.Runtime, {
       thenDo && thenDo(err, answer.data);
     });
   },
+  
+  fullLastErrorStackTrace: function(options, thenDo) {
+    options = options || {};
+    options.requiredNamespaces = ["clojure.repl"];
+    options.passError = true;
+    clojure.Runtime.doEval("(clojure.repl/pst 500)", options,
+      function(err, result) {
+        if (options.open) {
+          var ed = $world.addCodeEditor({
+            extent: pt(700, 500),
+            title: "clojure stack trace",
+            textMode: "text",
+            content: String(err||result)
+          }).getWindow().comeForward();
+        }
+        thenDo && thenDo(err, result);
+      });
+  }
 });
 
 Object.extend(clojure.Runtime.ReplServer, {
