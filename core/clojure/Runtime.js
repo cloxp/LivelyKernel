@@ -315,17 +315,20 @@ Object.extend(clojure.Runtime, {
   },
 
   retrieveDefinition: function(symbol, inns, options, thenDo) {
+
     lively.lang.fun.composeAsync(
       function(n) { clojure.Runtime.lookupIntern(inns, symbol, {}, n); },
+
       function(intern, n) {
         if (!intern) return n(new Error("Cannot retrieve meta data for " + symbol));
         var cmd = lively.lang.string.format(
-          "(-> '%s rksm.system-navigator.ns.filemapping/source-for-ns clojure.data.json/write-str)",
-          intern.ns);
+          "(clojure.data.json/write-str (rksm.system-navigator.ns.filemapping/source-for-ns '%s %s))",
+          intern.ns, options.file ? ('"'+options.file+'"') : "");
         clojure.Runtime.doEval(cmd,
           {requiredNamespaces: ["rksm.system-navigator.ns.filemapping", "clojure.data.json"], resultIsJSON:true},
           function(err,nsSrc) { n(err,intern, nsSrc); });
       },
+
       function(intern, nsSrc, n) {
         // lively.lang.string.lines(source).length
         intern.line = intern.line && Number(intern.line);
@@ -337,6 +340,7 @@ Object.extend(clojure.Runtime, {
         }
         n(null, {intern: intern, nsSource: nsSrc, defRange: rangeDef});
       }
+
     )(thenDo);
   },
   
