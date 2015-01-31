@@ -586,8 +586,10 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       exec: function(ed, args) {
         var success = ed.$morph.getSnippets()
           .getSnippetManager().expandWithTab(ed);
-        if (!success)
-          ed.session.getMode().getCodeNavigator().indent(ed,args);
+        if (!success) {
+          if (ed.tabstopManager) ed.tabstopManager.tabNext(1)
+          else ed.session.getMode().getCodeNavigator().indent(ed,args);
+        }
         return true;
       },
       multiSelectAction: 'forEach'
