@@ -119,6 +119,24 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         });
       }
     },
+    
+    {
+      name: "clojureRefreshClasspathDirs",
+      exec: function(ed, args) {
+        args = args || {};
+        clojure.Runtime.doEval(
+          "(rksm.system-navigator.ns.filemapping/refresh-classpath-dirs)",
+          {env: Global.clojure.Runtime.currentEnv(ed.$morph),
+           requiredNamespaces: ["rksm.system-navigator.ns.filemapping"],
+           passError: true},
+          function(err) {
+            if (args.thenDo) args.thenDo(err);
+            else ed.$morph.setStatusMessage(
+              err ? "Error refreshing namespaces: " + err : "Namespaces refreshed! Ahhhh",
+              err ? Color.red : null);
+          });
+      }
+    },
 
     {
       name: "clojureChangeEnv",
