@@ -212,23 +212,32 @@ Object.extend(clojure.Runtime, {
         if (!evalObject) return thenDo(new Error("no evaluation in progress"));
         var env = evalObject.env || {};
         var nreplOptions = {port: env.port || 7888, host: env.host || "127.0.0.1"};
+        var timeout = 1000;
 
         if (!evalObject) thenDo(new Error("no clj eval running"));
-        else if (!evalObject.isRunning || !evalObject['eval-id']) cleanup();
+        else if (!evalObject.isRunning || !evalObject['eval-id']) cleanup(thenDo);
         else {
+            var either = lively.lang.fun.either(onTimeout, onInterrupted);
+            setTimeout(either[0], timeout);
             var sess = lively.net.SessionTracker.getSession();
             sess.send('clojureEvalInterrupt',
                 {nreplOptions: nreplOptions, session: evalObject.env.session,
-                 "eval-id": evalObject['eval-id']},
-                function(answer) {
-                    cleanup();
-                    thenDo(answer.error || answer.data.error, answer.data);
-                });
+                 "eval-id": evalObject['eval-id']}, function(answer) { either[1](null, answer); });
         }
 
-        function cleanup() {
+        function cleanup(whenCleaned) {
             clj.evalQueue.remove(evalObject);
-            clj.runEvalFromQueue.bind(clj).delay(0);
+            (function() {
+              clj.runEvalFromQueue();
+              whenCleaned && whenCleaned();
+            }).delay(0);
+        }
+
+        function onTimeout(err) { onInterrupted(new Error("interrupt timed out")); }
+
+        function onInterrupted(err, answer) {
+            err = err || (answer && (answer.error || answer.data.error));
+            cleanup(function() { thenDo(err, answer ? answer.data : null); });
         }
     },
 
