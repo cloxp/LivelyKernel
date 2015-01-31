@@ -8,13 +8,15 @@ Object.extend(clojure.TraceFrontEnd, {
   
   ensureUpdateProc: function() {
     // clojure.Runtime.evalQueue
-    // clojure.TraceFrontEnd.state
+    clojure.TraceFrontEnd.state
+    // self=clojure.TraceFrontEnd
     // clojure.TraceFrontEnd.ensureUpdateProc();
     // clojure.TraceFrontEnd.stopUpdateProc();
     var self = this;
-    if (self.state.captureUpdateProc || (Date.now() - self.state.lastUpdate < 1000*60)) return;
+    if (self.state.captureUpdateProc) return;
     self.state.captureUpdateProc = setTimeout(function() {
       self.retrieveCapturesAndInformEditors({}, function(err, captures) {
+        self.state.lastUpdate = Date.now();
         delete self.state.captureUpdateProc;
         if (err) show("Error in retrieveCaptures: \n" + err)
         if (!err && captures.length) self.ensureUpdateProc();
@@ -32,8 +34,11 @@ Object.extend(clojure.TraceFrontEnd, {
   updateEarly: function(force) {
     var self = this;
     if (!force && !self.state.captureUpdateProc) return;
+    self.state.lastUpdate = 0;
     lively.lang.fun.debounceNamed("clojure.TraceFrontEndUpdateCapture", 300, function() {
-      self.retrieveCapturesAndInformEditors({});
+      self.retrieveCapturesAndInformEditors({}, function(err) {
+        if (err) show("Error in retrieveCaptures: \n" + err);
+      });
     })();
   },
 
@@ -84,6 +89,9 @@ Object.extend(clojure.TraceFrontEnd, {
         cmd.exec(self.aceEditor, {id: id, all: true});
       }
     });
+    
+    ed.addScript(function onFocus() { clojure.TraceFrontEnd.updateEarly(true); });
+    
     return ed;
 
 
@@ -101,10 +109,37 @@ Object.extend(clojure.TraceFrontEnd, {
 
   retrieveCaptures: function(options, thenDo) {
     options = options || {};
-    clojure.Runtime.doEval(
-      lively.lang.string.format("(rksm.cloxp-trace/captures->json :nss %s)",
-        options.namespaces ? lively.lang.string.print(options.namespaces) : ":all"),
-      {resultIsJSON: true, passError: true}, thenDo);
+    var lastEval = clojure.TraceFrontEnd.state.lastEval;
+
+    lively.lang.fun.composeAsync(
+      removeExistingEvals,
+      scheduleRetrieval
+    )(thenDo);
+
+    // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    
+    function removeExistingEvals(n) {
+      
+      var evals = clojure.Runtime.evalQueue
+        .filter(function(ea) { return ea.expr.startsWith("(rksm.cloxp-trace/captures->json"); })
+        .groupByKey("isRunning");
+        clojure.Runtime.evalQueue = clojure.Runtime.evalQueue.withoutAll(evals["false"] || []);
+
+      if (!evals["true"] || evals["true"].length) n();
+      else evals["true"]
+        .mapAsyncSeries(function(ea, _, n) {
+          clojure.Runtime.evalInterrupt(ea.env, function(err) { n(); });
+        }, function(err) { n(); })
+    }
+    
+    function scheduleRetrieval(n) {
+      var nextOnce = lively.lang.fun.once(n);
+      setTimeout(function() { nextOnce(new Error("rksm.cloxp-trace/captures->json timed out")); }, 1000);
+      clojure.Runtime.doEval(
+        lively.lang.string.format("(rksm.cloxp-trace/captures->json :nss %s)",
+          options.namespaces ? lively.lang.string.print(options.namespaces) : ":all"),
+        {resultIsJSON: true, passError: true}, nextOnce);
+    }
   },
 
   inspectCapturesValuesWithId: function(options, thenDo) {
