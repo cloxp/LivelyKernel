@@ -534,18 +534,6 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
               textMode: "text",
               content: String(this.err)
             }).getWindow().comeForward();
-
-            // retrieves printed *e
-            false && clojure.Runtime.doEval("(clojure.repl/pst 500)",
-              {env: this.env, ns: this.ns, requiredNamespaces: ["clojure.repl"], passError: true},
-              function(err, result) {
-                var ed = $world.addCodeEditor({
-                  extent: pt(700, 500),
-                  title: "clojure stack trace",
-                  textMode: "text",
-                  content: String(err||result)
-                }).getWindow().comeForward();
-              });
           });
 
           var options = {
@@ -611,10 +599,11 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         }
 
         var spec = clojure.TraceFrontEnd.installTraceCode(ast, src, s, e);
-        if (!spec) {
-          ed.$morph.setStatusMessage("cannot find a node to trace");
+        if (!spec || spec.error) {
+          ed.$morph.setStatusMessage(spec && spec.error ? spec.error : "cannot find a node to trace");
           return true;
         }
+// lively.ide.codeeditor.modes.Clojure.update()
 
         var name = paredit.defName(spec.topLevelNode) || "no name";
 
@@ -634,7 +623,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
 
         clojure.TraceFrontEnd.ensureUpdateProc();
         clojure.Runtime.doEval(code, opts, function(err, result) {
-          if (err) ed.$morph.setStatusMessage("error installing tracer:\n"+ err);
+          if (err) ed.$morph.setStatusMessage("error installing tracer:\n"+ err.truncate(1000));
           else ed.$morph.setStatusMessage("installed tracer into "+ spec.annotatedSource.truncate(50));
         });
         return true;
