@@ -132,6 +132,7 @@ Object.extend(clojure.Runtime, {
             requiredNamespaces = evalObject.requiredNamespaces || [],
             pp                 = options.prettyPrint = options.hasOwnProperty("prettyPrint") ? options.prettyPrint : false,
             ppLevel            = options.hasOwnProperty("prettyPrintLevel") ? options.prettyPrintLevel : null,
+            printLength        = options.hasOwnProperty("printLength") ? options.printLength : null,
             isJSON             = options.resultIsJSON = options.hasOwnProperty("resultIsJSON") ? options.resultIsJSON : false,
             isFileLoad         = !expr && evalObject["file-content"],
             catchError         = options.hasOwnProperty("catchError") ? options.catchError : true,
@@ -143,7 +144,13 @@ Object.extend(clojure.Runtime, {
         if (expr) {
           if (pp) {
             reqNs.pushIfNotIncluded('clojure.pprint');
-            expr = Strings.format("(with-out-str (clojure.pprint/write (do %s) %s))", expr, ppLevel ? ":level " + ppLevel : "");
+            expr = Strings.format("(with-out-str (clojure.pprint/write (do %s) %s))",
+              expr, ppLevel ? ":level " + ppLevel : "");
+          } else if (!printLength) {
+            printLength = 20;
+          }
+          if (printLength) {
+            expr = Strings.format("(binding [*print-length* %s] %s)", printLength, expr);
           }
           if (catchError) {
             reqNs.pushIfNotIncluded('clojure.repl');
