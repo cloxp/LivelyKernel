@@ -8,7 +8,8 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         $world.addCodeEditor({
             title: "Clojure workspace",
             content: "(+ 3 4)",
-            textMode: "clojure"
+            textMode: "clojure",
+            extent: pt(550, 280)
         }).getWindow().comeForward();
       }
     },
@@ -589,42 +590,65 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         var src = ed.getValue();
         var ast = ed.session.$ast;
 
-        var s,e;
-        if (ed.selection.isEmpty()) {
-          s = ed.getCursorIndex();
-        } else {
-          var r = ed.selection.getRange()
-          s = ed.posToIdx(r.start);
-          e = ed.posToIdx(r.end);
-        }
-
-        var spec = clojure.TraceFrontEnd.installTraceCode(ast, src, s, e);
-        if (!spec || spec.error) {
-          ed.$morph.setStatusMessage(spec && spec.error ? spec.error : "cannot find a node to trace");
+        var defNode = paredit.walk.sexpsAt(ast, ed.getCursorIndex(), function(n) {
+          return n.type !== "toplevel" && paredit.walk.hasChildren(n); })[0];
+          
+        var name = defNode && paredit.defName(defNode);
+        if (!name) {
+          ed.$morph.setStatusMessage("Cannot install capture: no def node found at cursor position");
           return true;
         }
-// lively.ide.codeeditor.modes.Clojure.update()
 
-        var name = paredit.defName(spec.topLevelNode) || "no name";
-
+        var pos = ed.getCursorPosition();
+        var startPos = ed.idxToPos(defNode.start)
+        var localPosClj = {column: pos.column+1, line: pos.row+1-startPos.row}
         var ns = clojure.Runtime.detectNs(ed.$morph) || "user";
         var opts = {
           env: clojure.Runtime.currentEnv(ed.$morph),
           ns: ns,
-          passError: true,
-          requiredNamespaces: ["rksm.cloxp-trace"]};
+          passError: true, resultIsJSON: true,
+          requiredNamespaces: ["rksm.cloxp-trace", "clojure.data.json"]};
 
-        var code = lively.lang.string.format("(rksm.cloxp-trace/install-capture! (read-string \"%s\") :ns (find-ns '%s) :name \"%s\" :ast-idx %s)",
-            spec.topLevelSource
+        var code = lively.lang.string.format(
+          "(let [spec (rksm.cloxp-trace/install-capture!\n"
+          + "            \"%s\"\n"
+          + "            :ns (find-ns '%s)\n"
+          + "            :name \"%s\"\n"
+          + "            :pos {:column %s, :line %s})\n"
+          + "      spec (-> spec\n"
+          + "             (update-in [:ns] str)\n"
+          + "             (select-keys [:ns :name :id :ast-idx :pos :loc]))]\n"
+          + "  (clojure.data.json/write-str spec))\n",
+            paredit.walk.source(src, defNode)
               .replace(/\\([^"])/g, '\\\\$1')
               .replace(/\\"/g, '\\\\\\"')
               .replace(/""/g, '\\"\\"')
-              .replace(/([^\\])"/g, '$1\\"'), ns, name, spec.idx);
+              .replace(/([^\\])"/g, '$1\\"'),
+              ns, name, localPosClj.column, localPosClj.line);
 
         clojure.TraceFrontEnd.ensureUpdateProc();
         clojure.Runtime.doEval(code, opts, function(err, result) {
-          if (err) ed.$morph.setStatusMessage("error installing tracer:\n"+ err.truncate(1000));
-          else ed.$morph.setStatusMessage("installed tracer into "+ spec.annotatedSource.truncate(50));
+
+          if (err) ed.$morph.setStatusMessage("error installing tracer:\n"+ String(err).truncate(1000), Color.red);
+          else ed.$morph.setStatusMessage("installed tracer into "+ result.ns + "/" + result.name);
+
+          var pos = result.pos;
+          if (pos) {
+            var defNode = paredit.walk.sexpsAt(ed.session.$ast, ed.getCursorIndex())[1]
+            var nodePos = ed.idxToPos(defNode.start)
+            var start = {column: pos.column-1, row: pos.line-1 + nodePos.row};
+            var end = {column: pos["end-column"]-1, row: pos["end-line"]-1+nodePos.row};
+
+  // lively.ide.codeeditor.modes.Clojure.update()
+
+            ed.saveExcursion(function(reset) {
+              var range = ace.require("ace/range").Range.fromPoints(start, end);
+              ed.selection.setRange(range);
+              setTimeout(reset, 800);
+            })
+          }
+
+
         });
         return true;
       },
@@ -680,30 +704,134 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       name: "clojureCaptureReset",
       exec: function(ed, args) {
         args = args || {};
-
-        lively.lang.fun.composeAsync(
-          fetchCaptureIds,
-          uninstall
-        )(function(err) {
-          ed.$morph.setStatusMessage(err ? "Error uninstalling capture" + err.stack :
-            "Uninstalled captures");
+        var code = "(rksm.cloxp-trace/reset-captures!)";
+        var opts = {
+          env: clojure.Runtime.currentEnv(ed.$morph), passError: true,
+          requiredNamespaces: ["rksm.cloxp-trace"]};
+        clojure.Runtime.doEval(code, opts, function(err) {
+          if (err) ed.$morph.setStatusMessage("error reseting captures:\n"+ err.truncate(1000));
+          else ed.$morph.setStatusMessage("capture rest");
+          clojure.TraceFrontEnd.ensureUpdateProc();
         });
 
-        function fetchCaptureIds(next) {
-          clojure.TraceFrontEnd.retrieveCaptures({}, function(err, result) {
-            next(err, result ? result.pluck("id") : null);
-          })
-        }
+        return true;
 
-        function uninstall(ids, next) {
-          lively.lang.arr.mapAsyncSeries(ids,
-            function(ea, _, n) { clojure.TraceFrontEnd.uninstallCapture(ea, n); },
-            next);
-        }
+      }
+    },
 
+    {
+      name: "clojureSetLiveEvalEnabled",
+      exec: function(ed, args) {
+        args = args || {};
+        var cljState = ed.session.$livelyClojureState || (ed.session.$livelyClojureState = {});
+        var val = args.value || !ed.session.getMode().isLiveEvalEnabled(ed);
+        cljState.liveEvalEnabled = val;
+        if (val) ed.execCommand("clojureDoLiveEval")
+        else ed.$morph.removeTextOverlay({className: "clojure-live-eval-value"});
+        ed.$morph.setStatusMessage("Clojure live eval " + (val ? "enabled" : "disabled"));
         return true;
       }
-    }
+    },
+
+    {
+      name: "clojureDoLiveEval",
+      exec: function(ed, args) {
+        args = args || {};
+      
+        var thenDo = args.thenDo,
+            editor = ed.$morph,
+            rawCode = ed.getValue(), result,
+            ns = Global.clojure.Runtime.detectNs(editor) || "user",
+            cljState = ed.session.$livelyClojureState || (ed.session.$livelyClojureState = {})
+
+        cljState.evalInProgress = true;
+      
+        lively.lang.fun.composeAsync(
+          doEval,
+          addOverlay
+        )(function(err, result) {
+          cljState.evalInProgress = false;
+              // {error: e, type: "json parse error", input: result}
+          if (result && result.error) editor.setStatusMessage((result.input||result.error).truncate(300))
+          else if (err) editor.setStatusMessage("Error " + (err.stack || err).truncate(300))
+          thenDo && thenDo(err, result);
+        })
+      
+        // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+      
+        function doEval(thenDo) {
+      
+          var template = "(let [code \"%s\"\n"
+                       + "      eval-result (rksm.cloxp-trace.live-eval/live-eval-code code :ns '%s)]\n"
+                       + "    (clojure.data.json/write-str eval-result))";
+      
+          var code = lively.lang.string.format(template,
+            rawCode
+              .replace(/\\([^"])/g, '\\\\$1')
+              .replace(/\\"/g, '\\\\\\"')
+              .replace(/""/g, '\\"\\"')
+              .replace(/([^\\])"/g, '$1\\"'),
+            ns);
+      
+          var opts = {
+            ns: ns, resultIsJSON: true,
+            env: Global.clojure.Runtime.currentEnv(editor), passError: false,
+            requiredNamespaces: ["rksm.cloxp-trace.live-eval", "clojure.data.json"]};
+      
+          Global.clojure.Runtime.doEval(code, opts, thenDo);
+        }
+        
+        
+        
+        function addOverlay(result, thenDo) {
+          // module('lively.ide.codeeditor.TextOverlay').load()
+          editor.removeTextOverlay({className: "clojure-live-eval-value"});
+      
+          var evalResults;
+          if (result.error) {
+            var input = result.input;
+            if (!input) return thenDo(null, result);
+            var lines = lively.lang.string.lines(input);
+            try { evalResults = JSON.parse(eval(lines[0])); } catch (e) {
+              return thenDo(null, result);
+            }
+            result.input = lines.slice(1).join("\n");
+          } else evalResults = result;
+      
+          var rowOffsets = {};
+          var overlays = evalResults.forEach(function(r) {
+            if (!r.pos || !r.value) return;
+      
+            var acePos = {column: r.pos.column-1, row: r.pos.line-1};
+            var rowEnd = ed.session.getLine(acePos.row).length;
+            
+            var text = String(r.value);
+            if (r.out.trim().length) {
+              if (r.value === "nil") text = "";
+              text += " " + r.out.trim();
+            }
+            text = text.truncate(70).replace(/\n/g, "");
+      
+            var offs = rowOffsets[acePos.row] || 0;
+            rowOffsets[acePos.row] = offs + 8 + text.length*6;
+            var overlay = {
+              start: {column: rowEnd, row: acePos.row},
+              text: text,
+              classNames: ["clojure-live-eval-value"],
+              offset: {x: 15+offs, y: 0},
+              data: {"clojure-live-eval-value": r}
+            }
+            editor.addTextOverlay(overlay);
+          });
+      
+          thenDo && thenDo(null, result);
+        }
+      
+        return true;
+      
+      }
+    },
+    
   ],
 
   addCustomCommands: function(cmds) {
@@ -738,7 +866,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         "Ctrl-x r":                                "selectRectangularRegion",
         "Command-k|Alt-k":                         "clojureOpenWorkspace",
         // capturing
-        "Ctrl-x Ctrl-c a":                         "clojureCaptureSelection"
+        "Alt-Shift-w":                         "clojureCaptureSelection"
       }
     });
   },
@@ -778,59 +906,6 @@ lively.ide.codeeditor.modes.Clojure.Mode = lively.ide.ace.require('ace/mode/cloj
 
 lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
 
-    attach: lively.ide.codeeditor.modes.Clojure.Mode.prototype.attach.getOriginal().wrap(function(proceed, ed) {
-      var self = this;
-      ed.setDisplayIndentGuides(false);
-
-      // react to changes
-      if (!ed.session["clojure.onContentChange"]) {
-        ed.session["clojure.onContentChange"] = function(evt) { self.onDocChange(evt); }
-        ed.session.on('change', ed.session["clojure.onContentChange"]);
-        ed.once("changeMode", function() { ed.session.off("change", ed.session["clojure.onContentChange"]); });
-      }
-      if (!ed.session["clojure.onSelectionChange"]) {
-        ed.session["clojure.onSelectionChange"] = function(evt) { self.onSelectionChange(evt); }
-        ed.on('changeSelection', ed.session["clojure.onSelectionChange"]);
-        ed.once("changeMode", function() { ed.off("change", ed.session["clojure.onSelectionChange"]); });
-      }
-      if (!ed.session["clojure.onMouseDown"]) {
-        ed.session["clojure.onMouseDown"] = function(evt) { self.onMouseDown(evt); }
-        ed.on('mousedown', ed.session["clojure.onMouseDown"]);
-        ed.once("changeMode", function() { ed.off("change", ed.session["clojure.onMouseDown"]); });
-      }
-
-      return proceed(ed);
-    }),
-
-    onDocChange: function(evt) {},
-
-    onSelectionChange: function(evt) {
-      clojure.TraceFrontEnd.updateEarly();
-    },
-
-    onMouseDown: function(evt) {
-      var t = evt.domEvent.target;
-      var captureId = t && t.dataset.clojureCapture;
-      if (!captureId) return false;
-      var ed = evt.editor;
-      document.addEventListener("mouseup", onup);
-      evt.stopPropagation(); evt.preventDefault();
-      return true;
-
-      function onup() {
-        document.removeEventListener("mouseup", onup);
-        lively.morphic.Menu.openAtHand(null, [
-          ["inspect last value", ed.execCommand.bind(ed, "clojureCaptureInspectOne", {id: captureId})],
-          ["inspect all values", ed.execCommand.bind(ed, "clojureCaptureInspectOne", {id: captureId, all: true})],
-          ["empty", function() { clojure.TraceFrontEnd.emptyCapture(captureId, function() {}); }],
-          ["uninstall", function() { clojure.TraceFrontEnd.uninstallCapture(captureId, function() {}); }],
-          {isMenuItem: true, isDivider: true},
-          ["show all captures", ed.execCommand.bind(ed, "clojureCaptureShowAll")],
-        ])
-      }
-      
-    },
-
     helper: {
       clojureThingAtPoint: function(aceEd) {
         var pos = aceEd.getCursorPosition(),
@@ -860,6 +935,34 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
       }
     },
 
+    // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    // attaching event handlers for clojure specific stuff
+    attach: lively.ide.codeeditor.modes.Clojure.Mode.prototype.attach.getOriginal().wrap(function(proceed, ed) {
+      var self = this;
+      ed.setDisplayIndentGuides(false);
+
+      // react to changes
+      if (!ed.session["clojure.onContentChange"]) {
+        ed.session["clojure.onContentChange"] = function(evt) { self.onDocChange(evt, ed); }
+        ed.session.on('change', ed.session["clojure.onContentChange"]);
+        ed.once("changeMode", function() { ed.session.off("change", ed.session["clojure.onContentChange"]); });
+      }
+      if (!ed.session["clojure.onSelectionChange"]) {
+        ed.session["clojure.onSelectionChange"] = function(evt) { self.onSelectionChange(evt); }
+        ed.on('changeSelection', ed.session["clojure.onSelectionChange"]);
+        ed.once("changeMode", function() { ed.off("change", ed.session["clojure.onSelectionChange"]); });
+      }
+      if (!ed.session["clojure.onMouseDown"]) {
+        ed.session["clojure.onMouseDown"] = function(evt) { self.onMouseDown(evt); }
+        ed.on('mousedown', ed.session["clojure.onMouseDown"]);
+        ed.once("changeMode", function() { ed.off("change", ed.session["clojure.onMouseDown"]); });
+      }
+
+      return proceed(ed);
+    }),
+
+    // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
     morphMenuItems: function(items, editor) {
       var platform = editor.aceEditor.getKeyboardHandler().platform,
           isMac = platform == 'mac',
@@ -874,24 +977,33 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
       settings[1].splice(2, 0, [lively.lang.string.format("[%s] use paredit", lively.Config.pareditCorrectionsEnabled ? "X" : " "), function() { lively.Config.toggle("pareditCorrectionsEnabled"); }]);
       
       return [].concat([
+        ['eval selection or last expr (Alt-Enter)',         function() { editor.aceEditor.execCommand("clojureEvalSelectionOrLine"); }],
         ['save (Cmd-s)', function() { editor.doSave(); }],
-        ['eval selection or last expr (Alt-[Shift-]Enter)',         function() { editor.aceEditor.execCommand("clojureEvalSelectionOrLine"); }],
-        ['eval top level entity (Alt-Shift-Space)', function() { editor.aceEditor.execCommand("clojureEvalDefun"); }],
-      ]).concat(fn ? [
-        ['load entire file ' + fn + ' (Ctrl-x Ctrl-a)',            function() { editor.aceEditor.execCommand("clojureLoadFile"); }]] : []
-      ).concat(sexp && sexp.source === 'let' ? [
-        ['load let bindings as defs',            function() { editor.aceEditor.execCommand("clojureEvalLetBindingsAsDefs"); }]] : []
-      ).concat([
-        ['interrupt eval (Esc)',                       function() { editor.aceEditor.execCommand("clojureEvalInterrupt"); }],
-        {isMenuItem: true, isDivider: true},
-        ['help for thing at point (Alt-?)',            function() { editor.aceEditor.execCommand("clojurePrintDoc"); }],
-        ['find definition for thing at point (Alt-.)', function() { editor.aceEditor.execCommand("clojureFindDefinition"); }],
-        ['Completion for thing at point (Cmd-Shift-p)', function() { editor.aceEditor.execCommand("list protocol"); }],
-        {isMenuItem: true, isDivider: true},
-        ['capture values of selection', function() { editor.aceEditor.execCommand("clojureCaptureSelection"); }],
-        ['show all captures', function() { editor.aceEditor.execCommand("clojureCaptureShowAll"); }],
-        {isMenuItem: true, isDivider: true},
         ['indent selection (Tab)',                     function() { editor.aceEditor.execCommand("paredit-indent"); }],
+        {isMenuItem: true, isDivider: true},
+        ['eval and debug...', ([
+            ['interrupt eval (Esc)',                       function() { editor.aceEditor.execCommand("clojureEvalInterrupt"); }],
+            ['eval and pretty print (Alt-Shift-Enter)', function() { editor.aceEditor.execCommand("clojureEvalAndInspect"); }],
+            ['eval top level entity (Alt-Shift-Space)', function() { editor.aceEditor.execCommand("clojureEvalDefun"); }],
+          ]).concat(fn ? [
+            ['load entire file ' + fn + ' (Ctrl-x Ctrl-a)',            function() { editor.aceEditor.execCommand("clojureLoadFile"); }]] : []
+          ).concat(sexp && sexp.source === 'let' ? [
+            ['load let bindings as defs',            function() { editor.aceEditor.execCommand("clojureEvalLetBindingsAsDefs"); }]] : []
+          ).concat([
+            [lively.lang.string.format('[%s] live eval',
+              editor.getSession().getMode().isLiveEvalEnabled(editor.aceEditor) ? "X" : " "),
+              function() { editor.aceEditor.execCommand("clojureSetLiveEvalEnabled"); }],
+            {isMenuItem: true, isDivider: true},
+            ['capture values of selection (Alt-Shift-w)', function() { editor.aceEditor.execCommand("clojureCaptureSelection"); }],
+            ['show all captures', function() { editor.aceEditor.execCommand("clojureCaptureShowAll"); }],
+
+          ])
+        ],
+        ["doc...", [
+          ['help for thing at point (Alt-?)',            function() { editor.aceEditor.execCommand("clojurePrintDoc"); }],
+          ['find definition for thing at point (Alt-.)', function() { editor.aceEditor.execCommand("clojureFindDefinition"); }],
+          ['Completion for thing at point (Cmd-Shift-p)', function() { editor.aceEditor.execCommand("list protocol"); }]]],
+        {isMenuItem: true, isDivider: true},
         settings
       ]).map(function(ea) {
         if (isMac) return ea;
@@ -936,17 +1048,63 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
     },
 
     doListProtocol: function(codeEditor) {
-      codeEditor.withAceDo(function(ed) {
-        ed.execCommand("clojureListCompletions");
-      });
+      codeEditor.withAceDo(function(ed) { ed.execCommand("clojureListCompletions"); });
     },
-    
+
+    // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    // tracing / live eval related
+    isLiveEvalEnabled: function(ed) {
+      var cljState = ed.session.$livelyClojureState || (ed.session.$livelyClojureState = {});
+      return cljState.liveEvalEnabled;
+    },
+
+    onDocChange: function(evt, ed) {
+      if (!this.isLiveEvalEnabled(ed)) return;
+      var cljState = ed.session.$livelyClojureState;
+      clojureDoLiveEvalDebounced();
+
+      function clojureDoLiveEvalDebounced() {
+        lively.lang.fun.debounceNamed(ed.$morph.id+"-clojureDoLiveEval", 200, function() {
+          if (cljState && cljState.evalInProgress) return clojureDoLiveEvalDebounced();
+          ed.execCommand("clojureDoLiveEval");
+        })();
+      }
+      
+    },
+
+    onSelectionChange: function(evt) {
+      clojure.TraceFrontEnd.updateEarly();
+    },
+
+    onMouseDown: function(evt) {
+      var t = evt.domEvent.target;
+      var captureId = t && t.dataset.clojureCapture;
+      if (!captureId) return false;
+      var ed = evt.editor;
+      document.addEventListener("mouseup", onup);
+      evt.stopPropagation(); evt.preventDefault();
+      return true;
+
+      function onup() {
+        document.removeEventListener("mouseup", onup);
+        lively.morphic.Menu.openAtHand(null, [
+          ["inspect last value", ed.execCommand.bind(ed, "clojureCaptureInspectOne", {id: captureId})],
+          ["inspect all values", ed.execCommand.bind(ed, "clojureCaptureInspectOne", {id: captureId, all: true})],
+          ["empty", function() { clojure.TraceFrontEnd.emptyCapture(captureId, function() {}); }],
+          ["uninstall", function() { clojure.TraceFrontEnd.uninstallCapture(captureId, function() {}); }],
+          {isMenuItem: true, isDivider: true},
+          ["show all captures", ed.execCommand.bind(ed, "clojureCaptureShowAll")],
+        ])
+      }
+      
+    },
+
     onCaptureStateUpdate: function(ed, captures) {
       // module('lively.ide.codeeditor.TextOverlay').load()
 
       var m = ed.$morph;
       var ns = clojure.Runtime.detectNs(m) || "user";
-      m.removeTextOverlay();
+      m.removeTextOverlay({className: "clojure-capture"});
 
       var rowOffsets = {};
       var overlays = captures.forEach(function(c) {
@@ -971,11 +1129,17 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
       });
 
     }
+
 });
 
 
 (function pareditSetup() {
   lively.ide.codeeditor.modes.Clojure.update();
+  
+  var id = "clojure-ide-styles";
+  var el = document.getElementById(id);
+  if (el) el.parentNode.removeChild(el);
+  XHTMLNS.addCSSDef(id, "");
 })();
 
 }) // end of module
