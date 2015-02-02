@@ -386,11 +386,19 @@ Object.extend(clojure.Runtime.ReplServer, {
 
     cloxpLeinProfile:  "; do not modify, this file is auto-generated\n{\n"
                      + " :dependencies [[org.rksm/system-navigator \"0.1.8-SNAPSHOT\"]\n"
-                     + "                [org.rksm/cloxp-trace \"0.1.0\"]\n"
+                     + "                [org.rksm/cloxp-trace \"0.1.1-SNAPSHOT\"]\n"
                      + '                [pjstadig/humane-test-output "0.6.0"]]'
                      + " :injections [(require 'rksm.system-navigator)"
-                     + "              (require 'rksm.system-navigator.ns.filemapping)\n"
-                     + "              (rksm.system-navigator.ns.filemapping/add-common-project-classpath)\n"
+                    // rk 2015-01-31: This tries to auto discover classpath in
+                    // cwd. I currently deactivated it since it can lead to
+                    // confusing situations in which the runtime meta data (intern
+                    // info, line mappings) corresponds to a version of code that
+                    // is different from those found inside the added classpath.
+                    // Sincethe classpath is used by the system browser to show
+                    // code but the runtime information is used to show defs,
+                    // weird looking / broken code views might result.
+                    // + "              (require 'rksm.system-navigator.ns.filemapping)\n"
+                    // + "              (rksm.system-navigator.ns.filemapping/add-common-project-classpath)\n"
                      + "              (require 'pjstadig.humane-test-output)\n"
                      + "              (pjstadig.humane-test-output/activate!)]}\n",
 
