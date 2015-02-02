@@ -7,7 +7,7 @@ describe("Clojure trace front end", function() {
                + "  [x]\n"
                + "  (+ 23 x)\n  [{:x 3, :y 5}])\n",
       ast = paredit.parse(testCode),
-      sut = clojure.TraceFrontEnd;
+      sut = clojure.TraceFrontEnd.SourceMapper;
 
   describe("source pos to ast index mapping", function() {
     it("|(+ 23 x)|",   function() { expect(sut.findSelectedNode(ast, 18, 26).idx)            .equals(5); });

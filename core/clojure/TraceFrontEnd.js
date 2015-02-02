@@ -46,7 +46,7 @@ Object.extend(clojure.TraceFrontEnd, {
     clojure.TraceFrontEnd.ensureUpdateProc();
     var ed = $morph(/clojure-captures/) || $world.addActionText(
       [],
-      {title: "active captures", name: "clojure-captures"});
+      {extent: pt(620, 280), title: "active captures", name: "clojure-captures"});
 
     ed.setInputAllowed(false);
     ed.addScript(function onClojureCaptureStateUpdate(captures) {
@@ -93,8 +93,6 @@ Object.extend(clojure.TraceFrontEnd, {
     ed.addScript(function onFocus() { clojure.TraceFrontEnd.updateEarly(true); });
     
     return ed;
-
-
   },
   
   retrieveCapturesAndInformEditors: function(options, thenDo) {
@@ -167,7 +165,15 @@ Object.extend(clojure.TraceFrontEnd, {
         self. updateEarly(true);
         thenDo && thenDo(err);
       });
-  },
+  }
+
+});
+
+
+// maps source indexes to ast nodes / ast indexes
+// Currently this is solely done on the clojure side to be able to deal with
+// reader expansion
+clojure.TraceFrontEnd.SourceMapper = {
 
   astIdxToSourceIdx: function(node, i) {
     // 3. Find the ast index (linear, prewalk enumeration) of targetNode
@@ -238,6 +244,8 @@ Object.extend(clojure.TraceFrontEnd, {
       });
   },
 
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
   installTraceCode: function(ast, src, pos, posEnd) {
     var sel = this.findSelectedNode(ast, pos, posEnd);
     if (!sel) return null;
@@ -249,7 +257,6 @@ Object.extend(clojure.TraceFrontEnd, {
     });
   }
 
-});
-
+}
 
 }) // end of module
