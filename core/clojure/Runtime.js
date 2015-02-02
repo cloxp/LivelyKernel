@@ -299,7 +299,7 @@ Object.extend(clojure.Runtime, {
       if (!isError && options.prettyPrint) try { result = eval(result); } catch (e) {}
       if (!isError && options.resultIsJSON) try { result = JSON.parse(eval(result)); } catch (e) {
           err = e;
-          result = {error: e};
+          result = {error: e, type: "json parse error", input: result};
       }
 
       if (isError && String(result).include("ECONNREFUSED")) {
