@@ -255,8 +255,24 @@ clojure.TraceFrontEnd.SourceMapper = {
       annotatedSource: src.slice(sel.topLevelNode.start, sel.node.start)
         + "->" + src.slice(sel.node.start, sel.topLevelNode.end)
     });
+  },
+
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  mapClojurePosToAcePos: function(pos) {
+    return {column: pos.column-1, row: pos.line-1};
+  },
+
+  mapClojurePosToAceRange: function(pos) {
+    var start = {column: pos.column-1, row: pos.line-1};
+    
+    var end = {
+      column: pos.hasOwnProperty("end-column") ? pos["end-column"]-1 : start.column,
+      row: pos.hasOwnProperty("end-line") ? pos["end-line"]-1 : start.row};
+      
+    return ace.require("ace/range").Range.fromPoints(start, end);
   }
 
 }
+
 
 }) // end of module

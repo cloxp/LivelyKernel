@@ -636,16 +636,15 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           if (pos) {
             var defNode = paredit.walk.sexpsAt(ed.session.$ast, ed.getCursorIndex())[1]
             var nodePos = ed.idxToPos(defNode.start)
-            var start = {column: pos.column-1, row: pos.line-1 + nodePos.row};
-            var end = {column: pos["end-column"]-1, row: pos["end-line"]-1+nodePos.row};
+            var range = clojure.TraceFrontEnd.SourceMapper.mapClojurePosToAceRange(pos);
+            range.moveBy(nodePos.row, 0);
 
   // lively.ide.codeeditor.modes.Clojure.update()
 
             ed.saveExcursion(function(reset) {
-              var range = ace.require("ace/range").Range.fromPoints(start, end);
               ed.selection.setRange(range);
               setTimeout(reset, 800);
-            })
+            });
           }
 
 
@@ -668,18 +667,20 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       name: "clojureCaptureInspectOne",
       exec: function(ed, args) {
         args = args || {};
-
         lively.lang.fun.composeAsync(
           args.id ? function(n) { n(null, args.id, args.all); } : chooseCapture,
           function(id, all, n) { fetchAndShow({id: id, all: !!all}, n); }
         )(function(err, result) { })
 
         function fetchAndShow(options, thenDo) {
+    // lively.ide.codeeditor.modes.Clojure.update()
           clojure.TraceFrontEnd.inspectCapturesValuesWithId(options, function(err, result) {
+            var pre = lively.lang.string.format('(@rksm.cloxp-trace/storage "%s")\n', options.id);
             $world.addCodeEditor({
               title: "values captured for " + options.id,
-              content: err || result,
-              textMode: "clojure"
+              content: pre + (err || result),
+              textMode: "clojure",
+              extent: pt(600, 300)
             }).getWindow().comeForward();
             thenDo && thenDo(err);
           });
@@ -796,6 +797,8 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
               return thenDo(null, result);
             }
             result.input = lines.slice(1).join("\n");
+          } else if (!Array.isArray(result)) {
+            thenDo(result);
           } else evalResults = result;
       
           var rowOffsets = {};
@@ -810,7 +813,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
               if (r.value === "nil") text = "";
               text += " " + r.out.trim();
             }
-            text = text.truncate(70).replace(/\n/g, "");
+            text = text.truncate(100).replace(/\n/g, "");
       
             var offs = rowOffsets[acePos.row] || 0;
             rowOffsets[acePos.row] = offs + 8 + text.length*6;
@@ -1112,8 +1115,8 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
         var found = ed.session.$ast.children.detect(function(ea) {
           return paredit.defName(ea) === c.name; });
         if (!found) return null;
-        var pos = clojure.TraceFrontEnd.astIdxToSourceIdx(found, c["ast-idx"]);
-        var acePos = ed.idxToPos(pos);
+        var acePos = clojure.TraceFrontEnd.SourceMapper.mapClojurePosToAcePos(c.pos)
+        acePos.row += ed.idxToPos(found.start).row;
         var rowEnd = ed.session.getLine(acePos.row).length;
         var text = c['last-val'].truncate(70);
         var offs = rowOffsets[acePos.row] || 0;
@@ -1139,7 +1142,10 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
   var id = "clojure-ide-styles";
   var el = document.getElementById(id);
   if (el) el.parentNode.removeChild(el);
-  XHTMLNS.addCSSDef(id, "");
+  XHTMLNS.addCSSDef(".text-overlay.clojure-live-eval-value {\n"
+                      + "	background-color: #999;\n"
+                      + "	border-color: #999;\n"
+                      + "}\n", id);
 })();
 
 }) // end of module
