@@ -1138,14 +1138,17 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
 
 (function pareditSetup() {
   lively.ide.codeeditor.modes.Clojure.update();
-  
-  var id = "clojure-ide-styles";
-  var el = document.getElementById(id);
-  if (el) el.parentNode.removeChild(el);
-  XHTMLNS.addCSSDef(".text-overlay.clojure-live-eval-value {\n"
-                      + "	background-color: #999;\n"
-                      + "	border-color: #999;\n"
-                      + "}\n", id);
+
+  lively.whenLoaded(function() {
+          
+      var id = "clojure-ide-styles";
+      var el = document.getElementById(id);
+      if (el) el.parentNode.removeChild(el);
+      XHTMLNS.addCSSDef(".text-overlay.clojure-live-eval-value {\n"
+                          + "	background-color: #999;\n"
+                          + "	border-color: #999;\n"
+                          + "}\n", id);
+  });
 })();
 
 }) // end of module
