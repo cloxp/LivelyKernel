@@ -146,7 +146,7 @@ lively.BuildSpec('lively.net.tools.ConnectionIndicator', {
     this.statusText.align(this.statusText.bounds().center(), this.innerBounds().bottomCenter().addXY(0,-8));
     this.menu && this.menu.align(
         this.menu.bounds().bottomCenter(),
-        this.innerBounds().bottomCenter().addXY(2, -8-20));
+        this.innerBounds().bottomCenter().addXY(2, -20));
 },
     collapse: function collapse() {
     // this.collapse()
@@ -181,16 +181,6 @@ lively.BuildSpec('lively.net.tools.ConnectionIndicator', {
             lively.net.Wiki.showLoginInfo();
             self.collapse();
         }],
-        ['open chat', function() {
-            if ($morph('Lively2LivelyChat')) $morph('Lively2LivelyChat').openInWorldCenter().comeForward();
-            else lively.BuildSpec('lively.net.tools.Lively2LivelyChat').createMorph().openInWorldCenter();
-            // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-            self.collapse();
-        }],
-        ['open inspector', function() {
-            lively.BuildSpec('lively.net.tools.Lively2LivelyInspector').createMorph().openInWorldCenter().comeForward();
-            self.collapse();
-        }],
         ['[' + (allowRemoteEval ? 'x' : ' ') + '] allow remote eval', function() {
             lively.Config.set('lively2livelyAllowRemoteEval', !allowRemoteEval);
             self.collapse();
@@ -208,7 +198,7 @@ lively.BuildSpec('lively.net.tools.ConnectionIndicator', {
     var m = this.menu = new lively.morphic.Menu(null, items);
     m.openIn(this, pt(0,-items.length * 23), false);
     this.withCSSTransitionForAllSubmorphsDo(function() {
-        this.setExtent(pt(140, m.getExtent().y + 15));
+        this.setExtent(pt(140, m.getExtent().y + 2*15));
         this.alignInWorld();
         this.alignNotificationIcon();
     }, 500, function() {});
