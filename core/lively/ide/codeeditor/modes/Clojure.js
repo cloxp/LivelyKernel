@@ -1146,15 +1146,25 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
       var rowOffsets = {};
       var overlays = captures.forEach(function(c) {
         if (c.ns !== ns) return null;
-        var found = ed.session.$ast.children.detect(function(ea) {
-          return paredit.defName(ea) === c.name; });
+        if (c.type === "defmethod") {
+          var matches = c["defmethod-matches"];
+          var found = ed.session.$ast.children.detect(function(ea) {
+            if (paredit.defName(ea) !== c.name) return false;
+            return ea.children.slice(2, 2+matches.length).every(function(expr, i) {
+              return new RegExp(matches[i]).test(expr.source || "")
+            });
+          });
+        } else {
+          var found = ed.session.$ast.children.detect(function(ea) {
+            return paredit.defName(ea) === c.name; });
+        }
         if (!found) return null;
         var acePos = clojure.TraceFrontEnd.SourceMapper.mapClojurePosToAcePos(c.pos)
         acePos.row += ed.idxToPos(found.start).row;
         var rowEnd = ed.session.getLine(acePos.row).length;
         var text = c['last-val'].truncate(70);
         var offs = rowOffsets[acePos.row] || 0;
-        rowOffsets[acePos.row] = offs + (text.length * 9);
+        rowOffsets[acePos.row] = offs + (text.length * 6) + 5;
         var overlay = {
           start: {column: rowEnd, row: acePos.row},
           text: text,
