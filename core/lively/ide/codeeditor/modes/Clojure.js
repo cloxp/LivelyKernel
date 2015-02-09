@@ -726,7 +726,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       exec: function(ed, args) {
         args = args || {};
         var cljState = ed.session.$livelyClojureState || (ed.session.$livelyClojureState = {});
-        var val = args.value || !ed.session.getMode().isLiveEvalEnabled(ed);
+        var val = "value" in args ? args.value : !ed.session.getMode().isLiveEvalEnabled(ed);
         cljState.liveEvalEnabled = val;
         if (val) ed.execCommand("clojureDoLiveEval")
         else ed.$morph.removeTextOverlay({className: "clojure-live-eval-value"});
