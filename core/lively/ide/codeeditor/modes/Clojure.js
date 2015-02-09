@@ -918,6 +918,10 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       (function() {
         cljEds.forEach(function(editor) {
           editor.withAceDo(function(ed) {
+            ["clojure.onContentChange",
+            "clojure.onMouseDown",
+            "clojure.onSelectionChange",
+            "$livelyClojureState"].forEach(function(ea) { delete ed.session[ea]; });
             ed.onChangeMode();
             this.aceEditor.saveExcursion(function(reset) {
               ed.setValue(ed.getValue()); // trigger doc change + paredit reparse
