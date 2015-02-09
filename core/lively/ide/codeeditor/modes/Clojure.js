@@ -621,10 +621,8 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           + "             (select-keys [:ns :name :id :ast-idx :pos :loc]))]\n"
           + "  (clojure.data.json/write-str spec))\n",
             paredit.walk.source(src, defNode)
-              .replace(/\\([^"])/g, '\\\\$1')
-              .replace(/\\"/g, '\\\\\\"')
-              .replace(/""/g, '\\"\\"')
-              .replace(/([^\\])"/g, '$1\\"'),
+              .replace(/\\/g, "__SLASH__")
+              .replace(/"/g, '\\"'),
               ns, name, localPosClj.column, localPosClj.line);
 
         clojure.TraceFrontEnd.ensureUpdateProc();
@@ -769,10 +767,8 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       
           var code = lively.lang.string.format(template,
             rawCode
-              .replace(/\\([^"])/g, '\\\\$1')
-              .replace(/\\"/g, '\\\\\\"')
-              .replace(/""/g, '\\"\\"')
-              .replace(/([^\\])"/g, '$1\\"'),
+              .replace(/\\/g, "__SLASH__")
+              .replace(/"/g, '\\"'),
             ns);
       
           var opts = {
