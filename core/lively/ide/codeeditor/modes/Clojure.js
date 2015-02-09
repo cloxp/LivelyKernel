@@ -368,9 +368,10 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
     {
       name: "clojureEvalBuffer",
       exec: function(ed, args) {
-        show("clojureEvalBuffer no yet implemented")
-      },
-      multiSelectAction: 'forEach'
+        ed.execCommand("clojureEval",
+          lively.lang.obj.merge(args || {}, {from: 0, to: ed.getValue().length}));
+        return true;
+      }
     },
 
     {
