@@ -1188,14 +1188,15 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
   lively.ide.codeeditor.modes.Clojure.update();
 
   lively.whenLoaded(function() {
-          
-      var id = "clojure-ide-styles";
-      var el = document.getElementById(id);
-      if (el) el.parentNode.removeChild(el);
-      XHTMLNS.addCSSDef(".text-overlay.clojure-live-eval-value {\n"
-                          + "	background-color: #999;\n"
-                          + "	border-color: #999;\n"
-                          + "}\n", id);
+    var id = "clojure-ide-styles";
+    var el = document.getElementById(id);
+    if (el) el.parentNode.removeChild(el);
+    XHTMLNS.addCSSDef(".text-overlay.clojure-live-eval-value {\n"
+                        + "	background-color: #999;\n"
+                        + "	border-color: #999;\n"
+                        + "}\n"
+                        + "@import url(http://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic);\n"
+                        , id);
   });
 })();
 
