@@ -21,6 +21,7 @@ Object.extend(paredit, {
 Object.extend(clojure.Runtime, {
 
     _cache: {},
+    _environments: [{port: 7888, host: "0.0.0.0", session: null, doAutoLoadSavedFiles: false}],
     _defaultEnv: {
         port: 7888,
         host: "0.0.0.0",
@@ -28,10 +29,24 @@ Object.extend(clojure.Runtime, {
         doAutoLoadSavedFiles: true
     },
 
+    environments: function() { return this._environments.clone(); },
+
     reset: function() {
       var runtime = clojure.Runtime;
       runtime._cache = {};
-      runtime._defaultEnv = {port: 7888, host: "0.0.0.0", session: null, doAutoLoadSavedFiles: false};
+      runtime._environments = [{port: 7888, host: "0.0.0.0", session: null, doAutoLoadSavedFiles: false}];
+      runtime._defaultEnv = this._environments[0];
+    },
+
+    addEnv: function(env) {
+      this.removeEnv(env);
+      this._environments.push(env);
+      return env;
+    },
+
+    removeEnv: function(env) {
+      var existing = this._environments.filter(function(ea) { return lively.lang.obj.equals(ea, env); })
+      this._environments = this._environments.withoutAll(existing)
     },
 
     resetEditorState: function(ed) {
