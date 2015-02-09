@@ -835,7 +835,38 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       
       }
     },
-    
+
+    {
+      name: "clojureUndef",
+      exec: function(ed, args) {
+        args = args || {};
+        var name = args.name;
+        if (!name) {
+          var ast = ed.session.$ast;
+          var idx = ed.getCursorIndex()
+          var node = paredit.walk.sexpsAt(ast, idx, function(n) { return n.type === 'symbol'; }).last();
+          name = node && node.source;
+        }
+        if (name) {
+          var ns = clojure.Runtime.detectNs(ed.$morph) || "user";
+          var code = lively.lang.string.format("(ns-unmap '%s '%s)", ns, name);
+          var opts = {env: clojure.Runtime.currentEnv(ed.$morph), passError: true};
+          clojure.Runtime.doEval(code, opts, function(err) {
+            if (err) onError(err.truncate(1000));
+            else ed.$morph.setStatusMessage("undefined " + name);
+          });
+        } else {
+          onError(new Error("No symbol to undefine at point"));
+        }
+        function onError(err) {
+          ed.$morph.setStatusMessage(
+            "Error undefining " + (name || "unknown entity") + ":\n" + err)
+        }        
+
+        return true;
+
+      }
+    }
   ],
 
   addCustomCommands: function(cmds) {
@@ -865,6 +896,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         "Alt-o|Command-o":                         "clojureOpenEvalResult",
         "Tab":                                     "pareditExpandSnippetOrIndent",
         "Ctrl-x Ctrl-r":                           "clojureRefreshClasspathDirs",
+        "Alt-Shift-u":                             "clojureUndef",
         // emacs                                   compat
         "Ctrl-x Ctrl-x":                           "exchangePointAndMark",
         "Ctrl-x r":                                "selectRectangularRegion",
@@ -989,6 +1021,7 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
             ['interrupt eval (Esc)',                       function() { editor.aceEditor.execCommand("clojureEvalInterrupt"); }],
             ['eval and pretty print (Alt-Shift-Enter)', function() { editor.aceEditor.execCommand("clojureEvalAndInspect"); }],
             ['eval top level entity (Alt-Shift-Space)', function() { editor.aceEditor.execCommand("clojureEvalDefun"); }],
+            ['undefine entity (Alt-Shift-u)', function() { editor.aceEditor.execCommand("clojureUndef"); }],
           ]).concat(fn ? [
             ['load entire file ' + fn + ' (Ctrl-x Ctrl-a)',            function() { editor.aceEditor.execCommand("clojureLoadFile"); }]] : []
           ).concat(sexp && sexp.source === 'let' ? [
