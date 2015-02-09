@@ -297,7 +297,7 @@
             div1.setAttribute('id', this.id);
             div1.setAttribute('style', "position: fixed;"
                                      + "left: 0px; top: 0px;"
-                                     + "background-color: rgba(100,100,100,0.7);"
+                                     + "background-color: white;"
                                      + "overflow: auto;");
             div1.style.width = this.width() + 'px';
             div1.style.height = this.height() + 'px';
@@ -310,17 +310,18 @@
             logoAndText.setAttribute('id', this.logoId);
             logoAndText.setAttribute('style', "position: fixed;"
                                      + "margin-left:auto; margin-right:auto;"
-                                     + "width: 80px;"
+                                    + "width: 290px;"
                                      + "background-color: white;")
-            logo.setAttribute('style', "width: 80px; height: 80px;");
+            logo.setAttribute('style', "width: 290px; height: 181px;");
             text.setAttribute('style', "text-align:center;"
                                      + "font-family: sans-serif;"
                                      + "font-size: large;"
                                      + "color: gray");
             text.textContent = 'Loading';
-            logoAndText.style.top = (this.height() / 2 - 100) + 'px';
-            logoAndText.style.left = (this.width() / 2 - 40) + 'px';
-            logo.src = Global.LivelyLoader.codeBase + 'media/loading.gif';
+            logoAndText.style.left = 0;
+            logoAndText.style.right = 0;
+            logoAndText.style.top = "30%";
+            logo.src = Global.LivelyLoader.codeBase + 'media/cloxp-logo.png';
             logoAndText.appendChild(logo);
             logoAndText.appendChild(text);
             this.logo = logoAndText;
@@ -368,11 +369,12 @@
         buildConsole: function() {
             var console = document.createElement('pre'), self = this;
             console.setAttribute('id', this.consoleId);
-            console.setAttribute('style', "position: absolute; top: 0px;"
-                                        + "font-family: monospace;"
-                                        + "color: rgb(0,255,64);"
-                                        + "font-size: medium;"
-                                        + "padding-bottom: 20px;");
+            console.style= "position: absolute; top: 0px;"
+                         + "font-family: monospace;"
+                         + "color: rgb(0,255,64);"
+                         + "font-size: medium;"
+                         + "border: none !important;"
+                         + "padding-bottom: 20px;";
             this.console = console;
             if (browserDetector.isFireBug()) return console;
             function addLine(str, style) {
@@ -438,8 +440,7 @@
                                   + "width: 70px;"
                                   + "text-align:center;"
                                   + "font-family: monospace;"
-                                  + "border: 1px solid;"
-                                  + "border-color: rgb(100,100,100);"
+                                  + "border: none;"
                                   + "color: rgb(100,100,100);"
                                   + extraStyle || '');
             a.setAttribute('href', 'javascript:' + action);
@@ -456,8 +457,6 @@
                                         + "font-family: monospace;"
                                         + "margin: 0 0 0 0;"
                                         + "padding: 0px 10px 0px 10px;"
-                                        + "border: 1px solid;"
-                                        + "border-color: rgb(100,100,100);"
                                         + "color: rgb(100,0,0);");
             if (!browserDetector.isSpecSatisfied()) {
                 defaultMessageText = "HINT !\nLively Kernel works best with:\n"
@@ -471,16 +470,16 @@
         build: function() {
             var background = this.buildBackground(),
                 loadingLogo = this.buildLoadingLogo(),
-                consoleButton = this.buildButton('console', "LoadingScreen.toggleConsole();", 'console', "right: 170px;"),
-                closeButton = this.buildButton('close', "LoadingScreen.remove();", 'close', "right: 90px;"),
-                moduleDebugButton = this.buildButton('moduleDebug', "window.open(lively.moduleDependencyViz());", 'module dbg', "right: 250px;"),
+                // consoleButton = this.buildButton('console', "LoadingScreen.toggleConsole();", 'console', "right: 170px;"),
+                // closeButton = this.buildButton('close', "LoadingScreen.remove();", 'close', "right: 90px;"),
+                // moduleDebugButton = this.buildButton('moduleDebug', "window.open(lively.moduleDependencyViz());", 'module dbg', "right: 250px;"),
                 browserMessage = this.buildBrowserMessage(),
                 console = this.buildConsole();
             background.appendChild(loadingLogo);
             background.appendChild(browserMessage);
-            background.appendChild(consoleButton);
-            background.appendChild(moduleDebugButton);
-            background.appendChild(closeButton);
+            // background.appendChild(consoleButton);
+            // background.appendChild(moduleDebugButton);
+            // background.appendChild(closeButton);
             return background;
         },
 
