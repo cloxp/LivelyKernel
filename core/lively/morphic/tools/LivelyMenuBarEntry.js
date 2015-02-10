@@ -15,6 +15,7 @@ lively.BuildSpec('lively.morphic.tools.LivelyMenuBarEntry', lively.BuildSpec("li
     return [
         ['My user config', lively.ide.commands.exec.bind(null, 'lively.ide.SystemCodeBrowser.openUserConfig')],
         ['Run command... (alt-x)', cmd('lively.ide.commands.execute')],
+        ['File a bug report...', function() { var url = 'https://github.com/cloxp/cloxp-install/issues/new'; window.open(url, '_blank'); }],
         ['Save world as ...', $world.interactiveSaveWorldAs.bind($world)]];
   },
 
