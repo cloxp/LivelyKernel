@@ -32,10 +32,37 @@ lively.BuildSpec("clojure.ClojureToolsMenuBarEntry", lively.BuildSpec("lively.mo
   update: function update() {},
 }));
 
+lively.BuildSpec("clojure.ClojureHelpMenuBarEntry", lively.BuildSpec("lively.morphic.tools.MenuBarEntry").customize({
+
+  name: "clojureHelpLabel",
+  menuBarAlign: "left",
+  textString: "help",
+
+  style: lively.lang.obj.merge(lively.BuildSpec("lively.morphic.tools.MenuBarEntry").attributeStore.style, {
+    align: "center",
+    extent: lively.pt(60,20),
+    toolTip: "Help is on the way..."
+    // textColor: Color.rgb(127,230,127)
+  }),
+  
+  morphMenuItems: function morphMenuItems() {
+    function cmd(name) { return function() { lively.ide.commands.exec(name); }; }
+    var self = this;
+    return [
+          ["open cloxp documentation", function() {
+            $world.loadPartItem("CloxpHelp", "PartsBin/Clojure").openInWorldCenter().comeForward();
+          }]
+    ];
+  },
+
+  update: function update() {},
+}));
+
 
 Object.extend(clojure.ToolsMenuBarEntry, {
   getMenuBarEntries: function() {
-    return [lively.BuildSpec("clojure.ClojureToolsMenuBarEntry").createMorph()]
+    return [lively.BuildSpec("clojure.ClojureToolsMenuBarEntry").createMorph(),
+            lively.BuildSpec("clojure.ClojureHelpMenuBarEntry").createMorph()]
   }
 });
 

@@ -131,7 +131,7 @@ function addConfigSettings() {
     "clojure.ConnectionIndicatorMenuBarEntry",
     'lively.morphic.tools.LogMenuBarEntry',
     "lively.ide.tools.CurrentDirectoryMenuBarEntry",
-    "clojure.ToolsMenuBarEntry",
+    "clojure.ToolsMenuBarEntry"
     ]);
 }
 
