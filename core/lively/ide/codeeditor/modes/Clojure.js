@@ -1008,40 +1008,44 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
           pos = editor.aceEditor.getCursorIndex(),
           sexp = editor.aceEditor.session.$ast && paredit.walk.sexpsAt(ast,pos).last(),
           ns = clojure.Runtime.detectNs(editor),
-          settings = items.detect(function(ea) { return ea[0] === "settings"});
+          settings = items.detect(function(ea) { return ea[0] === "settings"}),
+          canSave = ((editor.clojureGetMyBrowser && editor.clojureGetMyBrowser())
+                    || editor.owner && editor.owner.owner && editor.owner.owner.isTextEditor);
 
       settings[1].splice(2, 0, [lively.lang.string.format("[%s] use paredit", lively.Config.pareditCorrectionsEnabled ? "X" : " "), function() { lively.Config.toggle("pareditCorrectionsEnabled"); }]);
       
       return [].concat([
-        ['eval selection or last expr (Alt-Enter)',         function() { editor.aceEditor.execCommand("clojureEvalSelectionOrLine"); }],
-        ['save (Cmd-s)', function() { editor.doSave(); }],
-        ['indent selection (Tab)',                     function() { editor.aceEditor.execCommand("paredit-indent"); }],
-        {isMenuItem: true, isDivider: true},
-        ['eval and debug...', ([
-            ['interrupt eval (Esc)',                       function() { editor.aceEditor.execCommand("clojureEvalInterrupt"); }],
-            ['eval and pretty print (Alt-Shift-Enter)', function() { editor.aceEditor.execCommand("clojureEvalAndInspect"); }],
-            ['eval top level entity (Alt-Shift-Space)', function() { editor.aceEditor.execCommand("clojureEvalDefun"); }],
-            ['undefine entity (Alt-Shift-u)', function() { editor.aceEditor.execCommand("clojureUndef"); }],
-          ]).concat(fn ? [
-            ['load entire file ' + fn + ' (Ctrl-x Ctrl-a)',            function() { editor.aceEditor.execCommand("clojureLoadFile"); }]] : []
-          ).concat(sexp && sexp.source === 'let' ? [
-            ['load let bindings as defs',            function() { editor.aceEditor.execCommand("clojureEvalLetBindingsAsDefs"); }]] : []
-          ).concat([
-            [lively.lang.string.format('[%s] live eval',
-              editor.getSession().getMode().isLiveEvalEnabled(editor.aceEditor) ? "X" : " "),
-              function() { editor.aceEditor.execCommand("clojureSetLiveEvalEnabled"); }],
-            {isMenuItem: true, isDivider: true},
+        ['eval selection or last expr (Alt-Enter)',         function() { editor.aceEditor.execCommand("clojureEvalSelectionOrLastSexp"); }],
+        ]).concat(
+          canSave ? [['save (Cmd-s)', function() { editor.doSave(); }]] : []
+        ).concat([
+          ['indent selection (Tab)',                     function() { editor.aceEditor.execCommand("paredit-indent"); }],
+          {isMenuItem: true, isDivider: true},
+          ['eval and debug...', ([
+              ['interrupt eval (Esc)',                       function() { editor.aceEditor.execCommand("clojureEvalInterrupt"); }],
+              ['eval and pretty print (Alt-Shift-Enter)', function() { editor.aceEditor.execCommand("clojureEvalAndInspect"); }],
+              ['eval top level entity (Alt-Shift-Space)', function() { editor.aceEditor.execCommand("clojureEvalDefun"); }],
+              ['undefine entity (Alt-Shift-u)', function() { editor.aceEditor.execCommand("clojureUndef"); }],
+            ]).concat(fn ? [
+              ['load entire file ' + fn + ' (Ctrl-x Ctrl-a)',            function() { editor.aceEditor.execCommand("clojureLoadFile"); }]] : []
+            ).concat(sexp && sexp.source === 'let' ? [
+              ['load let bindings as defs',            function() { editor.aceEditor.execCommand("clojureEvalLetBindingsAsDefs"); }]] : []
+            ).concat([
+              [lively.lang.string.format('[%s] live eval',
+                editor.getSession().getMode().isLiveEvalEnabled(editor.aceEditor) ? "X" : " "),
+                function() { editor.aceEditor.execCommand("clojureSetLiveEvalEnabled"); }],
+            ])
+          ],
+          ["capture...", [
             ['capture values of selection (Alt-Shift-w)', function() { editor.aceEditor.execCommand("clojureCaptureSelection"); }],
             ['show all captures', function() { editor.aceEditor.execCommand("clojureCaptureShowAll"); }],
-
-          ])
-        ],
-        ["doc...", [
-          ['help for thing at point (Alt-?)',            function() { editor.aceEditor.execCommand("clojurePrintDoc"); }],
-          ['find definition for thing at point (Alt-.)', function() { editor.aceEditor.execCommand("clojureFindDefinition"); }],
-          ['Completion for thing at point (Cmd-Shift-p)', function() { editor.aceEditor.execCommand("list protocol"); }]]],
-        {isMenuItem: true, isDivider: true},
-        settings
+            ['uninstall all captures', function() { editor.aceEditor.execCommand("clojureCaptureReset"); }]]],
+          ["doc...", [
+            ['help for thing at point (Alt-?)',            function() { editor.aceEditor.execCommand("clojurePrintDoc"); }],
+            ['find definition for thing at point (Alt-.)', function() { editor.aceEditor.execCommand("clojureFindDefinition"); }],
+            ['Completion for thing at point (Cmd-Shift-p)', function() { editor.aceEditor.execCommand("list protocol"); }]]],
+          {isMenuItem: true, isDivider: true},
+          settings
       ]).map(function(ea) {
         if (isMac) return ea;
         ea[0] = ea[0].replace(/Cmd-/g, "Ctrl-");
