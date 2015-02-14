@@ -456,8 +456,9 @@ Object.extend(clojure.Runtime.ReplServer, {
 
     ensure: function(options, thenDo) {
         if (!thenDo) { thenDo = options; options = {}; }
+        options = options || {};
         var self = this;
-        var cmd = clojure.Runtime.ReplServer.getCurrentServerCommand();
+        var cmd = clojure.Runtime.ReplServer.getCurrentServerCommand(options);
         if (!cmd) return self.start(options, thenDo);
         lively.lang.fun.composeAsync(
           function(n) {
@@ -476,9 +477,10 @@ Object.extend(clojure.Runtime.ReplServer, {
         });
     },
 
-    getCurrentServerCommand: function(port) {
+    getCurrentServerCommand: function(options) {
+        options = options || {};
         var cmdQueueName = "lively.clojure.replServer";
-        if (port) cmdQueueName+":"+port;
+        if (options.env && options.env.port) cmdQueueName+":"+options.env.port;
         else cmdQueueName = Object.keys(lively.shell.commandQueue)
           .grep(new RegExp(cmdQueueName))
           .detect(function(ea) {
@@ -492,9 +494,10 @@ Object.extend(clojure.Runtime.ReplServer, {
 
     start: function(options, thenDo) {
         if (!thenDo) { thenDo = options; options = {}; }
-
-        var port = options.env ? options.env.port : "7888",
-            host = options.env ? options.env.host : "127.0.0.1",
+        
+        var env = options.env || clojure.Runtime.currentEnv(),
+            port = env ? env.port : "7888",
+            host = env ? env.host : "127.0.0.1",
             cwd = options.cwd,
             useLein = options.useLein,
             useCljFeather = options.useCljFeather || !useLein,
@@ -527,7 +530,7 @@ Object.extend(clojure.Runtime.ReplServer, {
 
     stop: function(cmd, env, thenDo) {
       clojure.Runtime.evalQueue = [];
-      if (cmd) {
+      if (cmd && cmd.getCommand().match(new RegExp(/clj-feather-repl|lein with-profile \+cloxp/))) {
         cmd.kill("SIGINT");
         cmd.kill("SIGINT");
         cmd.kill("SIGINT");
@@ -537,9 +540,8 @@ Object.extend(clojure.Runtime.ReplServer, {
           function(timeout) {
             if (timeout) {
               show("Forcing repl server shutdown.")
-              var cmdString = cmd.getCommand().grep(new RegExp("clj-feather-repl"))[0];
-              var port = cmdString && Number(cmdString.match(/[0-9]+$/))
-              forceStop("lively.clojure.replServer:"+port, port, thenDo);
+              var port = Number(cmd.getCommand().match(/[0-9]+$/));
+              if (port) forceStop("lively.clojure.replServer:"+port, port, thenDo);
             } else thenDo();
           });
       } else {
