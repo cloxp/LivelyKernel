@@ -30,7 +30,8 @@ lively.BuildSpec("clojure.ClojureConnectionIndicatorMenuBarEntry", lively.BuildS
               function(cmd, next) { lively.ide.tools.ShellCommandRunner.findOrCreateForCommand(cmd).openInWorldCenter(); next(null, cmd); },
               function(cmd, next) { indicatorClose(); next(null, cmd); }
           )(function(err, cmd) {
-            (function() { self.update(); }).delay(5);
+            self.startStepping(1*1000, "update");
+            (function() { self.startStepping(30*1000, "update"); }).delay(60);
           });
       },
       
@@ -82,6 +83,11 @@ lively.BuildSpec("clojure.ClojureConnectionIndicatorMenuBarEntry", lively.BuildS
           ["start repl server", actions.startServer],
           ["stop repl server", actions.stopServer],
           ["open nREPL log", actions.openNreplLog],
+          ["show evaluation queue", function() {
+            var cmd = lively.ide.codeeditor.modes.Clojure.commands.detect(function(ea) {
+              return ea.name === "clojureShowEvalQueue"; });
+            cmd.exec();
+          }],
           {isMenuItem: true, isDivider: true},
           ["environments", clojure.Runtime.environments().map(function(ea) {
             return [clojure.Runtime.printEnv(ea), function() {
