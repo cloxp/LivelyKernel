@@ -123,6 +123,89 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
     },
     
     {
+      name: "clojureShowEvalQueue",
+      exec: function(_) {
+        var env = clojure.Runtime.currentEnv();
+        var ed = $world.addActionText([]);
+        ed.getWindow().setTitle("Clojure evaluation queue")
+        ed.getWindow().openInWorld();
+        (function() { ed.onLoad(); }).delay(0);
+
+        ed.addScript(function killAllInEnv(env, thenDo) {
+          var q = Global.clojure.Runtime.evalQueue;
+          if (q[0].isRunning) var cmd = q.shift();
+          q.length = 0;
+          if (cmd) { this.killCommand(cmd, thenDo); }
+          else thenDo && thenDo();
+        });
+        
+        ed.addScript(function killCommand(cmd, thenDo) {
+          var self = this;
+          Global.clojure.Runtime.evalInterrupt(cmd.env, cmd, function(err) {
+            self.setStatusMessage(
+              err ? ["Error interrupting eval:\n"+err] : "Eval interrupted",
+              err ? Global.Color.red : undefined, err ? null : 3);
+            self.update();
+            thenDo && thenDo(err);
+          })
+        });
+        
+        ed.addScript(function setAttributedText(textSpec) {
+            // textSpec like [["string", {type: "tokenType", onClick: ..., commands: ...}}]]
+            return this.withAceDo(function(ed) {
+              var m = ed.session.getMode();
+              return m.set(ed, textSpec);
+            });
+          });
+        
+        ed.addScript(function update() {
+          // show(this)
+          // this.getWindow().openInWorld()
+          var q = Global.clojure.Runtime.evalQueue,
+              env = Global.clojure.Runtime.currentEnv(),
+              self = this;
+        
+          self.saveExcursion(function(reset) {
+            self.setAttributedText(
+              Array.prototype.concat.apply(
+                [printEnv(env), ['\n'], printStopAll(env), [' '], printUpdate(), ['\n']],
+                q.map(function(cmd) {
+                  return [printEvalCommand(cmd), ['\n'], printStop(cmd), ['\n']]; })));
+            (function() { reset(); }).delay(0);
+          });
+        
+          function printUpdate() {
+            return ['[update]', {type: "action", onClick: self.update.bind(self)}];
+          }
+        
+          function printEnv(env) {
+            return [lively.lang.string.format(
+              "eval queue of %s:%s", env.host, env.port)];
+          }
+        
+          function printStopAll(env) {
+            return ["[stop all]", {type: 'action', onClick: self.killAllInEnv.bind(self, env)}];
+          }
+        
+          function printEvalCommand(cmd) {
+            return [lively.lang.string.format(
+              "\neval: %s\nnamespace: %s\nid:%s\nis running: %s",
+                cmd.expr.replace(/\n/g, "").truncate(300), cmd.ns || "user",
+                cmd["eval-id"], cmd.isRunning || "false")];
+          }
+          
+          function printStop(cmd) {
+            return ["[stop]", {type: 'action', onClick: self.killCommand.bind(self, cmd)}];
+          }
+        });
+        
+        ed.addScript(function onLoad() { $super(); this.startStepping(1000, "update"); });
+
+        return true;
+      }
+    },
+    
+    {
       name: "clojureRefreshClasspathDirs",
       exec: function(ed, args) {
         args = args || {};
@@ -342,8 +425,10 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             if (!ed.selection.isEmpty()) ed.selection.clearSelection();
             ed.insert(content);
           } else {
+            // lively.ide.codeeditor.modes.Clojure.update()
             $world.addCodeEditor({
               title: 'clojure inspect',
+              extent: pt(600, 300),
               content: content,
               textMode: 'clojure',
               lineWrapping: true
