@@ -99,7 +99,8 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
 
     {
       name: "clojureEvalInterrupt",
-      exec: function(ed) {
+      exec: function(ed, args) {
+        args = args || {};
         // Actually this is a general "Escape" action that will do various things...
         // 1. close the status morph if one is open
         if (ed.$morph._statusMorph && ed.$morph._statusMorph.world())
@@ -492,8 +493,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             var env = clojure.Runtime.currentEnv(ed.$morph),
                 ns = clojure.Runtime.detectNs(ed.$morph),
                 options = lively.lang.obj.merge({
-                  ns:ns, env: env, catchError: false,
-                  passError: true, resultIsJSON: true}, options || {});
+                  ns:ns, env: env, passError: true, resultIsJSON: true}, options || {});
             clojure.Runtime.doEval(code, options, thenDo);
           }
       }
@@ -530,15 +530,11 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           var errorRetrieval = lively.lang.fun.extractBody(function() {
             // simply printing what we have
             // lively.ide.codeeditor.modes.Clojure.update()
-            var ed = $world.addCodeEditor({
-              extent: pt(700, 500),
-              title: "clojure stack trace",
-              textMode: "text",
-              content: String(this.err)
-            }).getWindow().comeForward();
+            clojure.Runtime.fullLastErrorStackTrace({open: true});
           });
 
           var options = {
+            file: ed.$morph.getTargetFilePath(),
             env: env, ns: ns, passError: true,
             prettyPrint: args.prettyPrint,
             prettyPrintLevel: args.prettyPrintLevel
@@ -608,11 +604,12 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           env: clojure.Runtime.currentEnv(ed.$morph),
           ns: ns,
           passError: true, resultIsJSON: true,
+          bindings: ["rksm.cloxp-trace/*repl-source*", paredit.walk.source(src, defNode)],
           requiredNamespaces: ["rksm.cloxp-trace", "clojure.data.json"]};
 
         var code = lively.lang.string.format(
           "(let [spec (rksm.cloxp-trace/install-capture!\n"
-          + "            \"%s\"\n"
+          + "            rksm.cloxp-trace/*repl-source*\n"
           + "            :ns (find-ns '%s)\n"
           + "            :name \"%s\"\n"
           + "            :pos {:column %s, :line %s})\n"
@@ -620,9 +617,6 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           + "             (update-in [:ns] str)\n"
           + "             (select-keys [:ns :name :id :ast-idx :pos :loc]))]\n"
           + "  (clojure.data.json/write-str spec))\n",
-            paredit.walk.source(src, defNode)
-              .replace(/\\/g, "__SLASH__")
-              .replace(/"/g, '\\"'),
               ns, name, localPosClj.column, localPosClj.line);
 
         clojure.TraceFrontEnd.ensureUpdateProc();
@@ -742,7 +736,8 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             editor = ed.$morph,
             rawCode = ed.getValue(), result,
             ns = Global.clojure.Runtime.detectNs(editor) || "user",
-            cljState = ed.session.$livelyClojureState || (ed.session.$livelyClojureState = {})
+            cljState = ed.session.$livelyClojureState || (ed.session.$livelyClojureState = {}),
+            file = ed.$morph.clojureGetRelativeFilePath && ed.$morph.clojureGetRelativeFilePath();
 
         cljState.evalInProgress = true;
       
@@ -761,17 +756,16 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       
         function doEval(thenDo) {
       
-          var template = "(let [code \"%s\"\n"
-                       + "      eval-result (rksm.cloxp-trace.live-eval/live-eval-code code :ns '%s)]\n"
+          var template = "(let [code rksm.cloxp-trace/*repl-source*\n"
+                       + "      eval-result (rksm.cloxp-trace.live-eval/live-eval-code code :ns '%s :file %s)]\n"
                        + "    (clojure.data.json/write-str eval-result))";
       
           var code = lively.lang.string.format(template,
-            rawCode
-              .replace(/\\/g, "__SLASH__")
-              .replace(/"/g, '\\"'),
-            ns);
-      
+            ns, file ? lively.lang.string.print(file) : 'nil');
+
+      // lively.ide.codeeditor.modes.Clojure.update()
           var opts = {
+            bindings: ["rksm.cloxp-trace/*repl-source*", rawCode],
             ns: ns, resultIsJSON: true,
             env: Global.clojure.Runtime.currentEnv(editor), passError: false,
             requiredNamespaces: ["rksm.cloxp-trace.live-eval", "clojure.data.json"]};

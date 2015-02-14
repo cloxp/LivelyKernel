@@ -114,8 +114,13 @@ Object.extend(clojure.Runtime, {
 
     fetchDoc: function(runtimeEnv, ns, expr, thenDo) {
       if (!expr.trim().length) thenDo(new Error("doc: no input"))
-      else this.doEval("(clojure.repl/doc " + expr + ")",
-        {ns:ns, requiredNamespaces: ['clojure.repl'], env: runtimeEnv, prettyPrint: true, passError: true}, thenDo);
+      else this.doEval("(clojure.repl/doc " + expr + ")", {
+        ns: ns,
+        requiredNamespaces: ['clojure.repl'],
+        env: runtimeEnv,
+        prettyPrint: true,
+        passError: true
+      }, thenDo);
     },
 
     evalQueue: [],
@@ -141,66 +146,26 @@ Object.extend(clojure.Runtime, {
 
         var clj                = clojure.Runtime,
             env                = evalObject.env,
-            options            = evalObject.options,
-            expr               = evalObject.expr,
-            ns                 = evalObject.ns,
-            requiredNamespaces = evalObject.requiredNamespaces || [],
-            pp                 = options.prettyPrint = options.hasOwnProperty("prettyPrint") ? options.prettyPrint : false,
-            ppLevel            = options.hasOwnProperty("prettyPrintLevel") ? options.prettyPrintLevel : null,
-            printLength        = options.hasOwnProperty("printLength") ? options.printLength : null,
-            isJSON             = options.resultIsJSON = options.hasOwnProperty("resultIsJSON") ? options.resultIsJSON : false,
-            isFileLoad         = !expr && evalObject["file-content"],
-            catchError         = options.hasOwnProperty("catchError") ? options.catchError : true,
-            sess               = lively.net.SessionTracker.getSession(),
-            cljSession         = env.session;
-
-        var reqNs = requiredNamespaces;
-        
-        if (expr) {
-          if (pp) {
-            reqNs.pushIfNotIncluded('clojure.pprint');
-            expr = Strings.format("(with-out-str (clojure.pprint/write (do %s) %s))",
-              expr, ppLevel ? ":level " + ppLevel : "");
-          } else if (!printLength) {
-            printLength = 20;
-          }
-          if (printLength) {
-            expr = Strings.format("(binding [*print-length* %s] %s)", printLength, expr);
-          }
-          if (catchError) {
-            reqNs.pushIfNotIncluded('clojure.repl');
-            expr = Strings.format("(try %s (catch Exception e (clojure.repl/pst e 999)))", expr);
-          }
-          expr = "(do " + requiredNamespaces.map(function(ea) {
-            return "(require '" + ea + ")"; }).join(" ") + expr + ")";
-        }
-
+            options            = evalObject.options;
 
         evalObject.isRunning = true;
         var nreplOptions = {port: env.port || 7888, host: env.host || "127.0.0.1"};
         var nreplMessages = [];
         var message = {
           nreplOptions: nreplOptions,
-          session: cljSession,
-          ignoreMissingSession: true};
+          session: env.session,
+          ignoreMissingSession: true,
+          nreplMessage: evalObject.nreplMessage
+        };
 
-        if (isFileLoad) {
-          message["file-content"] = evalObject["file-content"];
-          message["file-name"] = evalObject["file-name"];
-          message["file-path"] = evalObject["file-path"];
-        } else {
-          message.code = expr;
-          message.ns = ns;
-        }
-
-        sess.send('clojureEval', message, function(answer) {
+        lively.net.SessionTracker.getSession().send('nreplSend', message, function(answer) {
             if (Object.isArray(answer.data)) {
                 nreplMessages.pushAll(answer.data);
             } else nreplMessages.push(answer.data);
 
             if (answer.data['eval-id']) {
                 evalObject['eval-id'] = answer.data['eval-id'];
-                cljSession = evalObject.env.session = answer.data.session;
+                env.session = evalObject.env.session = answer.data.session;
             }
 
             if (answer.expectMoreResponses) return;
@@ -211,26 +176,85 @@ Object.extend(clojure.Runtime, {
     },
 
     doEval: function(expr, options, thenDo) {
-        if (!thenDo && typeof options === "function") { thenDo = options; options = null; };
-        var evalState = {
-          env: options.env || clojure.Runtime.currentEnv(),
-          expr: expr,
-          ns: options ? options.ns : undefined,
-          options: options || {},
-          isRunning: false,
-          "eval-id": null,
-          requiredNamespaces: options.requiredNamespaces || [],
-          callback: thenDo
+      if (!thenDo && typeof options === "function") {
+        thenDo = options; options = null; };
+      options = options || {};
+
+      var pp                 = options.prettyPrint = options.hasOwnProperty("prettyPrint") ? options.prettyPrint : false,
+          ppLevel            = options.hasOwnProperty("prettyPrintLevel") ? options.prettyPrintLevel : null,
+          printLength        = options.hasOwnProperty("printLength") ? options.printLength : null,
+          bindings           = options.bindings || [],
+          env = options.env || clojure.Runtime.currentEnv();
+
+      if (!pp && !printLength) { printLength = 20; }
+
+      if (options.file) {
+        bindings.push("clojure.core/*file*");
+        bindings.push(options.file);
+      }
+
+      if (printLength) {
+        bindings.push("clojure.core/*print-length*");
+        bindings.push(printLength);
+      }
+
+        // bindings.push("rksm.cloxp-trace.source-mapping/*code-from-repl*");
+        // bindings.push('(defn x "foo\nbar\\"baz\\""\n  [a] a)');
+        // bindings.push('(defn x "fo\\"bar\\"oo"   [a] a)');
+
+
+      return this.queueNreplMessage({
+        env: env,
+        options: options,
+        expr: expr,
+        nreplMessage: {
+          op: "cloxp-eval",
+          code: expr,
+          ns: options.ns || 'user',
+          session: env.session || undefined,
+          "eval": undefined,
+          "required-ns": options.requiredNamespaces || [],
+          bindings: bindings || [],
+          pp: pp ? String(pp) : undefined,
+          "pp-level": ppLevel || undefined
         }
-        this.evalQueue.push(evalState);
-        this.runEvalFromQueue();
-        return evalState;
+      }, thenDo);
     },
 
-    evalInterrupt: function(env, thenDo) {
+
+    loadFile: function(content, pathToFile, options, thenDo) {
+      if (!pathToFile) return thenDo && thenDo(new Error("Cannot load clojure file without a path!"));
+      options = options || {};
+      options.passError = true;
+      return this.queueNreplMessage({
+        env: options.env,
+        options: options,
+        nreplMessage: {
+          op: 'load-file',
+          "file": content,
+          "file-name": pathToFile.split('\\').last(),
+          "file-path": pathToFile,
+        }
+      }, thenDo);
+    },
+
+    queueNreplMessage: function(msg, thenDo) {
+      msg.env = msg.env || clojure.Runtime.currentEnv();
+      msg.isRunning = false;
+      msg["eval-id"] = null;
+      msg.callback = thenDo;
+      this.evalQueue.push(msg);
+      this.runEvalFromQueue();
+    },
+
+    evalInterrupt: function(env, cmd, thenDo) {
+        if (typeof cmd === "function" && !thenDo) {
+          thenDo = cmd; cmd = null;
+        }
+
         // FIXME ... eval queue, eval objects should belong to a Clojure runtime env...!
         var clj = this;
-        var evalObject = clj.evalQueue[0];
+        var evalObject = cmd || clj.evalQueue[0];
         if (!evalObject) return thenDo(new Error("no evaluation in progress"));
         var env = evalObject.env || {};
         var nreplOptions = {port: env.port || 7888, host: env.host || "127.0.0.1"};
@@ -263,26 +287,8 @@ Object.extend(clojure.Runtime, {
         }
     },
 
-    loadFile: function(content, pathToFile, options, thenDo) {
-        if (!pathToFile) return thenDo && thenDo(new Error("Cannot load clojure file without a path!"));
-        options = options || {};
-        options.passError = true;
-        var env = options.env || clojure.Runtime.currentEnv();
-        
-        // pathToFile = "rksm/system_navigator/ns/filemapping.clj";
-        this.evalQueue.push({
-            env: env,
-            "file-content": content,
-            // "file-name": pathToFile.split('\\').last(),
-            "file-path": pathToFile,
-            options: options,
-            isRunning: false,
-            "eval-id": null,
-            callback: thenDo});
-        this.runEvalFromQueue();
-    },
-
     processNreplEvalAnswers: function(messages, options, thenDo) {
+
       if (Object.isString(messages) && messages.match(/error/i))
           messages = [{err: messages}];
 
@@ -311,7 +317,7 @@ Object.extend(clojure.Runtime, {
           err = errors.flatten().compact().invoke('trim').join('\n');
       }
 
-      if (!isError && options.prettyPrint) try { result = eval(result); } catch (e) {}
+      // if (!isError && options.prettyPrint) try { result = eval(result); } catch (e) {}
       if (!isError && options.resultIsJSON) try { result = JSON.parse(eval(result)); } catch (e) {
           err = e;
           result = {error: e, type: "json parse error", input: result};
@@ -323,7 +329,7 @@ Object.extend(clojure.Runtime, {
 
       // "print" error if result is a string anyway
       if (err && (!result || typeof result === 'string')) {
-        result = ("" || result) + "\n" + err;
+        result = (("" || result) + "\n" + err).trim();
       }
       thenDo && thenDo(options.passError ? err : null, result);
   },
@@ -400,10 +406,12 @@ Object.extend(clojure.Runtime, {
 Object.extend(clojure.Runtime.ReplServer, {
 
     cloxpLeinProfile:  "; do not modify, this file is auto-generated\n{\n"
-                     + " :dependencies [[org.rksm/system-navigator \"0.1.9\"]\n"
-                     + "                [org.rksm/cloxp-trace \"0.1.2\"]\n"
-                     + '                [pjstadig/humane-test-output "0.6.0"]]'
-                     + " :injections [(require 'rksm.system-navigator)"
+                     + " :dependencies [[org.rksm/system-navigator \"0.1.10-SNAPSHOT\"]\n"
+                     + "                [org.rksm/cloxp-trace \"0.1.3-SNAPSHOT\"]\n"
+                     + "                [org.rksm/cloxp-repl \"0.1.0-SNAPSHOT\"]\n"
+                     + '                [pjstadig/humane-test-output "0.6.0"]]\n'
+                     + ' :repl-options {:nrepl-middleware [rksm.cloxp-repl.nrepl/wrap-cloxp-eval]}\n'
+                     + " :injections [(require 'rksm.system-navigator)\n"
                     // rk 2015-01-31: This tries to auto discover classpath in
                     // cwd. I currently deactivated it since it can lead to
                     // confusing situations in which the runtime meta data (intern

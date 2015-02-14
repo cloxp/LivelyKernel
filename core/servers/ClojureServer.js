@@ -99,14 +99,41 @@ util._extend(services, {
     },
 
     clojureEval: function(sessionServer, c, msg) {
-        var isFileLoad = !!msg.data["file-content"];
-        var code = msg.data.code;
+
+        var nreplMessage;
+        if (!!msg.data["file-content"]) {
+          nreplMessage = {
+            op: 'load-file',
+            "file": msg.data["file-content"],
+            "file-name": msg.data["file-name"],
+            "file-path": msg.data["file-path"]
+          };
+        } else {
+          nreplMessage = {
+            op: msg.data.evalOp || 'eval',
+            code: msg.data.code,
+            ns: msg.data.ns || 'user',
+            session: msg.data.session,
+            id: undefined,
+            "eval": undefined,
+            "required-ns": msg.data["required-ns"],
+            bindings: msg.data.bindings,
+            pp: msg.data.pp,
+            "pp-level": msg.data["pp-level"]
+          }
+        }
+
+        msg.data.nreplMessage = nreplMessage;
+        services.nreplSend(sessionServer, c, msg);
+    },
+
+    nreplSend: function(sessionServer, c, msg) {
+        var nreplMessage = msg.data.nreplMessage;
         var session = msg.data.session;
-        var ns = msg.data.ns || 'user';
         var ignoreMissingSession = msg.data.ignoreMissingSession;
         var sendResult, nreplCon;
-        debug && console.log(isFileLoad ? "Clojure load file" + msg.data['file-name'] : "Clojure eval: " + code);
-        addManualLogMessage(isFileLoad ? "Clojure load file" + msg.data['file-name'] : "Clojure eval: " + code);
+
+        addManualLogMessage(nreplMessage);
 
         async.waterfall([
             function(next) {
@@ -136,24 +163,13 @@ util._extend(services, {
                 });
             },
 
-            function doEvalOrLoadFile(next) {
-              var evalMsg;
-                if (isFileLoad) {
-                  evalMsg = nreplCon.loadFile(
-                    msg.data["file-content"],
-                    msg.data["file-name"],
-                    msg.data["file-path"], // relative
-                    session, function(err, result) {/*currently ignored*/});
-                } else {
-                  evalMsg = nreplCon.eval(code, ns, session, function(err, result) {/*currently ignored*/});
-                }
-
-                var id = evalMsg.id,
-                    messageSequenceListenerName = "messageSequence-"+evalMsg.id;
+            function send(next) {
+              var evalMsg = nreplCon.send(nreplMessage),
+                  id = evalMsg.id,
+                  messageSequenceListenerName = "messageSequence-" + evalMsg.id;
                 l2lAnswer(c, msg, true, {"eval-id": evalMsg.id, session: session});
                 nreplCon.messageStream.once("error", onError);
                 nreplCon.messageStream.on(messageSequenceListenerName, onMessageSequence);
-
                 // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
                 function cleanup() {
@@ -168,7 +184,8 @@ util._extend(services, {
                     if (!done) l2lAnswer(c, msg, true, messages);
                     else { cleanup(); next(null, messages); }
                 }
-                function onError(err) { cleanup(); nreplCon.end(); next(err, null); }
+                function onError(err) {
+                  cleanup(); nreplCon.end(); next(err, null); }
             }
         ], function(err, result) {
             if (err) console.error("Error in clojureEval l2l handler: ", err);
@@ -314,3 +331,4 @@ module.exports = function(route, app) {
 }
 
 module.exports.clientConnectionState = clientConnectionState;
+module.exports.ensureNreplConnection = ensureNreplConnection;
