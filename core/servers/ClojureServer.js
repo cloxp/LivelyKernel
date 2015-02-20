@@ -130,7 +130,7 @@ util._extend(services, {
     nreplSend: function(sessionServer, c, msg) {
         var nreplMessage = msg.data.nreplMessage;
         var session = msg.data.session;
-        var ignoreMissingSession = msg.data.ignoreMissingSession;
+        var ignoreMissingSession = msg.data.ignoreMissingSession || msg.data.ignoreMissingSession === 'undefined';
         var sendResult, nreplCon;
 
         addManualLogMessage(nreplMessage);
@@ -159,7 +159,7 @@ util._extend(services, {
                 if (session) return next(null);
                 nreplCon.clone(function(err, msg) {
                     if (err || !msg[0]['new-session']) next(err || new Error("Could not create new nREPL session"));
-                    else { session = msg[0]['new-session']; next(null); }
+                    else { nreplMessage.session = session = msg[0]['new-session']; next(null); }
                 });
             },
 
