@@ -20,14 +20,15 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         var string = clojure.StaticAnalyzer.sourceForNodeAtCursor(ed),
             runtime = clojure.Runtime,
             env = runtime.currentEnv(ed.$morph),
-            ns = clojure.Runtime.detectNs(ed.$morph);
-        clojure.Runtime.fetchDoc(env, ns, string, function(err, docString) {
+            ns = clojure.Runtime.detectNs(ed.$morph),
+            file = ed.$morph.getTargetFilePath();
+        clojure.Runtime.fetchDoc(string, {passError: true, env: env, ns: ns, file: file}, function(err, docString) {
           // ed.$morph.printObject(ed, err ? err : docString);
+          if (!docString || !(docString.trim()) && !err) err = new Error("Cannot retrieve documentation for\n" + string);
           if (err) return ed.$morph.setStatusMessage(String(err), Color.red);
 
           docString = docString.replace(/"?nil"?/,"").replace(/[-]+\n/m,"").trim()
-          if (!docString.trim().length) ed.$morph.setStatusMessage("no doc found");
-          else clojure.UI.showText({
+          clojure.UI.showText({
             title: "clojure doc",
             content: err ? String(err).truncate(300) : docString,
             extent: pt(560,250),
@@ -134,6 +135,11 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         ed.addScript(function killAllInEnv(env, thenDo) {
           var q = Global.clojure.Runtime.evalQueue;
           if (q[0].isRunning) var cmd = q.shift();
+          q.forEach(function(evalSpec) {
+            try {
+              evalSpec.callback && evalSpec.callback(new Error("Eval interrupted"));
+            } catch (e) {}
+          });
           q.length = 0;
           if (cmd) { this.killCommand(cmd, thenDo); }
           else thenDo && thenDo();
@@ -210,9 +216,9 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       exec: function(ed, args) {
         args = args || {};
         clojure.Runtime.doEval(
-          "(rksm.system-navigator.ns.filemapping/refresh-classpath-dirs)",
+          "(rksm.system-files/refresh-classpath-dirs)",
           {env: Global.clojure.Runtime.currentEnv(ed.$morph),
-           requiredNamespaces: ["rksm.system-navigator.ns.filemapping"],
+           requiredNamespaces: ["rksm.system-files"],
            passError: true},
           function(err) {
             if (args.thenDo) args.thenDo(err);
@@ -924,7 +930,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         }
         if (name) {
           var ns = clojure.Runtime.detectNs(ed.$morph) || "user";
-          var code = lively.lang.string.format("(ns-unmap '%s '%s)", ns, name);
+          var code = lively.lang.string.format("(do (ns-unmap '%s '%s) (ns-unalias '%s '%s))", ns, name, ns, name);
           var opts = {env: clojure.Runtime.currentEnv(ed.$morph), passError: true};
           clojure.Runtime.doEval(code, opts, function(err) {
             if (err) onError(err.truncate(1000));

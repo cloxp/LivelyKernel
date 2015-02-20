@@ -112,15 +112,40 @@ Object.extend(clojure.Runtime, {
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     // communicating with clojure runtimes via nrepl
 
-    fetchDoc: function(runtimeEnv, ns, expr, thenDo) {
-      if (!expr.trim().length) thenDo(new Error("doc: no input"))
-      else this.doEval("(clojure.repl/doc " + expr + ")", {
-        ns: ns,
-        requiredNamespaces: ['clojure.repl'],
-        env: runtimeEnv,
-        prettyPrint: true,
-        passError: true
-      }, thenDo);
+    changeWorkingDirectory: function(dir, thenDo) {
+      var code = lively.lang.string.format("(rksm.system-files.fs-util/set-cwd! \"%s\")", dir);
+      clojure.Runtime.doEval(code,
+        {passError: true, requiredModules: ["rksm.system-files.fs-util"]},
+        function(err) { if (err) $world.logError(err); thenDo && thenDo(err); });
+    },
+
+    fetchDoc: function(expr, options, thenDo) {
+      options = options || {};
+      if (!expr.trim().length) return thenDo(new Error("doc: no input"))
+      var self = this;
+      lively.lang.fun.composeAsync(
+        function(n) {
+          self.doEval("(clojure.repl/doc " + expr + ")", {
+            ns: options.ns,
+            requiredNamespaces: ['clojure.repl'],
+            env: options.env,
+            prettyPrint: true,
+            passError: true
+          }, function(err, doc) { n(null, doc); });
+        },
+        function(doc, n) {
+          if (doc && String(doc).trim() !== "nil") return n(null, doc);
+          self.lookupIntern(options.ns, expr, options,
+            function(err, result) {
+              if (!result || !result.doc) return n(err, null);
+              var string = result.doc;
+              var args = result['method-params'] || result.arglists;
+              if (args) string = "(["+args.join("] [") + "])\n\n" + string;
+              string = result.ns + "/" + result.name + "\n\n" + string;
+              n(err, string); });
+        }
+      )(thenDo);
+      
     },
 
     evalQueue: [],
@@ -202,12 +227,12 @@ Object.extend(clojure.Runtime, {
         // bindings.push('(defn x "foo\nbar\\"baz\\""\n  [a] a)');
         // bindings.push('(defn x "fo\\"bar\\"oo"   [a] a)');
 
-
       return this.queueNreplMessage({
         env: env,
         options: options,
         expr: expr,
         nreplMessage: {
+          // op: "eval",
           op: "cloxp-eval",
           code: expr,
           ns: options.ns || 'user',
@@ -335,25 +360,38 @@ Object.extend(clojure.Runtime, {
   },
 
   lookupIntern: function(nsName, symbol, options, thenDo) {
-    var code = Strings.format(
-          "(rksm.system-navigator.ns.internals/symbol-info->json\n %s '%s)\n",
-        nsName ? "(find-ns '"+nsName+")" : "*ns*", symbol);
+    options = options || {};
+    var code, reqNs;
+
+    if (options.file && options.file.match(/\.cljs$/)) {
+      code = Strings.format(
+          "(rksm.cloxp-cljs.ns.internals/symbol-info-for-sym->json '%s '%s \"%s\")",
+        nsName, symbol, options.file);
+      reqNs = ["rksm.cloxp-cljs.ns.internals"];
+    } else { code = Strings.format(
+        "(rksm.system-navigator.ns.internals/symbol-info->json\n %s '%s)\n",
+      nsName ? "(find-ns '"+nsName+")" : "*ns*", symbol);
+      reqNs = ["rksm.system-navigator"];
+    }
+
     this.doEval(code, lively.lang.obj.merge(
-      options||{}, {requiredNamespaces: ["rksm.system-navigator"], resultIsJSON: true}), thenDo);
+      options||{}, {requiredNamespaces: reqNs, resultIsJSON: true}), thenDo);
   },
 
   retrieveDefinition: function(symbol, inns, options, thenDo) {
 
     lively.lang.fun.composeAsync(
-      function(n) { clojure.Runtime.lookupIntern(inns, symbol, {}, n); },
+      function(n) { clojure.Runtime.lookupIntern(inns, symbol, options, n); },
 
       function(intern, n) {
         if (!intern) return n(new Error("Cannot retrieve meta data for " + symbol));
+        var file = options.file ? '"' + options.file + '"' : null;
+        if (intern.file && file && !file.endsWith(intern.file)) file = null;
         var cmd = lively.lang.string.format(
-          "(clojure.data.json/write-str (rksm.system-navigator.ns.filemapping/source-for-ns '%s %s))",
-          intern.ns, options.file ? ('"'+options.file+'"') : "");
+          "(clojure.data.json/write-str (rksm.system-files/source-for-ns '%s %s))",
+          intern.ns, file || "");
         clojure.Runtime.doEval(cmd,
-          {requiredNamespaces: ["rksm.system-navigator.ns.filemapping", "clojure.data.json"], resultIsJSON:true},
+          {requiredNamespaces: ["rksm.system-files", "clojure.data.json"], resultIsJSON:true},
           function(err,nsSrc) { n(err,intern, nsSrc); });
       },
 
@@ -409,9 +447,10 @@ Object.extend(clojure.Runtime.ReplServer, {
                      + " :dependencies [[org.rksm/system-navigator \"0.1.10-SNAPSHOT\"]\n"
                      + "                [org.rksm/cloxp-trace \"0.1.3-SNAPSHOT\"]\n"
                      + "                [org.rksm/cloxp-repl \"0.1.0-SNAPSHOT\"]\n"
+                     + "                [org.rksm/cloxp-cljs \"0.1.0-SNAPSHOT\"]\n"
                      + '                [pjstadig/humane-test-output "0.6.0"]]\n'
                      + ' :repl-options {:nrepl-middleware [rksm.cloxp-repl.nrepl/wrap-cloxp-eval]}\n'
-                     + " :injections [(require 'rksm.system-navigator)\n"
+                     + " :injections [(require 'rksm.system-navigator) (require 'rksm.cloxp-trace)\n"
                     // rk 2015-01-31: This tries to auto discover classpath in
                     // cwd. I currently deactivated it since it can lead to
                     // confusing situations in which the runtime meta data (intern
@@ -420,8 +459,8 @@ Object.extend(clojure.Runtime.ReplServer, {
                     // Sincethe classpath is used by the system browser to show
                     // code but the runtime information is used to show defs,
                     // weird looking / broken code views might result.
-                    // + "              (require 'rksm.system-navigator.ns.filemapping)\n"
-                    // + "              (rksm.system-navigator.ns.filemapping/add-common-project-classpath)\n"
+                    // + "              (require 'rksm.system-files)\n"
+                    // + "              (rksm.system-files/add-common-project-classpath)\n"
                      + "              (require 'pjstadig.humane-test-output)\n"
                      + "              (pjstadig.humane-test-output/activate!)]}\n",
 
