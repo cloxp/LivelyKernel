@@ -1213,16 +1213,8 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
 
       function onup() {
         document.removeEventListener("mouseup", onup);
-        lively.morphic.Menu.openAtHand(null, [
-          ["inspect last value", ed.execCommand.bind(ed, "clojureCaptureInspectOne", {id: captureId})],
-          ["inspect all values", ed.execCommand.bind(ed, "clojureCaptureInspectOne", {id: captureId, all: true})],
-          ["empty", function() { clojure.TraceFrontEnd.emptyCapture(captureId, function() {}); }],
-          ["uninstall", function() { clojure.TraceFrontEnd.uninstallCapture(captureId, function() {}); }],
-          {isMenuItem: true, isDivider: true},
-          ["show all captures", ed.execCommand.bind(ed, "clojureCaptureShowAll")],
-        ])
+        clojure.TraceFrontEnd.showEditorMenuForCapture(ed.$morph, captureId);
       }
-      
     },
 
     onCaptureStateUpdate: function(ed, captures) {

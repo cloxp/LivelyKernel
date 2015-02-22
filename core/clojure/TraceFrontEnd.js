@@ -3,9 +3,9 @@ module('clojure.TraceFrontEnd').requires('clojure.SystemNotifier').toRun(functio
 // Using the rksm.cloxp-trace clojure package
 
 Object.extend(clojure.TraceFrontEnd, {
-  
+
   state: clojure.TraceFrontEnd.state || {lastUpdate: 0, updateTimeout: 2000, captureUpdateProc: null},
-  
+
   ensureUpdateProc: function() {
     // clojure.Runtime.evalQueue
     clojure.TraceFrontEnd.state
@@ -82,19 +82,31 @@ Object.extend(clojure.TraceFrontEnd, {
         clojure.TraceFrontEnd.emptyCapture(id, function(err) {
             self.setStatusMessage(err ? "Error emptying capture" + err.stack : "Emptied " + id); });
       }
-    
+
       function inspect(id) {
         var cmd = lively.ide.codeeditor.modes.Clojure.commands.detect(function(ea) {
           return ea.name === "clojureCaptureInspectOne"; })
         cmd.exec(self.aceEditor, {id: id, all: true});
       }
     });
-    
+
     ed.addScript(function onFocus() { clojure.TraceFrontEnd.updateEarly(true); });
-    
+
     return ed;
   },
-  
+
+  showEditorMenuForCapture: function(codeEditor, captureId) {
+    var ed = codeEditor.aceEditor;
+    lively.morphic.Menu.openAtHand(null, [
+      ["inspect last value", ed.execCommand.bind(ed, "clojureCaptureInspectOne", {id: captureId})],
+      ["inspect all values", ed.execCommand.bind(ed, "clojureCaptureInspectOne", {id: captureId, all: true})],
+      ["empty", function() { clojure.TraceFrontEnd.emptyCapture(captureId, function() {}); }],
+      ["uninstall", function() { clojure.TraceFrontEnd.uninstallCapture(captureId, function() {}); }],
+      {isMenuItem: true, isDivider: true},
+      ["show all captures", ed.execCommand.bind(ed, "clojureCaptureShowAll")],
+    ]);
+  },
+
   retrieveCapturesAndInformEditors: function(options, thenDo) {
     lively.lang.fun.composeAsync(
       this.retrieveCaptures.bind(this, options),
@@ -115,9 +127,9 @@ Object.extend(clojure.TraceFrontEnd, {
     )(thenDo);
 
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    
+
     function removeExistingEvals(n) {
-      
+
       var evals = clojure.Runtime.evalQueue
         .filter(function(ea) { return ea.expr.startsWith("(rksm.cloxp-trace/captures->json"); })
         .groupByKey("isRunning");
@@ -129,7 +141,7 @@ Object.extend(clojure.TraceFrontEnd, {
           clojure.Runtime.evalInterrupt(ea.env, function(err) { n(); });
         }, function(err) { n(); })
     }
-    
+
     function scheduleRetrieval(n) {
       var nextOnce = lively.lang.fun.once(n);
       setTimeout(function() { nextOnce(new Error("rksm.cloxp-trace/captures->json timed out")); }, 1000);
