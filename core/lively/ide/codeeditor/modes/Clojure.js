@@ -814,7 +814,41 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         }
       
         return true;
-      
+      }
+    },
+
+    {
+      name: "clojureOpenLineAnnotation",
+      exec: function(ed, args) {
+        var pos = ed.getCursorPosition();
+
+        lively.lang.fun.composeAsync(
+          findCaptureAt.curry(pos),
+          openAnnotations
+        )(function(err) {
+          if (err) ed.$morph.setStatusMessage("Cannot find line annotation");
+        });
+
+        function findCaptureAt(acePos, next) {
+  // lively.ide.codeeditor.modes.Clojure.update()
+          clojure.TraceFrontEnd.retrieveCaptures({}, function(err, captures) {
+            var capturesAtRow = !err && clojure.TraceFrontEnd
+              .filterCapturesForEditor(ed.$morph, captures)
+              .map(function(ea) { ea.type = "capture"; return ea; })
+              .filter(function(ea) { return ea.acePos.row === acePos.row; })
+            next(err, capturesAtRow);
+          });
+        }
+        
+        function openAnnotations(annotations, next) {
+          if (!annotations || !annotations.length) return next(new Error("No annotations found"));
+          annotations.forEach(function(ea) {
+            if (ea.type === "capture") {
+              lively.ide.commands.exec("clojureCaptureInspectOne", {id: ea.id});
+            }
+          });
+          next();
+        }
       }
     },
 
@@ -864,7 +898,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
     ace.ext.keys.addKeyCustomizationLayer("clojure-keys", {
       modes: ["ace/mode/clojure"],
       commandKeyBinding: {
-        "Command-Shift-\/|Alt-Shift-\/|¿":         "clojurePrintDoc",
+        "Command-Shift-\/|Alt-Shift-?|Alt-Shift-\/|¿":         "clojurePrintDoc",
         "Command-Shift-p|Alt-Shift-p":             "clojureListCompletions",
         "Escape|Ctrl-x Ctrl-b":                    "clojureEvalInterrupt",
         "Command-e":                               "clojureChangeEnv",
@@ -884,7 +918,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         "Ctrl-x r":                                "selectRectangularRegion",
         "Command-k|Alt-k":                         "clojureOpenWorkspace",
         // capturing
-        "Alt-Shift-w":                         "clojureCaptureSelection"
+        "Alt-Shift-w":                             "clojureCaptureSelection"
       }
     });
   },
