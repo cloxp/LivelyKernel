@@ -444,10 +444,10 @@ Object.extend(clojure.Runtime, {
 Object.extend(clojure.Runtime.ReplServer, {
 
     cloxpLeinProfile:  "; do not modify, this file is auto-generated\n{\n"
-                     + " :dependencies [[org.rksm/system-navigator \"0.1.10\"]\n"
-                     + "                [org.rksm/cloxp-trace \"0.1.3\"]\n"
-                     + "                [org.rksm/cloxp-repl \"0.1.0\"]\n"
-                    // + "                [org.rksm/cloxp-cljs \"0.1.0\"]\n"
+                     + " :dependencies [[org.rksm/system-navigator \"0.1.11-SNAPSHOT\"]\n"
+                     + "                [org.rksm/cloxp-trace \"0.1.4-SNAPSHOT\"]\n"
+                     + "                [org.rksm/cloxp-repl \"0.1.1-SNAPSHOT\"]\n"
+                     + "                [org.rksm/cloxp-cljs \"0.1.1-SNAPSHOT\"]\n"
                      + '                [pjstadig/humane-test-output "0.6.0"]]\n'
                      + ' :repl-options {:nrepl-middleware [rksm.cloxp-repl.nrepl/wrap-cloxp-eval]}\n'
                      + " :injections [(require 'rksm.system-navigator) (require 'rksm.cloxp-trace)\n"
