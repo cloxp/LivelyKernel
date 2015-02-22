@@ -117,6 +117,32 @@ Object.extend(clojure.TraceFrontEnd, {
     )(thenDo);
   },
 
+  filterCapturesForEditor: function(codeEditor, captures) {
+    // module('lively.ide.codeeditor.TextOverlay').load()
+    var ed = codeEditor.aceEditor;
+    var ns = clojure.Runtime.detectNs(codeEditor) || "user";
+    return captures.filter(function(c) {
+      if (c.ns !== ns) return null;
+      if (c.type === "defmethod") {
+        var matches = c["defmethod-matches"];
+        var found = ed.session.$ast.children.detect(function(ea) {
+          if (paredit.defName(ea) !== c.name) return false;
+          return ea.children.slice(2, 2+matches.length).every(function(expr, i) {
+            return new RegExp(matches[i]).test(expr.source || ""); });
+        });
+      } else {
+        var found = ed.session.$ast.children.detect(function(ea) {
+          return paredit.defName(ea) === c.name; });
+      }
+      if (!found) return null;
+      var acePos = clojure.TraceFrontEnd.SourceMapper.mapClojurePosToAcePos(c.pos)
+      acePos.row += ed.idxToPos(found.start).row;
+      c.acePos = acePos;
+      c.string = c['last-val'].truncate(70);
+      return c;
+    }).compact();
+  },
+
   retrieveCaptures: function(options, thenDo) {
     options = options || {};
     var lastEval = clojure.TraceFrontEnd.state.lastEval;

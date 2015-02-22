@@ -1219,43 +1219,24 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
 
     onCaptureStateUpdate: function(ed, captures) {
       // module('lively.ide.codeeditor.TextOverlay').load()
-
       var m = ed.$morph;
       var ns = clojure.Runtime.detectNs(m) || "user";
       m.removeTextOverlay({className: "clojure-capture"});
-
       var rowOffsets = {};
-      var overlays = captures.forEach(function(c) {
-        if (c.ns !== ns) return null;
-        if (c.type === "defmethod") {
-          var matches = c["defmethod-matches"];
-          var found = ed.session.$ast.children.detect(function(ea) {
-            if (paredit.defName(ea) !== c.name) return false;
-            return ea.children.slice(2, 2+matches.length).every(function(expr, i) {
-              return new RegExp(matches[i]).test(expr.source || "")
-            });
+      clojure.TraceFrontEnd
+        .filterCapturesForEditor(m, captures)
+        .forEach(function(c) {
+          var rowEnd = ed.session.getLine(c.acePos.row).length;
+          var offs = rowOffsets[c.acePos.row] || 0;
+          rowOffsets[c.acePos.row] = offs + (c.string.length * 6) + 5;
+          m.addTextOverlay({
+            start: {column: rowEnd, row: c.acePos.row},
+            text: c.string,
+            classNames: ["clojure-capture"],
+            offset: {x: 5+offs, y: 0},
+            data: {"clojure-capture": c.id}
           });
-        } else {
-          var found = ed.session.$ast.children.detect(function(ea) {
-            return paredit.defName(ea) === c.name; });
-        }
-        if (!found) return null;
-        var acePos = clojure.TraceFrontEnd.SourceMapper.mapClojurePosToAcePos(c.pos)
-        acePos.row += ed.idxToPos(found.start).row;
-        var rowEnd = ed.session.getLine(acePos.row).length;
-        var text = c['last-val'].truncate(70);
-        var offs = rowOffsets[acePos.row] || 0;
-        rowOffsets[acePos.row] = offs + (text.length * 6) + 5;
-        var overlay = {
-          start: {column: rowEnd, row: acePos.row},
-          text: text,
-          classNames: ["clojure-capture"],
-          offset: {x: 5+offs, y: 0},
-          data: {"clojure-capture": c.id}
-        }
-        ed.$morph.addTextOverlay(overlay);
-      });
-
+        });
     }
 
 });
