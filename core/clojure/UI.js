@@ -195,8 +195,150 @@ function addCommands() {
           status && status.quickUpdateFor(10);
         }, {input: "0.0.0.0:7889", historyId: "clojure.Runtime.add-environment"});
       }
+    },
+
+
+    // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    // capture
+    // -=-=-=-=-
+    
+    "clojureCaptureSelection": {
+      description: "Clojure: capture selection",
+      exec: function(options) {
+        if (!options || !options.codeEditor)
+          throw new Error("clojureCaptureSelection needs codeEditor option!");
+
+        var codeEditor = options.codeEditor;
+        var ed = codeEditor.aceEditor;
+        var src = ed.getValue();
+        var ast = ed.session.$ast;
+
+        var defNode = paredit.walk.sexpsAt(ast, ed.getCursorIndex(), function(n) {
+          return n.type !== "toplevel" && paredit.walk.hasChildren(n); })[0];
+          
+        var name = defNode && paredit.defName(defNode);
+        if (!name) {
+          codeEditor.setStatusMessage("Cannot install capture: no def node found at cursor position");
+          return true;
+        }
+
+        var pos = ed.getCursorPosition();
+        var startPos = ed.idxToPos(defNode.start)
+        var localPosClj = {column: pos.column+1, line: pos.row+1-startPos.row}
+        var ns = clojure.Runtime.detectNs(codeEditor) || "user";
+        var opts = {
+          env: clojure.Runtime.currentEnv(codeEditor),
+          ns: ns,
+          passError: true, resultIsJSON: true,
+          bindings: ["rksm.cloxp-trace/*repl-source*", paredit.walk.source(src, defNode)],
+          requiredNamespaces: ["rksm.cloxp-trace", "clojure.data.json"]};
+
+        var code = lively.lang.string.format(
+          "(let [spec (rksm.cloxp-trace/install-capture!\n"
+          + "            rksm.cloxp-trace/*repl-source*\n"
+          + "            :ns (find-ns '%s)\n"
+          + "            :name \"%s\"\n"
+          + "            :pos {:column %s, :line %s})\n"
+          + "      spec (-> spec\n"
+          + "             (update-in [:ns] str)\n"
+          + "             (select-keys [:ns :name :id :ast-idx :pos :loc]))]\n"
+          + "  (clojure.data.json/write-str spec))\n",
+              ns, name, localPosClj.column, localPosClj.line);
+
+        clojure.TraceFrontEnd.ensureUpdateProc();
+        clojure.Runtime.doEval(code, opts, function(err, result) {
+
+          if (err) codeEditor.setStatusMessage("error installing tracer:\n"+ String(err).truncate(1000), Color.red);
+          else codeEditor.setStatusMessage("installed tracer into "+ result.ns + "/" + result.name);
+
+          var pos = result.pos;
+          if (pos) {
+            var defNode = paredit.walk.sexpsAt(ed.session.$ast, ed.getCursorIndex())[1]
+            var nodePos = ed.idxToPos(defNode.start)
+            var range = clojure.TraceFrontEnd.SourceMapper.mapClojurePosToAceRange(pos);
+            range.moveBy(nodePos.row, 0);
+
+            ed.saveExcursion(function(reset) {
+              ed.selection.setRange(range);
+              setTimeout(reset, 800);
+            });
+          }
+        });
+
+        return true;
+      }
+    },
+
+    "clojureCaptureShowAll": {
+      description: "Clojure: show all captures",
+      exec: function() {
+        var ed = clojure.TraceFrontEnd.createCaptureOverview();
+        ed.getWindow().comeForward();
+        return true;
+      }
+    },
+    
+    "clojureCaptureInspectOne": {
+      description: "Clojure: inspect capture",
+      exec: function(options) {
+        options = options || {};
+        lively.lang.fun.composeAsync(
+          options.id ? function(n) { n(null, options.id, options.all); } : chooseCapture,
+          function(id, all, n) { fetchAndShow({id: id, all: !!all}, n); }
+        )(function(err, result) { })
+
+        function fetchAndShow(options, thenDo) {
+          clojure.TraceFrontEnd.inspectCapturesValuesWithId(options, function(err, result) {
+            var pre = lively.lang.string.format('(@rksm.cloxp-trace/storage "%s")\n', options.id);
+            $world.addCodeEditor({
+              title: "values captured for " + options.id,
+              content: pre + (err || result),
+              textMode: "clojure",
+              extent: pt(600, 300)
+            }).getWindow().comeForward();
+            thenDo && thenDo(err);
+          });
+  
+        }
+
+        function chooseCapture(n) {
+          clojure.TraceFrontEnd.retrieveCaptures({}, function(err, captures) {
+            if (err) return n(err);
+            var candidates = captures.map(function(ea) {
+              return {string: ea.id, value: ea, isListItem: true}; });
+            lively.ide.tools.SelectionNarrowing.chooseOne(candidates,
+              function(err, c) { n(err, c && c.id, true); });
+          })
+        }
+
+        return true;
+      }
+    },
+
+    "clojureCaptureReset": {
+      description: "Clojure: reset all captures",
+      exec: function(options) {
+        if (!options || !options.codeEditor)
+          throw new Error("clojureCaptureSelection needs codeEditor option!");
+
+        var codeEditor = options.codeEditor;
+        var ed = codeEditor.aceEditor;
+        var code = "(rksm.cloxp-trace/reset-captures!)";
+        var opts = {
+          env: clojure.Runtime.currentEnv(codeEditor), passError: true,
+          requiredNamespaces: ["rksm.cloxp-trace"]};
+        clojure.Runtime.doEval(code, opts, function(err) {
+          if (err) codeEditor.setStatusMessage("error reseting captures:\n"+ err.truncate(1000));
+          else codeEditor.setStatusMessage("capture rest");
+          clojure.TraceFrontEnd.ensureUpdateProc();
+        });
+
+        return true;
+      }
     }
+
   });
+
 
 }
 
