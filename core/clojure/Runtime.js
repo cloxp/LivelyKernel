@@ -11,7 +11,7 @@ Object.extend(paredit, {
 
   defName: function(node) {
     if (node.type !== "list") return null;
-    if (!(node.children[0].source || "").match(/^def/)) return null;
+    if (!node.children[0] || !(node.children[0].source || "").match(/^def/)) return null;
     var nameNode = node.children.slice(1).detect(function(ea) { return ea.type !== "list"; })
     return nameNode ? nameNode.source : null;
   }
