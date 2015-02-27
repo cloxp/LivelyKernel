@@ -391,8 +391,9 @@ Object.extend(clojure.Runtime, {
           "(clojure.data.json/write-str (rksm.system-files/source-for-ns '%s %s))",
           intern.ns, file || "");
         clojure.Runtime.doEval(cmd,
-          {requiredNamespaces: ["rksm.system-files", "clojure.data.json"], resultIsJSON:true},
-          function(err,nsSrc) { n(err,intern, nsSrc); });
+          {requiredNamespaces: ["rksm.system-files", "clojure.data.json"], resultIsJSON: true},
+          function(err,nsSrc) {
+            n(err, intern, nsSrc || ""); });
       },
 
       function(intern, nsSrc, n) {
