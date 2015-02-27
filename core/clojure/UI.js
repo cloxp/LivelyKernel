@@ -253,15 +253,21 @@ function addCommands() {
 
           var pos = result.pos;
           if (pos) {
-            var defNode = paredit.walk.sexpsAt(ed.session.$ast, ed.getCursorIndex())[1]
-            var nodePos = ed.idxToPos(defNode.start)
-            var range = clojure.TraceFrontEnd.SourceMapper.mapClojurePosToAceRange(pos);
+            var defNode = paredit.walk.sexpsAt(ed.session.$ast, ed.getCursorIndex())[1],
+                nodePos = ed.idxToPos(defNode.start),
+                range = clojure.TraceFrontEnd.SourceMapper.mapClojurePosToAceRange(pos);
             range.moveBy(nodePos.row, 0);
 
-            ed.saveExcursion(function(reset) {
-              ed.selection.setRange(range);
-              setTimeout(reset, 800);
-            });
+            var m = ace.ext.lang.codemarker.ensureIn(ed.session, "clojure-highlight"),
+                // mark = {start: ed.posToIdx(range.start), end: ed.posToIdx(range.end), cssClassName: "clojure-highlight"};
+                mark = {startPos: range.start, endPos: range.end, cssClassName: "clojure-highlight"};
+            m.markerRanges.push(mark);
+            m.redraw(ed.session);
+
+            (function() {
+              m.markerRanges.remove(mark);
+              m.redraw(ed.session);
+            }).delay(.8);
           }
         });
 

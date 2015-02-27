@@ -1188,6 +1188,7 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
                         + "	background-color: #999;\n"
                         + "	border-color: #999;\n"
                         + "}\n"
+                        + ".clojure-highlight { position: absolute; background-color: #abf !important; }\n"
                         + "@import url(http://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic);\n"
                         , id);
   });

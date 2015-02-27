@@ -98,12 +98,12 @@ Object.extend(clojure.TraceFrontEnd, {
   showEditorMenuForCapture: function(codeEditor, captureId) {
     var ed = codeEditor.aceEditor;
     lively.morphic.Menu.openAtHand(null, [
-      ["inspect last value", ed.execCommand.bind(ed, "clojureCaptureInspectOne", {id: captureId})],
-      ["inspect all values", ed.execCommand.bind(ed, "clojureCaptureInspectOne", {id: captureId, all: true})],
-      ["empty", function() { clojure.TraceFrontEnd.emptyCapture(captureId, function() {}); }],
-      ["uninstall", function() { clojure.TraceFrontEnd.uninstallCapture(captureId, function() {}); }],
+      ["inspect last value", function() { lively.ide.commands.exec("clojureCaptureInspectOne", {id: captureId}); }],
+      ["inspect all values", function() { lively.ide.commands.exec("clojureCaptureInspectOne", {id: captureId, all: true}); }],
+      ["empty",              function() { clojure.TraceFrontEnd.emptyCapture(captureId, function() {}); }],
+      ["uninstall",          function() { clojure.TraceFrontEnd.uninstallCapture(captureId, function() {}); }],
       {isMenuItem: true, isDivider: true},
-      ["show all captures", ed.execCommand.bind(ed, "clojureCaptureShowAll")],
+      ["show all captures",  function() { lively.ide.commands.exec("clojureCaptureShowAll", {}); }]
     ]);
   },
 
