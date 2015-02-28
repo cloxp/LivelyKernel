@@ -22,12 +22,7 @@ Object.extend(clojure.Runtime, {
 
     _cache: {},
     _environments: [{port: 7888, host: "0.0.0.0", session: null, doAutoLoadSavedFiles: false}],
-    _defaultEnv: {
-        port: 7888,
-        host: "0.0.0.0",
-        session: null,
-        doAutoLoadSavedFiles: true
-    },
+    _defaultEnv: 0,
 
     environments: function() { return this._environments.clone(); },
 
@@ -35,7 +30,7 @@ Object.extend(clojure.Runtime, {
       var runtime = clojure.Runtime;
       runtime._cache = {};
       runtime._environments = [{port: 7888, host: "0.0.0.0", session: null, doAutoLoadSavedFiles: false}];
-      runtime._defaultEnv = this._environments[0];
+      runtime._defaultEnv = 0;
     },
 
     addEnv: function(env) {
@@ -45,8 +40,12 @@ Object.extend(clojure.Runtime, {
     },
 
     removeEnv: function(env) {
-      var existing = this._environments.filter(function(ea) { return lively.lang.obj.equals(ea, env); })
-      this._environments = this._environments.withoutAll(existing)
+      var existing = this._environments.filter(function(ea) {
+        return lively.lang.obj.equals(ea, env); })
+      if (existing.include(this._environments[this._defaultEnv]))
+        this._defaultEnv = 0;
+      this._environments = this._environments.withoutAll(existing);
+      if (!this._environments.length) this.reset();
     },
 
     resetEditorState: function(ed) {
@@ -62,7 +61,7 @@ Object.extend(clojure.Runtime, {
             if (st.env) return st.env;
         }
 
-        return this._defaultEnv;
+        return this.environments()[this._defaultEnv];
     },
 
     readEnv: function(inputString) {
@@ -96,7 +95,13 @@ Object.extend(clojure.Runtime, {
     },
 
     change: function(newDefaultEnv) {
-      Object.extend(this._defaultEnv, newDefaultEnv);
+      var e = this.environments().detect(function(ea) {
+        return ea.host === newDefaultEnv.host &&
+               ea.port === newDefaultEnv.port; });
+      if (!e) { this._environments.push(newDefaultEnv); e = newDefaultEnv; }
+      Object.extend(e, newDefaultEnv);
+      this._defaultEnv = this._environments.indexOf(e);
+      return e;
     },
 
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -572,6 +577,14 @@ Object.extend(clojure.Runtime.ReplServer, {
 
     stop: function(cmd, env, thenDo) {
       clojure.Runtime.evalQueue = [];
+      env = env || clojure.Runtime.currentEnv();
+
+      // remove session
+      var runtimeEnv = clojure.Runtime.environments().detect(function(ea) {
+        return ea.host === env.host && ea.port === env.port; });
+      if (runtimeEnv) delete runtimeEnv.session;
+
+      // stop server process
       if (cmd && cmd.getCommand().match(new RegExp(/clj-feather-repl|lein with-profile \+cloxp/))) {
         cmd.kill("SIGINT");
         cmd.kill("SIGINT");
@@ -587,14 +600,13 @@ Object.extend(clojure.Runtime.ReplServer, {
             } else thenDo();
           });
       } else {
-        env = env || {};
         // FIXME
         if (env.host && !["127.0.0.1", "0.0.0.0", "localhost"].include(env.host)) {
             thenDo(new Error("Cannot stop clj server " + env.host + ":" + port));
             return;
         }
   
-        var port = env ? env.port : "7888";
+        var port = env.port || "7888";
         var cmdQueueName = "lively.clojure.replServer:"+port;
         forceStop(cmdQueueName, port, thenDo);
       }
