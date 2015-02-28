@@ -125,13 +125,15 @@ Object.extend(clojure.Runtime, {
       var self = this;
       lively.lang.fun.composeAsync(
         function(n) {
-          self.doEval("(clojure.repl/doc " + expr + ")", {
-            ns: options.ns,
-            requiredNamespaces: ['clojure.repl'],
-            env: options.env,
-            prettyPrint: true,
-            passError: true
-          }, function(err, doc) { n(null, doc); });
+          self.doEval(
+            lively.lang.string.format("(do (ns %s) (clojure.repl/doc %s))", options.ns, expr),
+            {
+              ns: 'user',
+              requiredNamespaces: ['clojure.repl'],
+              env: options.env,
+              prettyPrint: true,
+              passError: true
+            }, function(err, doc) { n(null, doc); });
         },
         function(doc, n) {
           if (doc && String(doc).trim() !== "nil") return n(null, doc);
