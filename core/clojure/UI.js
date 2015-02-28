@@ -77,6 +77,16 @@ function addCommands() {
       }
     },
 
+    "clojurescript.ide.openBrowser": {
+      description: "ClojureScript: Browser",
+      exec: function() {
+        $world.loadPartItem("ClojureScriptBrowser", "PartsBin/Clojure", function(err, browser) {
+            browser.openInWorldCenter().comeForward();
+            browser.targetMorph.reload();
+        });
+      }
+    },
+
     "clojure.ide.openREPLLog": {
       description: "Clojure: nREPL log",
       exec: function() {
