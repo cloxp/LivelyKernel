@@ -330,9 +330,8 @@ Object.extend(clojure.Runtime, {
       };
 
       var status = messages.pluck("status").compact().flatten(),
-          errors = messages.pluck("error").compact()
-              .concat(messages.pluck("err").compact())
-              .concat(messages.pluck("ex").compact()),
+          errOut = messages.pluck("err").concat(messages.pluck("ex")).compact().map(String).invoke('trim').compact(),
+          errors = messages.pluck("error").compact(),
           isError = !!errors.length || status.include("error"),
           result = messages.pluck('value').concat(messages.pluck('out')).compact().join('\n'),
           err;
@@ -342,6 +341,7 @@ Object.extend(clojure.Runtime, {
           if (status.include("namespace-not-found")) {
             errors.unshift("namespace not found" + (options.ns ? ": " + options.ns : ""))
           } else {
+            errors.pushAll(errOut);
             errors.unshift(status.without("done"));
             var cause = messages.pluck('root-ex').flatten().compact();
             if (cause.length) errors.pushAll(["root-cause:"].concat(cause));
@@ -357,6 +357,13 @@ Object.extend(clojure.Runtime, {
 
       if (isError && String(result).include("ECONNREFUSED")) {
           result = "No clojure server listening?" + result;
+      }
+
+      if (!isError && errOut.length) { // warnings and such
+        var errString = errOut.join("\n");
+        var s = lively.lang.string.format("nREPL err output:\n%s", errString);
+        console.warn(s);
+        if (options.onErrorOutput) options.onErrorOutput(errString);
       }
 
       // "print" error if result is a string anyway
