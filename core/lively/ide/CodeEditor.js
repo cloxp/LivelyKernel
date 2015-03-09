@@ -726,8 +726,10 @@ lively.morphic.Morph.subclass('lively.morphic.CodeEditor',
 
     onFocus: function($super, evt) {
         $super(evt);
-        var scroll = evt.world.getScroll();
-        (function() { evt.world.scrollTo(scroll[0], scroll[1]); }).delay(0);
+        if (false) { // this annoyingly scrolls the entire page to 0,0 when focusing an editor in FF
+          var scroll = evt.world.getScroll();
+          (function() { evt.world.scrollTo(scroll[0], scroll[1]); }).delay(0);
+        }
     },
 
     doKeyCopy: Functions.Null,
