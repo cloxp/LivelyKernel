@@ -669,8 +669,11 @@ clojure.StaticAnalyzer = {
     // clojure.StaticAnalyzer.findNsForm(that.textString)
     var ast = this.ensureAst(astOrSource);
     var nsForm = this.findFuncCallNode(ast, 'ns');
-    var nsNameNode = nsForm && nsForm.children && nsForm.children.slice(1).detect(function(n) {
-      return n.type === 'symbol'; })
+    if (!nsForm || !nsForm.children) return null;
+    var restNodes = nsForm.children.slice(1);
+    // ignore meta data
+    while (restNodes[0] && restNodes[0].source === "^") { restNodes.shift(); restNodes.shift(); }
+    var nsNameNode = restNodes.detect(function(n) { return n.type === 'symbol'; });
     return nsForm ? {
       nsName: nsNameNode ? nsNameNode.source : null,
       node: nsForm
