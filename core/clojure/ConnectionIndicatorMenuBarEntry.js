@@ -24,9 +24,8 @@ lively.BuildSpec("clojure.ClojureConnectionIndicatorMenuBarEntry", lively.BuildS
     // clojure.Runtime._defaultEnv
     var self = this,
         items = [
-          ["start repl server",   function() { lively.ide.commands.exec("clojure.ide.startReplServer", null, function(err, cmd) {}); }],
+          ["(re)start repl server",   function() { lively.ide.commands.exec("clojure.ide.startReplServer", null, function(err, cmd) {}); }],
           ["stop repl server",    function() { lively.ide.commands.exec("clojure.ide.stopReplServer", null, function(err, cmd) {}); }],
-          ["restart repl server", function() { lively.ide.commands.exec("clojure.ide.restartReplServer", null, function(err, cmd) {}); }],
           ["open nREPL log",      function() { lively.ide.commands.exec("clojure.ide.openREPLLog"); }],
           ["show evaluation queue", function() {
             var cmd = lively.ide.codeeditor.modes.Clojure.commands.detect(function(ea) {

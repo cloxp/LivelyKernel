@@ -18,7 +18,8 @@ lively.BuildSpec("clojure.ClojureToolsMenuBarEntry", lively.BuildSpec("lively.mo
     var self = this;
     return [
           ["open workspace", cmd("clojure.ide.openWorkspace")],
-          ["open browser", cmd("clojure.ide.openBrowser")],
+          ["open Clojure browser", cmd("clojure.ide.openBrowser")],
+          ["open ClojureScript browser", cmd("clojurescript.ide.openBrowser")],
           ["open clojars", cmd("clojure.ide.openClojarsBrowser")],
           ["js", [
             ['JavaScript Workspace', cmd('lively.ide.openWorkspace')],
