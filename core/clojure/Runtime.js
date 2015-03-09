@@ -208,6 +208,10 @@ Object.extend(clojure.Runtime, {
     },
 
     doEval: function(expr, options, thenDo) {
+      // options: ns, env, requiredNamespaces, passError, resultIsJSON,
+      // warningsAsErrors, onWarning,
+      // prettyPrint, printLength, prettyPrintLevel, bindings, file
+
       if (!thenDo && typeof options === "function") {
         thenDo = options; options = null; };
       options = options || {};
@@ -216,7 +220,9 @@ Object.extend(clojure.Runtime, {
           ppLevel            = options.hasOwnProperty("prettyPrintLevel") ? options.prettyPrintLevel : null,
           printLength        = options.hasOwnProperty("printLength") ? options.printLength : null,
           bindings           = options.bindings || [],
-          env = options.env || clojure.Runtime.currentEnv();
+          env                = options.env || clojure.Runtime.currentEnv();
+
+      if (!options.hasOwnProperty("warningsAsErrors")) options.warningsAsErrors = true;
 
       if (!pp && !printLength) { printLength = 20; }
 
@@ -229,10 +235,6 @@ Object.extend(clojure.Runtime, {
         bindings.push("clojure.core/*print-length*");
         bindings.push(printLength);
       }
-
-        // bindings.push("rksm.cloxp-trace.source-mapping/*code-from-repl*");
-        // bindings.push('(defn x "foo\nbar\\"baz\\""\n  [a] a)');
-        // bindings.push('(defn x "fo\\"bar\\"oo"   [a] a)');
 
       return this.queueNreplMessage({
         env: env,
@@ -320,7 +322,6 @@ Object.extend(clojure.Runtime, {
     },
 
     processNreplEvalAnswers: function(messages, options, thenDo) {
-
       if (Object.isString(messages) && messages.match(/error/i))
           messages = [{err: messages}];
 
@@ -331,10 +332,11 @@ Object.extend(clojure.Runtime, {
 
       var status = messages.pluck("status").compact().flatten(),
           errOut = messages.pluck("err").concat(messages.pluck("ex")).compact().map(String).invoke('trim').compact(),
-          errors = messages.pluck("error").compact(),
-          isError = !!errors.length || status.include("error"),
+          errors = messages.pluck("error").compact().concat(errOut),
+          isError = status.include("error") || (options.warningsAsErrors && !!errors.length),
           result = messages.pluck('value').concat(messages.pluck('out')).compact().join('\n'),
           err;
+
       if (status.include("interrupted")) result = result + "[interrupted eval]";
 
       if (isError) {
@@ -360,10 +362,10 @@ Object.extend(clojure.Runtime, {
       }
 
       if (!isError && errOut.length) { // warnings and such
-        var errString = errOut.join("\n");
-        var s = lively.lang.string.format("nREPL err output:\n%s", errString);
+        var errString = errOut.join("\n"),
+            s = lively.lang.string.format("nREPL err output:\n%s", errString);
         console.warn(s);
-        if (options.onErrorOutput) options.onErrorOutput(errString);
+        if (options.onWarning) options.onWarning(errString);
       }
 
       // "print" error if result is a string anyway
@@ -374,6 +376,7 @@ Object.extend(clojure.Runtime, {
   },
 
   lookupIntern: function(nsName, symbol, options, thenDo) {
+    // options: file
     options = options || {};
     var code, reqNs;
 
@@ -393,7 +396,7 @@ Object.extend(clojure.Runtime, {
   },
 
   retrieveDefinition: function(symbol, inns, options, thenDo) {
-
+    // options: file
     lively.lang.fun.composeAsync(
       function(n) { clojure.Runtime.lookupIntern(inns, symbol, options, n); },
 
@@ -438,10 +441,13 @@ Object.extend(clojure.Runtime, {
   },
   
   fullLastErrorStackTrace: function(options, thenDo) {
+    // options: nframes
     options = options || {};
     options.requiredNamespaces = ["clojure.repl"];
     options.passError = true;
-    clojure.Runtime.doEval("(clojure.repl/pst 500)", options,
+    clojure.Runtime.doEval(
+      lively.lang.string.format("(clojure.repl/pst )", options.nframes || 500),
+      options,
       function(err, result) {
         if (options.open) {
           var ed = $world.addCodeEditor({
