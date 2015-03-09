@@ -29,22 +29,22 @@ Object.extend(clojure.UI, {
 // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 function addMorphicExtensions() {
-  
+
   lively.whenLoaded(function(w) { w.showsMorphMenu = false; });
-  
+
   // no menu buttons
   lively.morphic.Window.addMethods({
     makeTitleBar: function(titleString, width, optSuppressControls) {
         var titleBar = new lively.morphic.TitleBar(titleString, width, this);
         if (optSuppressControls) return titleBar;
-  
+
         this.closeButton = titleBar.addNewButton("X", pt(0,-1));
         this.closeButton.addStyleClassName('close');
         this.collapseButton = titleBar.addNewButton("–", pt(0,1));
-  
+
         connect(this.closeButton, 'fire', this, 'initiateShutdown');
         connect(this.collapseButton, 'fire', this, 'toggleCollapse');
-  
+
         return titleBar;
     }
   });
@@ -132,12 +132,13 @@ function addCommands() {
     },
 
     "clojure.ide.startReplServer": {
-      get description() { return "Clojure: Start a repl server " + clojure.Runtime.printEnv(clojure.Runtime.currentEnv()); },
+      get description() { return "Clojure: Start/Restart a repl server " + clojure.Runtime.printEnv(clojure.Runtime.currentEnv()); },
       exec: function(options, thenDo) {
         options = options || {};
         var env = options.env || clojure.Runtime.currentEnv();
         var indicatorClose;
         lively.lang.fun.composeAsync(
+            lively.ide.commands.exec.curry("clojure.ide.stopReplServer", options),
             function(next) { lively.require('lively.morphic.tools.LoadingIndicator').toRun(function() { next(); }) },
             function(next) { lively.require('lively.ide.tools.ShellCommandRunner').toRun(function() { next(); }) },
             function(next) { lively.require('lively.ide.codeeditor.modes.Clojure').toRun(function() { next(); }) },
@@ -182,17 +183,6 @@ function addCommands() {
       }
     },
 
-  "clojure.ide.restartReplServer": {
-      get description() { return "Clojure: Restart the repl server at " + clojure.Runtime.printEnv(clojure.Runtime.currentEnv()); },
-      exec: function(options, thenDo) {
-        lively.lang.fun.composeAsync(
-          lively.ide.commands.exec.curry("clojure.ide.stopReplServer", options),
-          lively.ide.commands.exec.curry("clojure.ide.startReplServer", options)
-        )(thenDo)
-        return true;
-      }
-    },
-
     "clojure.ide.changeWorkingDir": {
       description: "Clojure: change clojure server working directory (cwd)",
       exec: function(dir, thenDo) {
@@ -220,9 +210,96 @@ function addCommands() {
 
 
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    // definition / browsing
+    // -=-=-=-=-=-=-=-=-=-=-=-
+
+    "clojureFindDefinition": {
+      description: "Clojure: capture selection",
+      exec: function(options) {
+        options = options || {};
+
+        var codeEditor = options.codeEditor;
+
+        // 1. get static information for the node at point
+        if (codeEditor) {
+          var ed = codeEditor.aceEditor;
+
+          if (codeEditor.clojureFindDefinition) {
+            codeEditor.clojureFindDefinition();
+            return true;
+          }
+
+          var query = clojure.StaticAnalyzer.createDefinitionQuery(
+            ed.session.$ast || ed.getValue(),ed.getCursorIndex());
+          if (!query) {
+            codeEditor.setStatusMessage("Cannot extract code entity.");
+            return;
+          }
+
+          if (query.source.match(/^:/)) { codeEditor.setStatusMessage("It's a keyword, no definition for it."); return; }
+          var opts = {
+            env: clojure.Runtime.currentEnv(codeEditor),
+            ns: query.nsName,
+            name: query.source
+          }
+        } else {
+          var opts = {
+            env: options.env || clojure.Runtime.currentEnv(),
+            ns: options.ns || "user",
+            name: options.name
+          }
+        }
+
+        // 2. get the associated intern data and source of the ns the i is defined in
+        clojure.Runtime.retrieveDefinition(opts.name, opts.ns, opts, function(err, data) {
+          if (err) {
+            var msg = "Error retrieving definition for " + opts.name + "\n" + err;
+            if (codeEditor) codeEditor.setStatusMessage(msg);
+            if (options.thenDo) options.thenDo(err);
+            return;
+          }
+
+          try {
+            if (!codeEditor || data.intern.ns !== opts.ns) {
+              var editor = clojure.UI.showSource({
+                title: data.intern.ns + "/" + data.intern.name,
+                content: data.nsSource
+              });
+              if (data.defRange) scrollToAndSelect(editor, data.defRange);
+            } else {
+              if (data.defRange) scrollToAndSelect(codeEditor, data.defRange);
+            }
+
+          } catch (e) {
+            if (codeEditor) codeEditor.setStatusMessage(
+              "Error preparing definition for " + opts.name + "n" + e);
+            if (options.thenDo) options.thenDo(err);
+            return;
+          }
+
+          if (options.thenDo) options.thenDo();
+
+          // show(data.nsSource.slice(data.defRange[0],data.defRange[1]))
+          // debugger;
+          // show(err?String(err):data)
+        });
+
+        function scrollToAndSelect(editMorph, defRange) {
+          editMorph.withAceDo(function(ed) {
+            ed.selection.setRange({
+              start: ed.idxToPos(defRange[0]),
+              end: ed.idxToPos(defRange[1])}, true);
+            setTimeout(function() { ed.centerSelection(); }, 100);
+          });
+
+        }
+      }
+    },
+
+    // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     // capture
     // -=-=-=-=-
-    
+
     "clojureCaptureSelection": {
       description: "Clojure: capture selection",
       exec: function(options) {
@@ -236,7 +313,7 @@ function addCommands() {
 
         var defNode = paredit.walk.sexpsAt(ast, ed.getCursorIndex(), function(n) {
           return n.type !== "toplevel" && paredit.walk.hasChildren(n); })[0];
-          
+
         var name = defNode && paredit.defName(defNode);
         if (!name) {
           codeEditor.setStatusMessage("Cannot install capture: no def node found at cursor position");
@@ -299,46 +376,51 @@ function addCommands() {
     "clojureCaptureShowAll": {
       description: "Clojure: show all captures",
       exec: function() {
-        var ed = clojure.TraceFrontEnd.createCaptureOverview();
-        ed.getWindow().comeForward();
+        // var ed = clojure.TraceFrontEnd.createCaptureOverview();
+        // ed.getWindow().comeForward();
+        lively.ide.commands.exec("clojure.ide.openClojureCaptures", {});
         return true;
       }
     },
-    
+
     "clojureCaptureInspectOne": {
       description: "Clojure: inspect capture",
       exec: function(options) {
         options = options || {};
-        lively.lang.fun.composeAsync(
-          options.id ? function(n) { n(null, options.id, options.all); } : chooseCapture,
-          function(id, all, n) { fetchAndShow({id: id, all: !!all}, n); }
-        )(function(err, result) { })
 
-        function fetchAndShow(options, thenDo) {
-          clojure.TraceFrontEnd.inspectCapturesValuesWithId(options, function(err, result) {
-            var pre = lively.lang.string.format('(@rksm.cloxp-trace/storage "%s")\n', options.id);
-            $world.addCodeEditor({
-              title: "values captured for " + options.id,
-              content: pre + (err || result),
-              textMode: "clojure",
-              extent: pt(600, 300)
-            }).getWindow().comeForward();
-            thenDo && thenDo(err);
-          });
-  
-        }
-
-        function chooseCapture(n) {
-          clojure.TraceFrontEnd.retrieveCaptures({}, function(err, captures) {
-            if (err) return n(err);
-            var candidates = captures.map(function(ea) {
-              return {string: ea.id, value: ea, isListItem: true}; });
-            lively.ide.tools.SelectionNarrowing.chooseOne(candidates,
-              function(err, c) { n(err, c && c.id, true); });
-          })
-        }
-
+        lively.ide.commands.exec("clojure.ide.openClojureCaptures", options.id ? {id: options.id} : {});
         return true;
+
+        // lively.lang.fun.composeAsync(
+        //   options.id ? function(n) { n(null, options.id, options.all); } : chooseCapture,
+        //   function(id, all, n) { fetchAndShow({id: id, all: !!all}, n); }
+        // )(function(err, result) { })
+
+        // function fetchAndShow(options, thenDo) {
+        //   clojure.TraceFrontEnd.inspectCapturesValuesWithId(options, function(err, result) {
+        //     var pre = lively.lang.string.format('(@rksm.cloxp-trace/storage "%s")\n', options.id);
+        //     $world.addCodeEditor({
+        //       title: "values captured for " + options.id,
+        //       content: pre + (err || result),
+        //       textMode: "clojure",
+        //       extent: pt(600, 500)
+        //     }).getWindow().comeForward();
+        //     thenDo && thenDo(err);
+        //   });
+
+        // }
+
+        // function chooseCapture(n) {
+        //   clojure.TraceFrontEnd.retrieveCaptures({}, function(err, captures) {
+        //     if (err) return n(err);
+        //     var candidates = captures.map(function(ea) {
+        //       return {string: ea.id, value: ea, isListItem: true}; });
+        //     lively.ide.tools.SelectionNarrowing.chooseOne(candidates,
+        //       function(err, c) { n(err, c && c.id, true); });
+        //   })
+        // }
+
+        // return true;
       }
     },
 
@@ -383,10 +465,10 @@ function addConfigSettings() {
   });
 
   lively.Config.set("pareditCorrectionsEnabled", lively.Config.get("pareditCorrectionsEnabled"));
-  
+
   lively.Config.set("verboseLogging", false);
   lively.Config.set("showMenuBar", true);
-  lively.Config.set("menuBarDefaultEntries", 
+  lively.Config.set("menuBarDefaultEntries",
     ["lively.net.tools.Lively2Lively",
     "lively.morphic.tools.LivelyMenuBarEntry",
     // 'lively.morphic.tools.ActiveWindowMenuBarEntry',

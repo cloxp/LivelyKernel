@@ -42,58 +42,8 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
     {
       name: "clojureFindDefinition",
       exec: function(ed) {
-        if (ed.$morph.clojureFindDefinition)
-          return ed.$morph.clojureFindDefinition();
-
-        var query = clojure.StaticAnalyzer.createDefinitionQuery(
-          ed.session.$ast||ed.getValue(),ed.getCursorIndex());
-        if (!query) {
-          ed.$morph.setStatusMessage("Cannot extract code entity.");
-          return;
-        }
-
-        if (query.source.match(/^:/)) { ed.$morph.setStatusMessage("It's a keyword, no definition for it."); return; }
-        var opts = {
-          env: clojure.Runtime.currentEnv(ed.$morph),
-          ns: query.nsName
-        }
-
-        // 1. get static information for the node at point
-
-        // 2. get the associated intern data and source of the ns the i is defined in
-        clojure.Runtime.retrieveDefinition(query.source, query.nsName, opts, function(err, data) {
-          if (err) return ed.$morph.setStatusMessage(
-            "Error retrieving definition for " + query.source + "\n" + err);
-
-          try {
-            if (data.intern.ns !== query.nsName) {
-              var editor = clojure.UI.showSource({
-                title: data.intern.ns + "/" + data.intern.name,
-                content: data.nsSource
-              });
-              if (data.defRange) scrollToAndSelect(editor, data.defRange);
-            } else {
-              if (data.defRange) scrollToAndSelect(ed.$morph, data.defRange);
-            }
-
-            } catch (e) {
-              return ed.$morph.setStatusMessage(
-                "Error preparing definition for " + query.source + "n" + err);
-            }
-          // show(data.nsSource.slice(data.defRange[0],data.defRange[1]))
-          // debugger;
-          // show(err?String(err):data)
-        });
-
-        function scrollToAndSelect(editMorph, defRange) {
-          editMorph.withAceDo(function(ed) {
-            ed.selection.setRange({
-              start: ed.idxToPos(defRange[0]),
-              end: ed.idxToPos(defRange[1])}, true);
-            setTimeout(function() { ed.centerSelection(); }, 100);
-          });
-
-        }
+        lively.ide.commands.exec('clojureFindDefinition', {codeEditor: ed.$morph});
+        return true;
       },
       multiSelectAction: 'forEach'
     },
@@ -615,28 +565,34 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             start: ed.idxToPos(args.from),
             end: ed.idxToPos(args.to)});
 
-          var code = ed.session.getTextRange();
-          var env = clojure.Runtime.currentEnv(ed.$morph);
-          var ns = clojure.Runtime.detectNs(ed.$morph);
-          var errorRetrieval = lively.lang.fun.extractBody(function() {
-            // simply printing what we have
-            // lively.ide.codeeditor.modes.Clojure.update()
-            clojure.Runtime.fullLastErrorStackTrace({open: true});
-          });
+          var code = ed.session.getTextRange(),
+              env = clojure.Runtime.currentEnv(ed.$morph),
+              ns = clojure.Runtime.detectNs(ed.$morph),
+              warnings,
+              errorRetrieval = lively.lang.fun.extractBody(function() {
+                // simply printing what we have
+                // lively.ide.codeeditor.modes.Clojure.update()
+                clojure.Runtime.fullLastErrorStackTrace({open: true});
+              });
 
           var options = {
             file: ed.$morph.getTargetFilePath(),
             env: env, ns: ns, passError: true,
             prettyPrint: args.prettyPrint,
-            prettyPrintLevel: args.prettyPrintLevel
+            prettyPrintLevel: args.prettyPrintLevel,
+            warningsAsErrors: false,
+            onWarning: function onWarning(warn) { warnings = warn; }
           }
+
           clojure.Runtime.doEval(code, options, function(err, result) {
             reset();
             var msg;
+            var warn = warnings ? "\n\n" + warnings : "";
             if (err) {
               msg = [
                 ["open full stack trace\n", {doit: {context: {env: env, ns: ns, err: err}, code: errorRetrieval}}],
-                [String(err).truncate(300)]];
+                [String(err).truncate(300)],
+                [warn.truncate(400), {color: Color.orange}]];
             } else if (args.offerInsertAndOpen) {
               ed.$morph.ensureStatusMessageMorph().insertion = result;
               msg = [
@@ -644,15 +600,17 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
                 [" ", {textAlign: "right", fontSize: 9}],
                 ["insert", {textAlign: "right", fontSize: 9, doit: {context: {ed: ed, content: result}, code: 'this.ed.execCommand("clojureOpenEvalResult", {insert: true, content: this.content}); this.ed.focus();'}}],
                 ["\n", {fontSize: 9, textAlign: "right"}],
-                [result.truncate(300)]]
+                [result.truncate(300)],
+                [warn.truncate(400), {color: Color.orange}]]
             } else {
               ed.$morph.ensureStatusMessageMorph().insertion = null;
-              msg = String(result).truncate(300);
+              msg = String(result).truncate(300)+warn;
             }
             ed.$morph.setStatusMessage(msg, err ? Color.red : null);
             args.thenDo && args.thenDo(err,result);
           });
         });
+
         return true;
       },
       multiSelectAction: 'forEach'
@@ -1158,9 +1116,9 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
       var ns = clojure.Runtime.detectNs(m) || "user";
       m.removeTextOverlay({className: "clojure-capture"});
       var rowOffsets = {};
-      clojure.TraceFrontEnd
-        .filterCapturesForEditor(m, captures)
-        .forEach(function(c) {
+      var captures = clojure.TraceFrontEnd.filterCapturesForEditor(m, captures);
+      if (!captures.length) m.hideTextOverlays();
+      else captures.forEach(function(c) {
           var rowEnd = ed.session.getLine(c.acePos.row).length;
           var offs = rowOffsets[c.acePos.row] || 0;
           rowOffsets[c.acePos.row] = offs + (c.string.length * 6) + 5;
