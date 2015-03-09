@@ -113,6 +113,17 @@ function addCommands() {
       }
     },
 
+    "clojure.ide.openClojureCaptures": {
+      description: "open capture browser",
+      exec: function(options) {
+        options = options || {};
+        var browser = $world.loadPartItem("CaptureBrowser", "PartsBin/Clojure")
+        browser.getWindow().openInWorld($world.hand().getPosition()).comeForward();
+        browser.targetMorph.fetchCapturesAndUpdate(options.id);
+        return true;
+      }
+    },
+
     "clojure.ide.openProjectController": {
       description: "open project controller",
       exec: function() {

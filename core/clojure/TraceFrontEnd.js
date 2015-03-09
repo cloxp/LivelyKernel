@@ -18,8 +18,10 @@ Object.extend(clojure.TraceFrontEnd, {
       self.retrieveCapturesAndInformEditors({}, function(err, captures) {
         self.state.lastUpdate = Date.now();
         delete self.state.captureUpdateProc;
-        if (err) show("Error in retrieveCaptures: \n" + err)
-        if (!err && captures.length) self.ensureUpdateProc();
+        if (err) {
+          show("Error in retrieveCaptures (ensureUpdateProc): \n" + err);
+          (function() { self.ensureUpdateProc(); }).delay(3);
+        } else if (captures.length) self.ensureUpdateProc();
       });
     }, self.state.updateTimeout);
   },
@@ -37,7 +39,7 @@ Object.extend(clojure.TraceFrontEnd, {
     self.state.lastUpdate = 0;
     lively.lang.fun.debounceNamed("clojure.TraceFrontEndUpdateCapture", 300, function() {
       self.retrieveCapturesAndInformEditors({}, function(err) {
-        if (err) show("Error in retrieveCaptures: \n" + err);
+        if (err) show("Error in retrieveCaptures (updateEarly): \n" + err);
       });
     })();
   },
@@ -62,7 +64,7 @@ Object.extend(clojure.TraceFrontEnd, {
         ["\n"]
       ].concat(this.captures.reduce(function(attr, c) {
         var n = c.ns + "/" + c.name;
-        var val = (c['last-val'] || "no value").truncate(60);
+        var val = ((c.values && c.values[0]) || "no value").truncate(60);
         return attr.concat([
           ["[x]", {type: 'action', onClick: uninstall.curry([c.id])}],
           ["[∅]", {type: 'action', onClick: empty.curry([c.id])}],
@@ -98,8 +100,7 @@ Object.extend(clojure.TraceFrontEnd, {
   showEditorMenuForCapture: function(codeEditor, captureId) {
     var ed = codeEditor.aceEditor;
     lively.morphic.Menu.openAtHand(null, [
-      ["inspect last value", function() { lively.ide.commands.exec("clojureCaptureInspectOne", {id: captureId}); }],
-      ["inspect all values", function() { lively.ide.commands.exec("clojureCaptureInspectOne", {id: captureId, all: true}); }],
+      ["inspect", function() { lively.ide.commands.exec("clojureCaptureInspectOne", {id: captureId}); }],
       ["empty",              function() { clojure.TraceFrontEnd.emptyCapture(captureId, function() {}); }],
       ["uninstall",          function() { clojure.TraceFrontEnd.uninstallCapture(captureId, function() {}); }],
       {isMenuItem: true, isDivider: true},
@@ -122,7 +123,7 @@ Object.extend(clojure.TraceFrontEnd, {
     var ed = codeEditor.aceEditor;
     var ns = clojure.Runtime.detectNs(codeEditor) || "user";
     return captures.filter(function(c) {
-      if (c.ns !== ns) return null;
+      if (c.ns !== ns) return false;
       if (c.type === "defmethod") {
         var matches = c["defmethod-matches"];
         var found = ed.session.$ast.children.detect(function(ea) {
@@ -138,13 +139,14 @@ Object.extend(clojure.TraceFrontEnd, {
       var acePos = clojure.TraceFrontEnd.SourceMapper.mapClojurePosToAcePos(c.pos)
       acePos.row += ed.idxToPos(found.start).row;
       c.acePos = acePos;
-      c.string = c['last-val'].truncate(70);
+      c.string = ((c.values && c.values[0]) || "").truncate(70);
       return c;
     }).compact();
   },
 
   retrieveCaptures: function(options, thenDo) {
     options = options || {};
+    var onlyLast = options.hasOwnProperty("onlyLast") ? options.onlyLast : false;
     var lastEval = clojure.TraceFrontEnd.state.lastEval;
 
     lively.lang.fun.composeAsync(
@@ -159,7 +161,7 @@ Object.extend(clojure.TraceFrontEnd, {
       var evals = clojure.Runtime.evalQueue
         .filter(function(ea) { return ea.expr.startsWith("(rksm.cloxp-trace/captures->json"); })
         .groupByKey("isRunning");
-        clojure.Runtime.evalQueue = clojure.Runtime.evalQueue.withoutAll(evals["false"] || []);
+      clojure.Runtime.evalQueue = clojure.Runtime.evalQueue.withoutAll(evals["false"] || []);
 
       if (!evals["true"] || evals["true"].length) n();
       else evals["true"]
@@ -170,10 +172,11 @@ Object.extend(clojure.TraceFrontEnd, {
 
     function scheduleRetrieval(n) {
       var nextOnce = lively.lang.fun.once(n);
-      setTimeout(function() { nextOnce(new Error("rksm.cloxp-trace/captures->json timed out")); }, 1000);
+      setTimeout(function() { nextOnce(new Error("rksm.cloxp-trace/captures->json timed out")); }, 10*1000);
       clojure.Runtime.doEval(
-        lively.lang.string.format("(rksm.cloxp-trace/captures->json :nss %s)",
-          options.namespaces ? lively.lang.string.print(options.namespaces) : ":all"),
+        lively.lang.string.format("(rksm.cloxp-trace/captures->json :nss %s :only-last %s)",
+          options.namespaces ? lively.lang.string.print(options.namespaces) : ":all",
+          onlyLast ? "true" : "false"),
         {resultIsJSON: true, passError: true}, nextOnce);
     }
   },
@@ -197,14 +200,23 @@ Object.extend(clojure.TraceFrontEnd, {
   emptyCapture: function(id, thenDo) {
     var self = this;
     clojure.Runtime.doEval(
-      lively.lang.string.format("(rksm.cloxp-trace/empty-capture! \"%s\")",
-        id),
-      {resultIsJSON: false, passError: true}, function(err) {
+      lively.lang.string.format("(rksm.cloxp-trace/empty-capture! \"%s\")",id),
+      {requiredNamespaces: ["rksm.cloxp-trace"], resultIsJSON: false, passError: true},
+      function(err) {
+        self. updateEarly(true);
+        thenDo && thenDo(err);
+      });
+  },
+
+  reset: function(thenDo) {
+    var self = this;
+    clojure.Runtime.doEval("(rksm.cloxp-trace/reset-captures!)",
+      {requiredNamespaces: ["rksm.cloxp-trace"], resultIsJSON: false, passError: true},
+      function(err) {
         self. updateEarly(true);
         thenDo && thenDo(err);
       });
   }
-
 });
 
 
