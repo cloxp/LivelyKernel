@@ -471,7 +471,7 @@ Object.extend(clojure.Runtime.ReplServer, {
                      + "                [org.rksm/cloxp-cljs \"0.1.1-SNAPSHOT\"]\n"
                      + '                [pjstadig/humane-test-output "0.6.0"]]\n'
                      + ' :repl-options {:nrepl-middleware [rksm.cloxp-repl.nrepl/wrap-cloxp-eval]}\n'
-                     + " :injections [(require 'rksm.system-navigator) (require 'rksm.cloxp-trace)\n"
+                     + " :injections [(require 'rksm.system-navigator) (require 'rksm.cloxp-trace) (require 'rksm.cloxp-cljs.ns.internals)\n"
                     // rk 2015-01-31: This tries to auto discover classpath in
                     // cwd. I currently deactivated it since it can lead to
                     // confusing situations in which the runtime meta data (intern
@@ -748,6 +748,135 @@ clojure.StaticAnalyzer = {
     }
 
     return null
+  }
+}
+
+clojure.Projects = {
+  loadProjectInteractively: function(options, thenDo) {
+    // options: projectDir, askToLoadNamespaces, setCurrentDir, informBrowsers
+    options = options || {};
+  
+    var cwd = lively.shell.exec('pwd', {sync:true}).resultString(),
+        warnings = [],
+        projectDir = options.projectDir, cljNamespaces = [], cljsNamespaces = [];
+  
+    lively.lang.fun.composeAsync(
+      // determine dir
+      chooseDir, function(dir, n) { projectDir = dir; n(); }, setCwd,
+      
+      // load clojure deps
+      loadDependencies,
+      showWarnings,
+
+      // load clj
+      loadProjectAndFetchNamespaces.curry("clj"),
+      chooseNamespacesToRequire.curry("Clojure"),
+      requireNamespaces,
+      function(nss, n) { cljNamespaces = nss; showWarnings(n); },
+      
+      // load cljs
+      loadProjectAndFetchNamespaces.curry("cljs"),
+      chooseNamespacesToRequire.curry("ClojureScript"),
+      requireCljsNamespaces,
+      function(nss, n) { cljsNamespaces = nss; showWarnings(n); },
+      
+      // update
+      updateBrowsers,
+      function(n) { n(null, {dir: projectDir, cljsNamespaces: cljsNamespaces, cljNamespaces: cljNamespaces}); }
+    )(thenDo);
+  
+    // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  
+    function chooseDir(n) {
+      if (projectDir) return n(null, projectDir);
+      lively.ide.CommandLineSearch.interactivelyChooseFileSystemItem(
+        'choose directory: ', cwd,
+        function(files) { return files.filterByKey('isDirectory'); },
+        "clojure.addDir.NarrowingList", [
+          function loadClojureNamespaceFiles(_dir) { n(null, _dir ? (_dir.path || _dir) : null); }
+        ]);
+    }
+  
+    function setCwd(n) { if (options.setCurrentDir) lively.shell.setWorkingDirectory(projectDir); n(); }
+  
+    function loadDependencies(n) {
+      var code = lively.lang.string.format(
+        '(clojure.data.json/write-str'
+      + ' (rksm.system-navigator.project-config/load-deps-from-project-clj-or-pom-in! "%s"))',
+        projectDir);
+      Global.clojure.Runtime.doEval(code,
+        {requiredNamespaces: ['clojure.data.json', 'rksm.system-navigator.project-config'],
+         passError: true, resultIsJSON: true,
+         warningsAsErrors: false, onWarning: function(warn) { warnings.push("load dependencies:\n" + warn); }},
+        function(err, result) { n(err); });
+    }
+  
+    function loadProjectAndFetchNamespaces(type, n) {
+      // type === "clj" || "cljs"
+      var code = lively.lang.string.format(
+        '(clojure.data.json/write-str'
+      + ' (rksm.system-files/add-project-dir "%s"'
+      + '  {:source-dirs (rksm.system-navigator.project-config/source-dirs-in-project-conf "%s")'
+      + '   :project-file-match #".*\.%s$"}))',
+          projectDir, projectDir, type);
+      Global.clojure.Runtime.doEval(code,
+        {requiredNamespaces: ['clojure.data.json', 'rksm.system-files', 'rksm.system-navigator.project-config'],
+         passError: true, resultIsJSON: true,
+         warningsAsErrors: false, onWarning: function(warn) { warnings.push("load project:\n" + warn); }
+        }, n);
+    }
+  
+    function chooseNamespacesToRequire(type, nsList, n) {
+      if (!nsList || !nsList.length) return n(null, []);
+      if (!options.askToLoadNamespaces) return n(null, nsList);
+      $world.editPrompt("What " + type + " namespaces to load?", function(textlistOfNs) {
+        if (!textlistOfNs) {
+          show("requiring no namespaces for\n" + projectDir);
+          n(null, []);
+        } else {
+          var nss = lively.lang.string.lines(textlistOfNs).invoke("trim").compact();
+          n(null, nss);
+        }
+      }, nsList.sortByKey("length").join("\n"));
+    }
+  
+    function requireNamespaces(nss, n) {
+      var code = nss.map(function(ns) { return "(require '" + ns + " :reload)"; }).join("\n");
+      Global.clojure.Runtime.doEval(code,
+        {passError: true, ns: 'user', warningsAsErrors: false,
+         onWarning: function(warn) { warnings.push("require clj " + nss.join(',') + ":\n" + warn); }
+        }, function(err) { n(err, nss); });
+    }
+  
+    function requireCljsNamespaces(nss, n) {
+      var code = nss.map(function(ns) { return "(rksm.cloxp-cljs.ns.internals/namespace-info '" + ns + ")"; }).join("\n");
+      Global.clojure.Runtime.doEval(code, {
+        requireNamespaces: ['rksm.cloxp-cljs.ns.internals'],
+        passError: true, ns: 'user',
+        warningsAsErrors: false,
+         onWarning: function(warn) { warnings.push("require cljs " + nss.join(',') + ":\n" + warn); }
+        }, function(err) { n(err, nss); });
+    }
+    
+    function updateBrowsers(n) {
+      if (!options.informBrowsers) return n();
+      var cljBrowser, cljsBrowser;
+      $world.withAllSubmorphsDo(function(ea) {
+        if (!cljBrowser && ea.isWindow && ea.targetMorph && ea.targetMorph.name === "ClojureBrowser") cljBrowser = ea.targetMorph;
+        if (!cljsBrowser && ea.isWindow && ea.targetMorph && ea.targetMorph.name === "ClojureScriptBrowser") cljsBrowser = ea.targetMorph;
+      });
+      lively.lang.arr.mapAsyncSeries([cljBrowser, cljsBrowser], function(ea,_,n) { ea.reload({}, n); }, function(err, result) { n(); });
+    }
+    
+    function showWarnings(thenDo) {
+      if (!warnings.length || !options.showWarningFn) thenDo();
+      else {
+        options.showWarningFn(warnings.join('\n\n').truncate(600));
+        warnings = [];
+        setTimeout(thenDo, 3*1000);
+      }
+    }
+
   }
 }
 
