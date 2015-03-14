@@ -218,19 +218,21 @@ function addCommands() {
       exec: function(options) {
         options = options || {};
 
+        var forceNewWin = !!options.openInNewWindow;
         var codeEditor = options.codeEditor;
 
         // 1. get static information for the node at point
         if (codeEditor) {
           var ed = codeEditor.aceEditor;
 
-          if (codeEditor.clojureFindDefinition) {
+          if (!forceNewWin && codeEditor.clojureFindDefinition) {
             codeEditor.clojureFindDefinition();
             return true;
           }
 
           var query = clojure.StaticAnalyzer.createDefinitionQuery(
-            ed.session.$ast || ed.getValue(),ed.getCursorIndex());
+            ed.session.$ast || ed.getValue(),ed.getCursorIndex(),
+            codeEditor.clojureGetNs ? codeEditor.clojureGetNs() : null);
           if (!query) {
             codeEditor.setStatusMessage("Cannot extract code entity.");
             return;
