@@ -333,7 +333,7 @@ Object.extend(clojure.Runtime, {
       var status = messages.pluck("status").compact().flatten(),
           errOut = messages.pluck("err").concat(messages.pluck("ex")).compact().map(String).invoke('trim').compact(),
           errors = messages.pluck("error").compact().concat(errOut),
-          isError = status.include("error") || (options.warningsAsErrors && !!errors.length),
+          isError = status.include("error") || status.include("eval-error") || (options.warningsAsErrors && !!errors.length),
           result = messages.pluck('value').concat(messages.pluck('out')).compact().join('\n'),
           err;
 
@@ -446,7 +446,7 @@ Object.extend(clojure.Runtime, {
     options.requiredNamespaces = ["clojure.repl"];
     options.passError = true;
     clojure.Runtime.doEval(
-      lively.lang.string.format("(clojure.repl/pst )", options.nframes || 500),
+      lively.lang.string.format("(clojure.repl/pst %s)", options.nframes || 500),
       options,
       function(err, result) {
         if (options.open) {

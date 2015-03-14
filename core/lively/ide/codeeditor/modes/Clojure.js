@@ -572,7 +572,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
               errorRetrieval = lively.lang.fun.extractBody(function() {
                 // simply printing what we have
                 // lively.ide.codeeditor.modes.Clojure.update()
-                clojure.Runtime.fullLastErrorStackTrace({open: true});
+                clojure.Runtime.fullLastErrorStackTrace({open: true, nframes: 999});
               });
 
           var options = {
@@ -586,22 +586,27 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
 
           clojure.Runtime.doEval(code, options, function(err, result) {
             reset();
-            var msg;
-            var warn = warnings ? "\n\n" + warnings : "";
+            var msg, warn = warnings ? "\n\n" + warnings : "";
             if (err) {
               msg = [
                 ["open full stack trace\n", {doit: {context: {env: env, ns: ns, err: err}, code: errorRetrieval}}],
                 [String(err).truncate(300)],
                 [warn.truncate(400), {color: Color.orange}]];
             } else if (args.offerInsertAndOpen) {
-              ed.$morph.ensureStatusMessageMorph().insertion = result;
+              var insertion = ed.$morph.ensureStatusMessageMorph().insertion = result + warn;
               msg = [
-                ["open", {textAlign: "right", fontSize: 9, doit: {context: {ed: ed, content: result}, code: 'this.ed.execCommand("clojureOpenEvalResult", {insert: false, content: this.content});'}}],
-                [" ", {textAlign: "right", fontSize: 9}],
-                ["insert", {textAlign: "right", fontSize: 9, doit: {context: {ed: ed, content: result}, code: 'this.ed.execCommand("clojureOpenEvalResult", {insert: true, content: this.content}); this.ed.focus();'}}],
+                ["open", {color: Color.white, textAlign: "right", fontSize: 9, doit: {context: {ed: ed, content: insertion}, code: 'this.ed.execCommand("clojureOpenEvalResult", {insert: false, content: this.content});'}}],
+                [" ", {color: Color.white, textAlign: "right", fontSize: 9}],
+                ["insert", {color: Color.white, textAlign: "right", fontSize: 9, doit: {context: {ed: ed, content: insertion}, code: 'this.ed.execCommand("clojureOpenEvalResult", {insert: true, content: this.content}); this.ed.focus();'}}]
+              ]
+              .concat(warnings ?
+                [[" "],
+                 ["open full stack trace\n", {color: Color.white, doit: {context: {env: env, ns: ns, err: warnings}, code: errorRetrieval}}]] :
+                [])
+              .concat([
                 ["\n", {fontSize: 9, textAlign: "right"}],
                 [result.truncate(300)],
-                [warn.truncate(400), {color: Color.orange}]]
+                [warn.truncate(400), {color: Color.orange}]]);
             } else {
               ed.$morph.ensureStatusMessageMorph().insertion = null;
               msg = String(result).truncate(300)+warn;
