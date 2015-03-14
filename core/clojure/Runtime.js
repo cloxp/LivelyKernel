@@ -466,12 +466,16 @@ Object.extend(clojure.Runtime.ReplServer, {
 
     cloxpLeinProfile:  "; do not modify, this file is auto-generated\n{\n"
                      + " :dependencies [[org.rksm/system-navigator \"0.1.11-SNAPSHOT\"]\n"
+                     + "                [org.rksm/cloxp-projects \"0.1.0-SNAPSHOT\"]\n"
                      + "                [org.rksm/cloxp-trace \"0.1.4-SNAPSHOT\"]\n"
                      + "                [org.rksm/cloxp-repl \"0.1.1-SNAPSHOT\"]\n"
                      + "                [org.rksm/cloxp-cljs \"0.1.1-SNAPSHOT\"]\n"
                      + '                [pjstadig/humane-test-output "0.6.0"]]\n'
                      + ' :repl-options {:nrepl-middleware [rksm.cloxp-repl.nrepl/wrap-cloxp-eval]}\n'
-                     + " :injections [(require 'rksm.system-navigator) (require 'rksm.cloxp-trace) (require 'rksm.cloxp-cljs.ns.internals)\n"
+                     + " :injections [(require 'rksm.system-navigator)\n"
+                     + "              (require 'rksm.cloxp-repl)\n"
+                     + "              (require 'rksm.cloxp-trace)\n"
+                     + "              (require 'rksm.cloxp-cljs.ns.internals)\n"
                     // rk 2015-01-31: This tries to auto discover classpath in
                     // cwd. I currently deactivated it since it can lead to
                     // confusing situations in which the runtime meta data (intern
@@ -752,41 +756,121 @@ clojure.StaticAnalyzer = {
 }
 
 clojure.Projects = {
+
+  createProjectInteractively: function(options, thenDo) {
+    options = options || {};
+
+    options.setCurrentDir = true;
+
+    var cwd = lively.shell.exec('pwd', {sync:true}).resultString(),
+        warnings = [],
+        projectDir = options.projectDir,
+        baseDir = cwd.replace(/\/$/, "").split("/").slice(0,-1).join("/"),
+        projectName, cljNamespaces = [], cljsNamespaces = [];
+
+    lively.lang.fun.composeAsync(
+      // determine dir
+      chooseDir, function(dir, n) {
+        if (!dir) return n(new Error("no project dir choosen"));
+        projectDir = dir.replace(/\/$/, "");
+        projectName = projectDir.split("/").last();
+        n();
+      },
+      createInitialDirs,
+      confirmProjectClj,
+      createPojectClj,
+      function(n) {
+        clojure.Projects.loadProjectInteractively({
+          projectDir: projectDir,
+          informBrowsers: true,
+          askToLoadNamespaces: false,
+          setCurrentDir: true
+        }, n)
+      }
+    )(thenDo);
+
+    // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+    function chooseDir(n) {
+      if (projectDir) return n(null, projectDir);
+      $world.prompt("Please choose a directory for the new project", function(input) {
+         n(input ? null : new Error("no project dir choosen"), input);
+      }, {
+        input: baseDir + "/" + "new-project",
+        historyId: "clojure.Projects.createProjectInteractively.projectDir"
+      });
+    }
+
+    function createInitialDirs(n) {
+      var cljNsDir = projectName.replace(/-/g, "_")
+      var ns = projectName + ".core";
+      var cljDir = lively.lang.string.joinPath(projectDir, "src/" + cljNsDir);
+
+      lively.shell.run('mkdir -p ' + cljDir, {}, function(err, cmd) {
+        if (err) return n(err);
+        var initialFileContent = "(ns " + ns + ")\n";
+        lively.shell.writeFile(
+          lively.lang.string.joinPath(cljDir, "core.clj"),
+          initialFileContent, function(cmd) { n(); });
+      });
+    }
+
+    function confirmProjectClj(n) {
+        var template = "(defproject %s \"0.1.0-SNAPSHOT\"\n"
+        + "  :description \"A new project.\"\n"
+        + "  :license \"Eclipse Public License 1.0\"\n"
+        + "  :url \"http://my-project.com\"\n"
+        + "  :dependencies [[org.clojure/clojure \"1.6.0\"]])\n"
+        $world.editPrompt("Initial project.clj", function(input) {
+          n(input ? null : new Error("no project cljs choosen"), input);
+        }, lively.lang.string.format(template, projectName))
+    }
+    
+    function createPojectClj(projectCljContent, n) {
+      lively.shell.writeFile(
+        lively.lang.string.joinPath(projectDir, "project.clj"),
+        projectCljContent, function() { n(); });
+    }
+  },
+
   loadProjectInteractively: function(options, thenDo) {
     // options: projectDir, askToLoadNamespaces, setCurrentDir, informBrowsers
     options = options || {};
-  
+
     var cwd = lively.shell.exec('pwd', {sync:true}).resultString(),
         warnings = [],
         projectDir = options.projectDir, cljNamespaces = [], cljsNamespaces = [];
-  
+
     lively.lang.fun.composeAsync(
       // determine dir
-      chooseDir, function(dir, n) { projectDir = dir; n(); }, setCwd,
-      
+      chooseDir, function(dir, n) {
+        if (!dir) return n(new Error("no project dir choosen"));
+        projectDir = dir; n();
+      }, setCwd,
+
       // load clojure deps
       loadDependencies,
       showWarnings,
 
       // load clj
-      loadProjectAndFetchNamespaces.curry("clj"),
+      loadProjectAndFetchNamespaces.curry("cljx?"),
       chooseNamespacesToRequire.curry("Clojure"),
       requireNamespaces,
       function(nss, n) { cljNamespaces = nss; showWarnings(n); },
-      
+
       // load cljs
       loadProjectAndFetchNamespaces.curry("cljs"),
       chooseNamespacesToRequire.curry("ClojureScript"),
       requireCljsNamespaces,
       function(nss, n) { cljsNamespaces = nss; showWarnings(n); },
-      
+
       // update
       updateBrowsers,
       function(n) { n(null, {dir: projectDir, cljsNamespaces: cljsNamespaces, cljNamespaces: cljNamespaces}); }
     )(thenDo);
-  
+
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-  
+
     function chooseDir(n) {
       if (projectDir) return n(null, projectDir);
       lively.ide.CommandLineSearch.interactivelyChooseFileSystemItem(
@@ -796,9 +880,9 @@ clojure.Projects = {
           function loadClojureNamespaceFiles(_dir) { n(null, _dir ? (_dir.path || _dir) : null); }
         ]);
     }
-  
+
     function setCwd(n) { if (options.setCurrentDir) lively.shell.setWorkingDirectory(projectDir); n(); }
-  
+
     function loadDependencies(n) {
       var code = lively.lang.string.format(
         '(clojure.data.json/write-str'
@@ -810,14 +894,14 @@ clojure.Projects = {
          warningsAsErrors: false, onWarning: function(warn) { warnings.push("load dependencies:\n" + warn); }},
         function(err, result) { n(err); });
     }
-  
+
     function loadProjectAndFetchNamespaces(type, n) {
       // type === "clj" || "cljs"
       var code = lively.lang.string.format(
         '(clojure.data.json/write-str'
       + ' (rksm.system-files/add-project-dir "%s"'
       + '  {:source-dirs (rksm.system-navigator.project-config/source-dirs-in-project-conf "%s")'
-      + '   :project-file-match #".*\.%s$"}))',
+      + '   :project-file-match #"\\.%s$"}))',
           projectDir, projectDir, type);
       Global.clojure.Runtime.doEval(code,
         {requiredNamespaces: ['clojure.data.json', 'rksm.system-files', 'rksm.system-navigator.project-config'],
@@ -825,7 +909,7 @@ clojure.Projects = {
          warningsAsErrors: false, onWarning: function(warn) { warnings.push("load project:\n" + warn); }
         }, n);
     }
-  
+
     function chooseNamespacesToRequire(type, nsList, n) {
       if (!nsList || !nsList.length) return n(null, []);
       if (!options.askToLoadNamespaces) return n(null, nsList);
@@ -839,15 +923,18 @@ clojure.Projects = {
         }
       }, nsList.sortByKey("length").join("\n"));
     }
-  
+
     function requireNamespaces(nss, n) {
-      var code = nss.map(function(ns) { return "(require '" + ns + " :reload)"; }).join("\n");
+      var code = "(do " + nss.map(function(ns) {
+        return lively.lang.string.format(
+          "(rksm.system-files.loading/require-ns '%s nil)", ns);
+      }).join(" ") + ")";
       Global.clojure.Runtime.doEval(code,
-        {passError: true, ns: 'user', warningsAsErrors: false,
+        {passError: true, ns: 'user', warningsAsErrors: false, requiredNamespaces: ["rksm.system-files.loading"],
          onWarning: function(warn) { warnings.push("require clj " + nss.join(',') + ":\n" + warn); }
         }, function(err) { n(err, nss); });
     }
-  
+
     function requireCljsNamespaces(nss, n) {
       var code = nss.map(function(ns) { return "(rksm.cloxp-cljs.ns.internals/namespace-info '" + ns + ")"; }).join("\n");
       Global.clojure.Runtime.doEval(code, {
@@ -857,17 +944,20 @@ clojure.Projects = {
          onWarning: function(warn) { warnings.push("require cljs " + nss.join(',') + ":\n" + warn); }
         }, function(err) { n(err, nss); });
     }
-    
+
     function updateBrowsers(n) {
       if (!options.informBrowsers) return n();
-      var cljBrowser, cljsBrowser;
-      $world.withAllSubmorphsDo(function(ea) {
-        if (!cljBrowser && ea.isWindow && ea.targetMorph && ea.targetMorph.name === "ClojureBrowser") cljBrowser = ea.targetMorph;
-        if (!cljsBrowser && ea.isWindow && ea.targetMorph && ea.targetMorph.name === "ClojureScriptBrowser") cljsBrowser = ea.targetMorph;
-      });
-      lively.lang.arr.mapAsyncSeries([cljBrowser, cljsBrowser], function(ea,_,n) { ea.reload({}, n); }, function(err, result) { n(); });
+      $world.withAllSubmorphsSelect(function(ea) {
+        return ea.isWindow && ea.targetMorph &&
+          (ea.targetMorph.name === "ClojureBrowser"
+        || ea.targetMorph.name === "ClojureScriptBrowser");
+      }).mapAsync(
+        function(ea, _, n) {
+          var b = ea.targetMorph, nss = b.name === "ClojureBrowser" ? cljNamespaces : cljsNamespaces;
+          b.reload({namespaces: nss}, n);
+        }, function(err, res) { n(err); });
     }
-    
+
     function showWarnings(thenDo) {
       if (!warnings.length || !options.showWarningFn) thenDo();
       else {
