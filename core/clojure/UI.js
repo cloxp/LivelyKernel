@@ -330,12 +330,12 @@ function addCommands() {
           env: clojure.Runtime.currentEnv(codeEditor),
           ns: ns,
           passError: true, resultIsJSON: true,
-          bindings: ["rksm.cloxp-trace/*repl-source*", paredit.walk.source(src, defNode)],
+          bindings: ["rksm.cloxp-repl/*repl-source*", paredit.walk.source(src, defNode)],
           requiredNamespaces: ["rksm.cloxp-trace", "clojure.data.json"]};
 
         var code = lively.lang.string.format(
           "(let [spec (rksm.cloxp-trace/install-capture!\n"
-          + "            rksm.cloxp-trace/*repl-source*\n"
+          + "            rksm.cloxp-repl/*repl-source*\n"
           + "            :ns (find-ns '%s)\n"
           + "            :name \"%s\"\n"
           + "            :pos {:column %s, :line %s})\n"
@@ -449,7 +449,6 @@ function addCommands() {
     }
 
   });
-
 
 }
 
