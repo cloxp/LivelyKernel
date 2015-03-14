@@ -12,11 +12,12 @@ lively.BuildSpec("clojure.ClojureToolsMenuBarEntry", lively.BuildSpec("lively.mo
     toolTip: "Open programming tools."
     // textColor: Color.rgb(127,230,127)
   }),
-  
+
   morphMenuItems: function morphMenuItems() {
     function cmd(name) { return function() { lively.ide.commands.exec(name); }; }
     var self = this;
     return [
+          ["new project", function() { clojure.Projects.createProjectInteractively({}, function() {}); }],
           ["open workspace", cmd("clojure.ide.openWorkspace")],
           ["open Clojure browser", cmd("clojure.ide.openBrowser")],
           ["open ClojureScript browser", cmd("clojurescript.ide.openBrowser")],
@@ -30,7 +31,7 @@ lively.BuildSpec("clojure.ClojureToolsMenuBarEntry", lively.BuildSpec("lively.mo
     ];
   },
 
-  update: function update() {},
+  update: function update() {}
 }));
 
 lively.BuildSpec("clojure.ClojureHelpMenuBarEntry", lively.BuildSpec("lively.morphic.tools.MenuBarEntry").customize({
@@ -45,7 +46,7 @@ lively.BuildSpec("clojure.ClojureHelpMenuBarEntry", lively.BuildSpec("lively.mor
     toolTip: "Help is on the way..."
     // textColor: Color.rgb(127,230,127)
   }),
-  
+
   morphMenuItems: function morphMenuItems() {
     function cmd(name) { return function() { lively.ide.commands.exec(name); }; }
     var self = this;
@@ -56,14 +57,14 @@ lively.BuildSpec("clojure.ClojureHelpMenuBarEntry", lively.BuildSpec("lively.mor
     ];
   },
 
-  update: function update() {},
+  update: function update() {}
 }));
 
 
 Object.extend(clojure.ToolsMenuBarEntry, {
   getMenuBarEntries: function() {
     return [lively.BuildSpec("clojure.ClojureToolsMenuBarEntry").createMorph(),
-            lively.BuildSpec("clojure.ClojureHelpMenuBarEntry").createMorph()]
+            lively.BuildSpec("clojure.ClojureHelpMenuBarEntry").createMorph()];
   }
 });
 
