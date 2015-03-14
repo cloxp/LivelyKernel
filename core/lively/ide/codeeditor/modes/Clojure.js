@@ -712,21 +712,22 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       
         function doEval(thenDo) {
       
-          var template = "(let [code rksm.cloxp-trace/*repl-source*\n"
-                       + "      eval-result (rksm.cloxp-trace.live-eval/live-eval-code code :ns '%s :file %s)]\n"
+          var template = "(let [code rksm.cloxp-repl/*repl-source*\n"
+                       + "      eval-result (:results (rksm.cloxp-repl.live-eval/live-eval-code-keeping-env code\n"
+                       + "                             :ns '%s :file %s :id '%s :reset-timeout 60000))]\n"
                        + "    (clojure.data.json/write-str eval-result))";
       
           var code = lively.lang.string.format(template,
-            ns, file ? lively.lang.string.print(file) : 'nil');
+            ns, file ? lively.lang.string.print(file) : 'nil', ns);
 
       // lively.ide.codeeditor.modes.Clojure.update()
           var opts = {
-            bindings: ["rksm.cloxp-trace/*repl-source*", rawCode],
+            bindings: ["rksm.cloxp-repl/*repl-source*", rawCode],
             ns: ns, resultIsJSON: true,
             env: Global.clojure.Runtime.currentEnv(editor), passError: false,
-            requiredNamespaces: ["rksm.cloxp-trace.live-eval", "clojure.data.json"]};
-      
-          Global.clojure.Runtime.doEval(code, opts, thenDo);
+            requiredNamespaces: ["rksm.cloxp-repl.live-eval", "clojure.data.json"]};
+
+          clojure.Runtime.doEval(code, opts, thenDo);
         }
         
         
