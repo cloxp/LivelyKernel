@@ -41,8 +41,11 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
 
     {
       name: "clojureFindDefinition",
-      exec: function(ed) {
-        lively.ide.commands.exec('clojureFindDefinition', {codeEditor: ed.$morph});
+      exec: function(ed, args) {
+        args = args || {};
+        var openInNewWindow = args.hasOwnProperty("count");
+        lively.ide.commands.exec('clojureFindDefinition', {
+          openInNewWindow: openInNewWindow, codeEditor: ed.$morph});
         return true;
       },
       multiSelectAction: 'forEach'
@@ -267,10 +270,8 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           ed.$morph.setStatusMessage("No let binding at cursor!");
           return;
         }
+
         var bindings = paredit.walk.nextSexp(ast, letSexp.end);
-
-
-// lively.ide.codeeditor.modes.Clojure.update();
         var bindingNames = [];
         // note: there might be more than one paredit node on the val side of one binding
         var src = bindings.children.reduce(function(tuples, ea) {
