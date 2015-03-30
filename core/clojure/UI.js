@@ -336,10 +336,10 @@ function addCommands() {
           ns: ns,
           passError: true, resultIsJSON: true,
           bindings: ["rksm.cloxp-repl/*repl-source*", paredit.walk.source(src, defNode)],
-          requiredNamespaces: ["rksm.cloxp-trace", "clojure.data.json"]};
+          requiredNamespaces: ["rksm.cloxp-trace.capturing", "clojure.data.json"]};
 
         var code = lively.lang.string.format(
-          "(let [spec (rksm.cloxp-trace/install-capture!\n"
+          "(let [spec (rksm.cloxp-trace.capturing/install-capture!\n"
           + "            rksm.cloxp-repl/*repl-source*\n"
           + "            :ns (find-ns '%s)\n"
           + "            :name \"%s\"\n"
@@ -405,7 +405,7 @@ function addCommands() {
 
         // function fetchAndShow(options, thenDo) {
         //   clojure.TraceFrontEnd.inspectCapturesValuesWithId(options, function(err, result) {
-        //     var pre = lively.lang.string.format('(@rksm.cloxp-trace/storage "%s")\n', options.id);
+        //     var pre = lively.lang.string.format('(@rksm.cloxp-trace.capturing/storage "%s")\n', options.id);
         //     $world.addCodeEditor({
         //       title: "values captured for " + options.id,
         //       content: pre + (err || result),
@@ -439,10 +439,10 @@ function addCommands() {
 
         var codeEditor = options.codeEditor;
         var ed = codeEditor.aceEditor;
-        var code = "(rksm.cloxp-trace/reset-captures!)";
+        var code = "(rksm.cloxp-trace.capturing/reset-captures!)";
         var opts = {
           env: clojure.Runtime.currentEnv(codeEditor), passError: true,
-          requiredNamespaces: ["rksm.cloxp-trace"]};
+          requiredNamespaces: ["rksm.cloxp-trace.capturing"]};
         clojure.Runtime.doEval(code, opts, function(err) {
           if (err) codeEditor.setStatusMessage("error reseting captures:\n"+ err.truncate(1000));
           else codeEditor.setStatusMessage("capture rest");
