@@ -262,16 +262,14 @@ function addCommands() {
           }
 
           try {
-            if (!codeEditor || data.intern.ns !== opts.ns) {
+            if (!codeEditor || data.intern.ns !== opts.ns
+             || !data.defRange || !scrollToAndSelect(codeEditor, data.defRange, data.intern.name)) {
               var editor = clojure.UI.showSource({
                 title: data.intern.ns + "/" + data.intern.name,
                 content: data.nsSource
               });
-              if (data.defRange) scrollToAndSelect(editor, data.defRange);
-            } else {
-              if (data.defRange) scrollToAndSelect(codeEditor, data.defRange);
+              if (data.defRange) scrollToAndSelect(editor, data.defRange, data.intern.name);
             }
-
           } catch (e) {
             if (codeEditor) codeEditor.setStatusMessage(
               "Error preparing definition for " + opts.name + "n" + e);
@@ -286,12 +284,19 @@ function addCommands() {
           // show(err?String(err):data)
         });
 
-        function scrollToAndSelect(editMorph, defRange) {
-          editMorph.withAceDo(function(ed) {
-            ed.selection.setRange({
-              start: ed.idxToPos(defRange[0]),
-              end: ed.idxToPos(defRange[1])}, true);
-            setTimeout(function() { ed.centerSelection(); }, 100);
+        function scrollToAndSelect(editMorph, defRange, name) {
+          return editMorph.withAceDo(function(ed) {
+            var range = {start: ed.idxToPos(defRange[0]), end: ed.idxToPos(defRange[1])};
+            var found = ed.$morph.saveExcursion(function(reset) {
+              ed.selection.setRange(range, true);
+              if (!name) return true;
+              // test if it looks like we found definition
+              var found = !!ed.session.getTextRange(range).match(new RegExp("def[^/]+"+name, "m"));
+              if (!found) reset();
+              return found;
+            });
+            if (found) setTimeout(function() { ed.centerSelection(); }, 100);
+            return found;
           });
 
         }
