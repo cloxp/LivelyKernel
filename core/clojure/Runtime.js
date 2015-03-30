@@ -916,10 +916,10 @@ clojure.Projects = {
     function loadDependencies(n) {
       var code = lively.lang.string.format(
         '(clojure.data.json/write-str'
-      + ' (rksm.system-navigator.project-config/load-deps-from-project-clj-or-pom-in! "%s"))',
+      + ' (rksm.cloxp-projects.core/load-deps-from-project-clj-or-pom-in! "%s"))',
         projectDir);
       Global.clojure.Runtime.doEval(code,
-        {requiredNamespaces: ['clojure.data.json', 'rksm.system-navigator.project-config'],
+        {requiredNamespaces: ['clojure.data.json', 'rksm.cloxp-projects.core'],
          passError: true, resultIsJSON: true,
          warningsAsErrors: false, onWarning: function(warn) { warnings.push("load dependencies:\n" + warn); }},
         function(err, result) { n(err); });
@@ -930,11 +930,11 @@ clojure.Projects = {
       var code = lively.lang.string.format(
         '(clojure.data.json/write-str'
       + ' (rksm.system-files/add-project-dir "%s"'
-      + '  {:source-dirs (rksm.system-navigator.project-config/source-dirs-in-project-conf "%s")'
+      + '  {:source-dirs (rksm.cloxp-projects.core/source-dirs-in-project-conf "%s")'
       + '   :project-file-match #"\\.%s$"}))',
           projectDir, projectDir, type);
       Global.clojure.Runtime.doEval(code,
-        {requiredNamespaces: ['clojure.data.json', 'rksm.system-files', 'rksm.system-navigator.project-config'],
+        {requiredNamespaces: ['clojure.data.json', 'rksm.system-files', 'rksm.cloxp-projects.core'],
          passError: true, resultIsJSON: true,
          warningsAsErrors: false, onWarning: function(warn) { warnings.push("load project:\n" + warn); }
         }, n);
@@ -952,17 +952,6 @@ clojure.Projects = {
           n(null, nss);
         }
       }, nsList.sortByKey("length").join("\n"));
-    }
-
-    function requireNamespaces(nss, n) {
-      var code = "(do " + nss.map(function(ns) {
-        return lively.lang.string.format(
-          "(rksm.system-files.loading/require-ns '%s nil)", ns);
-      }).join(" ") + ")";
-      Global.clojure.Runtime.doEval(code,
-        {passError: true, ns: 'user', warningsAsErrors: false, requiredNamespaces: ["rksm.system-files.loading"],
-         onWarning: function(warn) { warnings.push("require clj " + nss.join(',') + ":\n" + warn); }
-        }, function(err) { n(err, nss); });
     }
 
     function requireCljsNamespaces(nss, n) {
