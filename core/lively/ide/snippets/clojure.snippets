@@ -1,19 +1,37 @@
 snippet req
+guard ^\s*
+	(require '${1:name})
+snippet reqas
+guard ^\s*
 	(require '[${1:name} :as ${2:alias}])
+snippet reqref
+guard ^\s*
+	(require '[${1:name} :refer [${2:var-name}]])
+snippet ns
+guard ^\s*
+	(ns ${1:name}${4:
+		(:require [${2:name.space} :as ${3:short}])})
 snippet def
+guard ^\s*
 	(def ${1:name} ${2:val})
 snippet defn
+guard ^\s*
 	(defn ${1:name}
 		[${2:args}]
 		${0:body})
 snippet defm
+guard ^\s*
 	(defmacro ${1:name}
 		[${2:args}]
 		${0:`(~@body)})
 snippet let
 	(let [${1:var} ${2:val}]
 		${0:body})
+snippet fn
+	(fn [${1:arg}] ${0:body})
 snippet try
 	(try ${1:form} (catch ${2:Exception e} ${3:caught}))
 snippet log
 	(println $1)
+snippet pst
+	(clojure.repl/pst *e)
