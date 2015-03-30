@@ -217,7 +217,9 @@ Object.extend(clojure.Runtime, {
       options = options || {};
 
       var pp                 = options.prettyPrint = options.hasOwnProperty("prettyPrint") ? options.prettyPrint : false,
+          // Max print depth
           ppLevel            = options.hasOwnProperty("prettyPrintLevel") ? options.prettyPrintLevel : null,
+          // Max elems in collections
           printLength        = options.hasOwnProperty("printLength") ? options.printLength : null,
           bindings           = options.bindings || [],
           env                = options.env || clojure.Runtime.currentEnv();
@@ -459,7 +461,28 @@ Object.extend(clojure.Runtime, {
         }
         thenDo && thenDo(err, result);
       });
+  },
+
+  requireNamespaces: function(nss, options, thenDo) {
+    if (typeof options === "function") { thenDo = options; options = null; }
+
+    options = lively.lang.obj.merge({
+      passError: true, ns: 'user', warningsAsErrors: false,
+       requiredNamespaces: ["rksm.system-files.loading"],
+       onWarning: function(warn) { warnings.push("require clj " + nss.join(',') + ":\n" + warn); }
+      },
+      options || {});
+    
+    var warnings = [],
+        code = "(do " + nss.map(function(ns) {
+          return lively.lang.string.format(
+            "(rksm.system-files.loading/require-ns '%s nil)", ns);
+        }).join(" ") + ")";
+
+    Global.clojure.Runtime.doEval(code, options,
+      function(err) { thenDo(err, nss, warnings); });
   }
+
 });
 
 Object.extend(clojure.Runtime.ReplServer, {
@@ -855,8 +878,12 @@ clojure.Projects = {
       // load clj
       loadProjectAndFetchNamespaces.curry("cljx?"),
       chooseNamespacesToRequire.curry("Clojure"),
-      requireNamespaces,
-      function(nss, n) { cljNamespaces = nss; showWarnings(n); },
+      clojure.Runtime.requireNamespaces,
+      function(nss, _warnings, n) {
+        cljNamespaces = nss; 
+        warnings.pushAll(_warnings);
+        showWarnings(n);
+      },
 
       // load cljs
       loadProjectAndFetchNamespaces.curry("cljs"),
@@ -867,7 +894,10 @@ clojure.Projects = {
       // update
       updateBrowsers,
       function(n) { n(null, {dir: projectDir, cljsNamespaces: cljsNamespaces, cljNamespaces: cljNamespaces}); }
-    )(thenDo);
+    )(function(err, loadResult) {
+      if (err) updateBrowsers(); // make sure browsers are updated, even in case of errors
+      thenDo(err, loadResult);
+    });
 
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
