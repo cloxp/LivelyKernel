@@ -494,11 +494,15 @@ Object.extend(clojure.Runtime.ReplServer, {
                      + "                [org.rksm/cloxp-repl \"0.1.1-SNAPSHOT\"]\n"
                      + "                [org.rksm/cloxp-cljs \"0.1.1-SNAPSHOT\"]\n"
                      + '                [pjstadig/humane-test-output "0.6.0"]]\n'
-                     + ' :repl-options {:nrepl-middleware [rksm.cloxp-repl.nrepl/wrap-cloxp-eval]}\n'
+                     + ' :repl-options {:nrepl-middleware [rksm.cloxp-repl.nrepl/wrap-cloxp-eval\n'
+                     + '                                   rksm.cloxp-repl.cljx/wrap-nrepl-eval-for-cljx\n'
+                     + '                                   rksm.cloxp-repl.cljx/wrap-nrepl-load-file-for-cljx]}\n'
                      + " :injections [(require 'rksm.system-navigator)\n"
-                     + "              (require 'rksm.cloxp-repl)\n"
-                     + "              (require 'rksm.cloxp-trace)\n"
                      + "              (require 'rksm.cloxp-cljs.ns.internals)\n"
+                     + "              (require 'rksm.cloxp-repl)\n"
+                     + "              (require 'rksm.system-files.loading)\n"
+                     + "              (require 'rksm.system-files.cljx)\n"
+                     + "              (rksm.system-files.cljx/enable-cljx-load-support!)\n"
                     // rk 2015-01-31: This tries to auto discover classpath in
                     // cwd. I currently deactivated it since it can lead to
                     // confusing situations in which the runtime meta data (intern
