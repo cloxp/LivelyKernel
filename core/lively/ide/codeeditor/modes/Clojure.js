@@ -75,7 +75,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         });
       }
     },
-    
+
     {
       name: "clojureShowEvalQueue",
       exec: function(_) {
@@ -97,7 +97,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           if (cmd) { this.killCommand(cmd, thenDo); }
           else thenDo && thenDo();
         });
-        
+
         ed.addScript(function killCommand(cmd, thenDo) {
           var self = this;
           Global.clojure.Runtime.evalInterrupt(cmd.env, cmd, function(err) {
@@ -108,7 +108,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             thenDo && thenDo(err);
           })
         });
-        
+
         ed.addScript(function setAttributedText(textSpec) {
             // textSpec like [["string", {type: "tokenType", onClick: ..., commands: ...}}]]
             return this.withAceDo(function(ed) {
@@ -116,14 +116,14 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
               return m.set(ed, textSpec);
             });
           });
-        
+
         ed.addScript(function update() {
           // show(this)
           // this.getWindow().openInWorld()
           var q = Global.clojure.Runtime.evalQueue,
               env = Global.clojure.Runtime.currentEnv(),
               self = this;
-        
+
           self.saveExcursion(function(reset) {
             self.setAttributedText(
               Array.prototype.concat.apply(
@@ -132,38 +132,38 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
                   return [printEvalCommand(cmd), ['\n'], printStop(cmd), ['\n']]; })));
             (function() { reset(); }).delay(0);
           });
-        
+
           function printUpdate() {
             return ['[update]', {type: "action", onClick: self.update.bind(self)}];
           }
-        
+
           function printEnv(env) {
             return [lively.lang.string.format(
               "eval queue of %s:%s", env.host, env.port)];
           }
-        
+
           function printStopAll(env) {
             return ["[stop all]", {type: 'action', onClick: self.killAllInEnv.bind(self, env)}];
           }
-        
+
           function printEvalCommand(cmd) {
             return [lively.lang.string.format(
               "\neval: %s\nnamespace: %s\nid:%s\nis running: %s",
                 cmd.expr.replace(/\n/g, "").truncate(300), cmd.ns || "user",
                 cmd["eval-id"], cmd.isRunning || "false")];
           }
-          
+
           function printStop(cmd) {
             return ["[stop]", {type: 'action', onClick: self.killCommand.bind(self, cmd)}];
           }
         });
-        
+
         ed.addScript(function onLoad() { $super(); this.startStepping(1000, "update"); });
 
         return true;
       }
     },
-    
+
     {
       name: "clojureRefreshClasspathDirs",
       exec: function(ed, args) {
@@ -301,7 +301,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       },
       multiSelectAction: 'forEach'
     },
-    
+
     {
       name: "clojureEvalSelectionOrLine",
       exec: function(ed, args) {
@@ -367,39 +367,59 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         var insert = args.insert; // either insert into current editor or open in window
         var content = args.content;
 
-        if (!content) {
+        // lively.ide.codeeditor.modes.Clojure.update()
+
+        lively.lang.fun.composeAsync(
+          retrieveContent, open
+        )(function(err) { err && console.error(err); })
+
+        return true;
+
+        // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+        function retrieveContent(next) {
+          if (content) return next(null, content);
+
           var msgMorph = ed.$morph.ensureStatusMessageMorph();
-          content = msgMorph.world() && msgMorph.insertion;
-          if (content) {
-            ed.$morph._statusMorph.remove();
-            var insertion = msgMorph.insertion;
-            delete msgMorph.insertion;
+          msgMorph = msgMorph && msgMorph.world() ? msgMorph : null;
+          if (!msgMorph) return next(null);
+
+          var ctx = lively.PropertyPath("textChunks.0.style.doit.context").get(msgMorph);
+          if (ctx && ctx.isClojureError) {
+            clojure.Runtime.fullLastErrorStackTrace(
+              {open: true, nframes: 999}, function(err) { next(err); });
+            return;
           }
+
+          content = (ctx && ctx.content) || msgMorph.insertion;
+          delete msgMorph.insertion;
+          msgMorph.remove();
+
+          next(null, content);
         }
 
-        if (content) {
+        function open(content, next) {
+          if (!content) return next();
           if (insert) {
             if (!ed.selection.isEmpty()) ed.selection.clearSelection();
             ed.insert(content);
-          } else {
-            // lively.ide.codeeditor.modes.Clojure.update()
-            $world.addCodeEditor({
-              title: 'clojure inspect',
-              extent: pt(600, 300),
-              content: content,
-              textMode: 'clojure',
-              lineWrapping: true
-            }).getWindow().comeForward();
+            return next();
           }
-          return;
-        } else {
-          ed.$morph.setStatusMessage("nothing to " + (insert ? "insert" : "open"));
+
+          $world.addCodeEditor({
+            title: 'clojure inspect',
+            extent: pt(600, 300),
+            content: content,
+            textMode: 'clojure',
+            lineWrapping: true
+          }).getWindow().comeForward();
+          next();
         }
-        return true;
+
       },
       multiSelectAction: 'forEach'
     },
-    
+
     {
       name: "clojureEvalNsForm",
       exec: function(ed, args) {
@@ -425,12 +445,12 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           var src = ed.getValue();
           var ast = ed.session.$ast || src;
           var pos = ed.getCursorIndex();
-    
+
           // // if this does not work let the system-nav figure out the rest...
-          
+
           var term = ed.session.getMode().helper.identfierBeforeCursor(ed.$morph);
           var memberComplForm = clojure.StaticAnalyzer.buildElementCompletionForm(ast,src, pos);
-    
+
           if (memberComplForm) {
             lively.lang.fun.composeAsync(
               callClojure.curry(memberComplForm, {requiredNamespaces: ["rksm.system-navigator.completions"]}),
@@ -449,7 +469,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
 
           return true;
           // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    
+
           function handlerError(err) {
             if (err) {
               var msg = "Completion error: " + String(err);
@@ -457,14 +477,14 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
               return;
             }
           }
-    
+
           function processMemberCompletions(result, thenDo) {
             thenDo(null, result.map(function(ea) {
               return [ea.name, lively.lang.string.format("%s\n[(%s)] -> %s",
                   ea.name, ea.params.join(","), ea.type)];
             }));
           }
-    
+
           function fetchGenericCompletions(term, thenDo) {
             var src = '(rksm.system-navigator.completions/get-completions->json "%s")';
             var sourceString = lively.lang.string.format(src, term);
@@ -474,14 +494,14 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
               thenDo(err, result);
             });
           }
-    
+
           function processGenericCompletions(result, thenDo) {
             var namesAndDoc = Object.keys(result).reduce(function(namesAndDoc, name) {
               return namesAndDoc.concat([[name, result[name]]])
             }, []);
             thenDo(null, namesAndDoc);
           }
-    
+
           function createCandidates(namesAndInfo, thenDo) {
             // namesAndInfo = [[nameOfThing, docString]]
             var maxNameLength = 0;
@@ -497,16 +517,16 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
                 docRest: docLines.join("\ ").truncate(120),
               }
             });
-    
+
             var candidates = displaySpec.map(function(ea) {
               var string = lively.lang.string.pad(ea.docFirst, maxNameLength+1 - ea.docFirst.length)
                          + ea.docRest;
               return {isListItem: true, string: string, value: ea};
             });
-    
+
             thenDo(null, candidates)
           }
-    
+
           function openNarrower(candidates, thenDo) {
             var n = lively.ide.tools.SelectionNarrowing.getNarrower({
               name: "lively.ide.codeEditor.modes.Clojure.Completer",
@@ -530,7 +550,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             });
             thenDo && thenDo(null, n);
           }
-    
+
           function callClojure(code, options, thenDo) {
             var env = clojure.Runtime.currentEnv(ed.$morph),
                 ns = clojure.Runtime.detectNs(ed.$morph),
@@ -553,6 +573,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
     {
       name: "clojureEval",
       exec: function(ed, args) {
+
         // var ed = that.aceEditor
         args = args || {};
         if (typeof args.from !== 'number' || typeof args.to !== 'number') {
@@ -576,11 +597,17 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
                 clojure.Runtime.fullLastErrorStackTrace({open: true, nframes: 999});
               });
 
+          // Note: we pretty print by default but printed output will be
+          // truncated by print level and print length (print depth + max elems
+          // in lists). When doing an "inspect" print we will try to print
+          // everything
+
           var options = {
             file: ed.$morph.getTargetFilePath(),
             env: env, ns: ns, passError: true,
-            prettyPrint: args.prettyPrint,
-            prettyPrintLevel: args.prettyPrintLevel,
+            prettyPrint: args.hasOwnProperty("prettyPrint") ? args.prettyPrint : true,
+            prettyPrintLevel: args.prettyPrintLevel || (args.hasOwnProperty("prettyPrint") ? null : 10),
+            printLength: args.printLength || (args.hasOwnProperty("prettyPrint") ? null : 20),
             warningsAsErrors: false,
             onWarning: function onWarning(warn) { warnings = warn; }
           }
@@ -637,7 +664,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       },
       multiSelectAction: 'forEach'
     },
-    
+
     {
       name: "clojureCaptureSelection",
       exec: function(ed, args) {
@@ -654,7 +681,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         return true;
       }
     },
-    
+
     {
       name: "clojureCaptureInspectOne",
       exec: function(ed, args) {
@@ -689,7 +716,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       name: "clojureDoLiveEval",
       exec: function(ed, args) {
         args = args || {};
-      
+
         var thenDo = args.thenDo,
             editor = ed.$morph,
             rawCode = ed.getValue(), result,
@@ -698,7 +725,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             file = ed.$morph.clojureGetRelativeFilePath && ed.$morph.clojureGetRelativeFilePath();
 
         cljState.evalInProgress = true;
-      
+
         lively.lang.fun.composeAsync(
           doEval,
           addOverlay
@@ -709,16 +736,16 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           else if (err) editor.setStatusMessage("Error " + (err.stack || err).truncate(300))
           thenDo && thenDo(err, result);
         })
-      
+
         // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-      
+
         function doEval(thenDo) {
-      
+
           var template = "(let [code rksm.cloxp-repl/*repl-source*\n"
                        + "      eval-result (:results (rksm.cloxp-repl.live-eval/live-eval-code-keeping-env code\n"
                        + "                             :ns '%s :file %s :id '%s :reset-timeout 60000))]\n"
                        + "    (clojure.data.json/write-str eval-result))";
-      
+
           var code = lively.lang.string.format(template,
             ns, file ? lively.lang.string.print(file) : 'nil', ns);
 
@@ -731,13 +758,13 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
 
           clojure.Runtime.doEval(code, opts, thenDo);
         }
-        
-        
-        
+
+
+
         function addOverlay(result, thenDo) {
           // module('lively.ide.codeeditor.TextOverlay').load()
           editor.removeTextOverlay({className: "clojure-live-eval-value"});
-      
+
           var evalResults;
           if (result.error) {
             var input = result.input;
@@ -750,21 +777,21 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           } else if (!Array.isArray(result)) {
             thenDo(result);
           } else evalResults = result;
-      
+
           var rowOffsets = {};
           var overlays = evalResults.forEach(function(r) {
             if (!r.pos || !r.value) return;
-      
+
             var acePos = {column: r.pos.column-1, row: r.pos.line-1};
             var rowEnd = ed.session.getLine(acePos.row).length;
-            
+
             var text = String(r.value);
             if (r.out.trim().length) {
               if (r.value === "nil") text = "";
               text += " " + r.out.trim();
             }
             text = text.truncate(100).replace(/\n/g, "");
-      
+
             var offs = rowOffsets[acePos.row] || 0;
             rowOffsets[acePos.row] = offs + 8 + text.length*6;
             var overlay = {
@@ -776,10 +803,10 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             }
             editor.addTextOverlay(overlay);
           });
-      
+
           thenDo && thenDo(null, result);
         }
-      
+
         return true;
       }
     },
@@ -806,7 +833,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             next(err, capturesAtRow);
           });
         }
-        
+
         function openAnnotations(annotations, next) {
           if (!annotations || !annotations.length) return next(new Error("No annotations found"));
           annotations.forEach(function(ea) {
@@ -844,7 +871,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         function onError(err) {
           ed.$morph.setStatusMessage(
             "Error undefining " + (name || "unknown entity") + ":\n" + err)
-        }        
+        }
 
         return true;
 
