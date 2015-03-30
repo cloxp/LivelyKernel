@@ -80,7 +80,7 @@ Object.extend(clojure.Runtime, {
             sess = editorMorph.getSession();
         return sess.$livelyClojureState || (sess.$livelyClojureState = {env: null});
     },
-    
+
     changeInEditor: function(editorMorph, newEnvSpec) {
         var runtime = clojure.Runtime;
         var defaultEnv = runtime.currentEnv();
@@ -152,7 +152,7 @@ Object.extend(clojure.Runtime, {
               n(err, string); });
         }
       )(thenDo);
-      
+
     },
 
     evalQueue: [],
@@ -429,7 +429,7 @@ Object.extend(clojure.Runtime, {
 
     )(thenDo);
   },
-  
+
   lsSessions: function(options, thenDo) {
     // clojure.Runtime.lsSessions();
     var sess = lively.net.SessionTracker.getSession();
@@ -441,7 +441,7 @@ Object.extend(clojure.Runtime, {
       thenDo && thenDo(err, answer.data);
     });
   },
-  
+
   fullLastErrorStackTrace: function(options, thenDo) {
     // options: nframes
     options = options || {};
@@ -472,7 +472,7 @@ Object.extend(clojure.Runtime, {
        onWarning: function(warn) { warnings.push("require clj " + nss.join(',') + ":\n" + warn); }
       },
       options || {});
-    
+
     var warnings = [],
         code = "(do " + nss.map(function(ns) {
           return lively.lang.string.format(
@@ -564,7 +564,7 @@ Object.extend(clojure.Runtime.ReplServer, {
           }
         )(function(err) {
           if (err) self.start(options, thenDo);
-          else thenDo(err, cmd); 
+          else thenDo(err, cmd);
         });
     },
 
@@ -585,7 +585,7 @@ Object.extend(clojure.Runtime.ReplServer, {
 
     start: function(options, thenDo) {
         if (!thenDo) { thenDo = options; options = {}; }
-        
+
         var env = options.env || clojure.Runtime.currentEnv(),
             port = env ? env.port : "7888",
             host = env ? env.host : "127.0.0.1",
@@ -649,7 +649,7 @@ Object.extend(clojure.Runtime.ReplServer, {
             thenDo(new Error("Cannot stop clj server " + env.host + ":" + port));
             return;
         }
-  
+
         var port = env.port || "7888";
         var cmdQueueName = "lively.clojure.replServer:"+port;
         forceStop(cmdQueueName, port, thenDo);
@@ -679,7 +679,7 @@ Object.extend(clojure.Runtime.ReplServer, {
 });
 
 clojure.StaticAnalyzer = {
-  
+
   ensureAst: function(astOrSource) {
     return typeof astOrSource === 'string' ?
       paredit.parse(astOrSource) : astOrSource;
@@ -721,7 +721,7 @@ clojure.StaticAnalyzer = {
     var idx = aceEd.session.doc.positionToIndex(aceEd.getCursorPosition())
     return this.nodeAtPoint(aceEd.session.$ast||aceEd.getValue(), idx);
   },
-  
+
   sourceForNodeAtCursor: function(aceEd) {
     // convenience for ace
     var node = this.nodeAtCursor(aceEd);
@@ -852,7 +852,7 @@ clojure.Projects = {
           n(input ? null : new Error("no project cljs choosen"), input);
         }, lively.lang.string.format(template, projectName))
     }
-    
+
     function createPojectClj(projectCljContent, n) {
       lively.shell.writeFile(
         lively.lang.string.joinPath(projectDir, "project.clj"),
@@ -884,7 +884,7 @@ clojure.Projects = {
       chooseNamespacesToRequire.curry("Clojure"),
       clojure.Runtime.requireNamespaces,
       function(nss, _warnings, n) {
-        cljNamespaces = nss; 
+        cljNamespaces = nss;
         warnings.pushAll(_warnings);
         showWarnings(n);
       },
@@ -970,15 +970,18 @@ clojure.Projects = {
 
     function updateBrowsers(n) {
       if (!options.informBrowsers) return n();
-      $world.withAllSubmorphsSelect(function(ea) {
-        return ea.isWindow && ea.targetMorph &&
-          (ea.targetMorph.name === "ClojureBrowser"
-        || ea.targetMorph.name === "ClojureScriptBrowser");
-      }).mapAsync(
-        function(ea, _, n) {
-          var b = ea.targetMorph, nss = b.name === "ClojureBrowser" ? cljNamespaces : cljsNamespaces;
-          b.reload({namespaces: nss}, n);
-        }, function(err, res) { n(err); });
+      var cljBrowser = $world.withAllSubmorphsDetect(function(ea) {
+        return ea.isWindow && ea.targetMorph && ea.targetMorph.name === "ClojureBrowser"; });
+      var cljsBrowser = $world.withAllSubmorphsDetect(function(ea) {
+        return ea.isWindow && ea.targetMorph && ea.targetMorph.name === "ClojureScriptBrowser"; });
+      var updates = [];
+      if (cljBrowser) updates.push(function(n) {
+          cljBrowser.targetMorph.reload({namespaces: cljNamespaces}, n);
+      });
+      if (cljsBrowser) updates.push(function(n) {
+          cljsBrowser.targetMorph.reload({namespaces: cljsNamespaces}, n);
+      });
+      lively.lang.fun.waitForAll({timeout: 15*1000}, updates, function(err) { n && n(); });
     }
 
     function showWarnings(thenDo) {
