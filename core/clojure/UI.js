@@ -54,6 +54,10 @@ function addMorphicExtensions() {
 function addCommands() {
   lively.Config.codeSearchGrepExclusions = [".svn",".git","node_modules","combined.js","BootstrapDebugger.js","target"]
 
+  // lively.lang.obj.extend(lively.ide.commands.defaultBindings, {
+  //   "clojureShowLastError": "cmd-shift-c e r r"
+  // });
+
   lively.lang.obj.extend(lively.ide.commands.byName, {
 
     "clojure.ide.openWorkspace": {
@@ -449,6 +453,15 @@ function addCommands() {
           clojure.TraceFrontEnd.ensureUpdateProc();
         });
 
+        return true;
+      }
+    },
+
+    "clojureShowLastError": {
+      description: "Clojure: Show last error",
+      exec: function(options) {
+        clojure.Runtime.fullLastErrorStackTrace(
+          {open: true, nframes: 999}, function(err) {});
         return true;
       }
     }

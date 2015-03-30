@@ -590,13 +590,15 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             var msg, warn = warnings ? "\n\n" + warnings : "";
             if (err) {
               msg = [
-                ["open full stack trace\n", {doit: {context: {env: env, ns: ns, err: err}, code: errorRetrieval}}],
+                ["open full stack trace\n", {doit: {context: {isClojureError: true, env: env, ns: ns, err: err}, code: errorRetrieval}}],
                 [String(err).truncate(300)],
                 [warn.truncate(400), {color: Color.orange}]];
             } else if (args.offerInsertAndOpen) {
               var insertion = ed.$morph.ensureStatusMessageMorph().insertion = result + warn;
               msg = [
-                ["open", {color: Color.white, textAlign: "right", fontSize: 9, doit: {context: {ed: ed, content: insertion}, code: 'this.ed.execCommand("clojureOpenEvalResult", {insert: false, content: this.content});'}}],
+                ["open", {color: Color.white, textAlign: "right", fontSize: 9,
+                          doit: {context: {ed: ed, content: insertion},
+                                 code: 'this.ed.execCommand("clojureOpenEvalResult", {insert: false, content: this.content});'}}],
                 [" ", {color: Color.white, textAlign: "right", fontSize: 9}],
                 ["insert", {color: Color.white, textAlign: "right", fontSize: 9, doit: {context: {ed: ed, content: insertion}, code: 'this.ed.execCommand("clojureOpenEvalResult", {insert: true, content: this.content}); this.ed.focus();'}}]
               ]
