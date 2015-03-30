@@ -159,7 +159,7 @@ Object.extend(clojure.TraceFrontEnd, {
     function removeExistingEvals(n) {
 
       var evals = clojure.Runtime.evalQueue
-        .filter(function(ea) { return ea.expr.startsWith("(rksm.cloxp-trace/captures->json"); })
+        .filter(function(ea) { return ea.expr.startsWith("(rksm.cloxp-trace.capturing/captures->json"); })
         .groupByKey("isRunning");
       clojure.Runtime.evalQueue = clojure.Runtime.evalQueue.withoutAll(evals["false"] || []);
 
@@ -172,26 +172,27 @@ Object.extend(clojure.TraceFrontEnd, {
 
     function scheduleRetrieval(n) {
       var nextOnce = lively.lang.fun.once(n);
-      setTimeout(function() { nextOnce(new Error("rksm.cloxp-trace/captures->json timed out")); }, 10*1000);
+      setTimeout(function() { nextOnce(new Error("rksm.cloxp-trace.capturing/captures->json timed out")); }, 10*1000);
       clojure.Runtime.doEval(
-        lively.lang.string.format("(rksm.cloxp-trace/captures->json :nss %s :only-last %s)",
+        lively.lang.string.format("(rksm.cloxp-trace.capturing/captures->json :nss %s :only-last %s)",
           options.namespaces ? lively.lang.string.print(options.namespaces) : ":all",
           onlyLast ? "true" : "false"),
-        {resultIsJSON: true, passError: true}, nextOnce);
+        {requiredNamespaces: ["rksm.cloxp-trace.capturing"],
+         resultIsJSON: true, passError: true}, nextOnce);
     }
   },
 
   inspectCapturesValuesWithId: function(options, thenDo) {
-    var code = lively.lang.string.format('(-> (rksm.cloxp-trace/captures) (get "%s") %s)',
+    var code = lively.lang.string.format('(-> (rksm.cloxp-trace.capturing/captures) (get "%s") %s)',
       options.id, options.all ? "" : "first");
-    clojure.Runtime.doEval(code, {prettyPrint: true}, thenDo)
+    clojure.Runtime.doEval(code, {requiredNamespaces: ["rksm.cloxp-trace.capturing"], prettyPrint: true}, thenDo)
   },
 
   uninstallCapture: function(id, thenDo) {
     var self = this;
     clojure.Runtime.doEval(
-      lively.lang.string.format("(rksm.cloxp-trace/uninstall-capture! \"%s\")", id),
-      {resultIsJSON: false, passError: true}, function(err) {
+      lively.lang.string.format("(rksm.cloxp-trace.capturing/uninstall-capture! \"%s\")", id),
+      {requiredNamespaces: ["rksm.cloxp-trace.capturing"], resultIsJSON: false, passError: true}, function(err) {
         self. updateEarly(true);
         thenDo && thenDo(err);
       });
@@ -200,8 +201,8 @@ Object.extend(clojure.TraceFrontEnd, {
   emptyCapture: function(id, thenDo) {
     var self = this;
     clojure.Runtime.doEval(
-      lively.lang.string.format("(rksm.cloxp-trace/empty-capture! \"%s\")",id),
-      {requiredNamespaces: ["rksm.cloxp-trace"], resultIsJSON: false, passError: true},
+      lively.lang.string.format("(rksm.cloxp-trace.capturing/empty-capture! \"%s\")",id),
+      {requiredNamespaces: ["rksm.cloxp-trace.capturing"], resultIsJSON: false, passError: true},
       function(err) {
         self. updateEarly(true);
         thenDo && thenDo(err);
@@ -210,8 +211,8 @@ Object.extend(clojure.TraceFrontEnd, {
 
   reset: function(thenDo) {
     var self = this;
-    clojure.Runtime.doEval("(rksm.cloxp-trace/reset-captures!)",
-      {requiredNamespaces: ["rksm.cloxp-trace"], resultIsJSON: false, passError: true},
+    clojure.Runtime.doEval("(rksm.cloxp-trace.capturing/reset-captures!)",
+      {requiredNamespaces: ["rksm.cloxp-trace.capturing"], resultIsJSON: false, passError: true},
       function(err) {
         self. updateEarly(true);
         thenDo && thenDo(err);
