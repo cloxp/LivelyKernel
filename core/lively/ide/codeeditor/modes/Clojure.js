@@ -391,7 +391,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             return;
           }
 
-          content = (ctx && ctx.content) || msgMorph.insertion;
+          content = (ctx && ctx.content) || msgMorph.insertion || msgMorph.textString;
           delete msgMorph.insertion;
           msgMorph.remove();
 
