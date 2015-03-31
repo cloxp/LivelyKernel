@@ -325,5 +325,59 @@ clojure.TraceFrontEnd.SourceMapper = {
 
 }
 
+clojure.TraceFrontEnd.StackTrace = {
+
+  convertStringToFrameInfos: function(string) {
+    // Takes a stack trace and makes it browsable
+    return lively.lang.string.lines(string)
+      .map(function(line) {
+        var match = line.match(/^\s*(\w[^\/]+)\/([^\s]+) \(([^:]+):([0-9]+)\)\s*$/);
+        if (match) return {clojure: true, ns: match[1], fn: match[2], file: match[3], line: match[4]};
+        var match = line.match(/^\s*(\w[^\s]+) \(([^:]+):([0-9]+)\)\s*$/);
+        if (match) {
+          var parts = match[1].split(".");
+          var method = parts.pop(), klass = parts.join("\.");
+          var result = {java: true, method: method, file: match[2], line: match[3]};
+          result["class"] = klass;
+          return result
+        }
+        return null;
+      })
+      .compact();
+  },
+
+  printFrames: function(frames) {
+
+    return printFrames(frames);
+  
+    // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  
+    function printFrames(frames) {
+      return Array.prototype.concat.apply([], frames.map(printFrame));
+    }
+  
+    function printFrame(frame) {
+      if (frame.clojure) {
+        return [
+          [lively.lang.string.format("%s/%s (%s:%s)",
+            frame.ns, frame.fn, frame.file || "no file", frame.line),
+            {traceEl: frame, onClick: "browse", type: "action", commands: [{name: "browse", exec: openDef}]}],
+          ["\n"]];
+      } else if (frame.java) {
+        return [
+          [lively.lang.string.format("%s>>%s (%s:%s)",
+            frame["class"], frame.method, frame.file || "no file", frame.line)],
+          ["\n"]];
+      } else return [[JSON.stringify(frame)], ["\n"]];
+    }
+  
+    function openDef(ed, args) {
+      lively.ide.commands.exec("clojureFindDefinition",
+        {name: args.attr.traceEl.fn, ns: args.attr.traceEl.ns, thenDo: function(err) {
+          if (err) ed.$morph.setStatusMessage(String(err));
+        }});
+    }
+  }
+}
 
 }) // end of module
