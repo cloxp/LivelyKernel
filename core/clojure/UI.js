@@ -551,4 +551,59 @@ function addConfigSettings() {
   });
 })();
 
+;(function setupDialogs() {
+
+  function test() {
+    new clojure.CreateNamespaceDialog("foooo?", function(input) {
+      show(input)
+    }, {input: "test", historyId: "bar"}).open();
+  }
+
+  // test();
+
+  module("lively.morphic.Widgets").runWhenLoaded(function() {
+
+    lively.morphic.PromptDialog.subclass('clojure.CreateNamespaceDialog',
+    'initializing', {
+  
+      initialize: function($super, label, callback, defaultInputOrOptions) {
+        // additional options: fileTypes + defaultFileType
+        $super(label, callback, defaultInputOrOptions);
+        this.options.fileTypes = this.options.hasOwnProperty("fileTypes")
+          ? this.options.fileTypes : ["clj", "cljx"];
+      },
+  
+      buildFileTypeInput: function(bounds) {
+        var self = this;
+        var labelBounds = bounds.withWidth(bounds.width/2);
+        var dlBounds = labelBounds.withX(labelBounds.left() + labelBounds.width);
+
+        this.panel.addMorph(lively.morphic.Text.makeLabel("file type:", {
+          align: "right",
+          position: labelBounds.topLeft(), extent: labelBounds.extent()
+        }));
+        var dl = new lively.morphic.DropDownList(dlBounds, this.options.fileTypes);
+        dl.setName("fileTypeDropDownList");
+        this.panel.addMorph(dl);
+        dl.selection = this.options.defautFileType || this.options.fileTypes[0];
+        return dl;
+      },
+  
+      buildView: function($super, extent) {
+        var panel = $super(extent);
+        this.buildFileTypeInput(lively.rect(5,this.okButton.bounds().top(), 110, 20));
+        return panel;
+      }
+    },
+    "callbacks", {
+      triggerCallback: function($super, result) {
+        // result is input text
+        var dl = this.panel.get("fileTypeDropDownList");
+        return $super({text: result, fileType: dl ? dl.selection : null});
+      }
+    });
+  });
+
+})();
+
 }) // end of module
