@@ -418,11 +418,11 @@ Object.extend(clojure.Runtime, {
       function(intern, nsSrc, n) {
         // lively.lang.string.lines(source).length
         intern.line = intern.line && Number(intern.line);
-        if (!intern.line && intern.protocol) intern.line = Number(intern.protocol.line);
-        if (intern.line) {
-          var range = lively.lang.string.lineNumberToIndexesComputer(nsSrc)(Number(intern.line));
-          var ast = paredit.parse(nsSrc);
-          var rangeDef = range && paredit.navigator.rangeForDefun(ast, range[0]);
+        if (typeof intern.line !== 'number' && intern.protocol) intern.line = Number(intern.protocol.line);
+        if (typeof intern.line === 'number') {
+          var range = lively.lang.string.lineNumberToIndexesComputer(nsSrc)(intern.line-1),
+              ast = paredit.parse(nsSrc),
+              rangeDef = range && paredit.navigator.rangeForDefun(ast, range[0]);
         }
         n(null, {intern: intern, nsSource: nsSrc, defRange: rangeDef});
       }
