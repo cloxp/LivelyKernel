@@ -149,8 +149,7 @@ function addCommands() {
             function(next) {
                 lively.morphic.tools.LoadingIndicator.open("Starting server", function(close) { indicatorClose = close; next(); });
             },
-            function(next) { Global.clojure.Runtime.ReplServer.ensure(
-              {useLein: true, env: env}, next); },
+            function(next) { Global.clojure.Runtime.ReplServer.ensure({useLein: true, env: env}, next); },
             function(cmd, next) { lively.ide.tools.ShellCommandRunner.findOrCreateForCommand(cmd).openInWorldCenter().comeForward(); next(null, cmd); },
             function(cmd, next) {
               var status = $morph("clojureStatusLabel");
