@@ -750,20 +750,20 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         )(function(err, result) {
           cljState.evalInProgress = false;
               // {error: e, type: "json parse error", input: result}
-          if (result && result.error) editor.setStatusMessage((result.input||result.error).truncate(300))
-          else if (err) editor.setStatusMessage("Error " + (err.stack || err).truncate(300))
+          err = err || result && result.error;
+          if (err) ed.execCommand("clojureShowResultOrError", {err: err});
           thenDo && thenDo(err, result);
         })
 
         // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
         function doEval(thenDo) {
-
           var template = "(let [code rksm.cloxp-repl/*repl-source*\n"
-                       + "      eval-result (:results (rksm.cloxp-repl.live-eval/live-eval-code-keeping-env code\n"
-                       + "                             :ns '%s :file %s :id '%s :reset-timeout 60000))]\n"
-                       + "    (clojure.data.json/write-str eval-result))";
-
+                       + "      res (rksm.cloxp-repl.live-eval/live-eval-code-keeping-env\n"
+                       + "           code :ns '%s :file %s :id '%s :reset-timeout 60000)\n"
+                       + "      for-ed  (map (fn [{o :out, p :printed, {:keys [line column]} :parsed}]\n"
+                       + "                     {:printed p, :out o, :pos {:line line, :column column}}) res)]\n"
+                       + "  (clojure.data.json/write-str for-ed))\n"
           var code = lively.lang.string.format(template,
             ns, file ? lively.lang.string.print(file) : 'nil', ns);
 
@@ -771,13 +771,10 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           var opts = {
             bindings: ["rksm.cloxp-repl/*repl-source*", rawCode],
             ns: ns, resultIsJSON: true,
-            env: Global.clojure.Runtime.currentEnv(editor), passError: false,
-            requiredNamespaces: ["rksm.cloxp-repl.live-eval", "clojure.data.json"]};
-
+            env: Global.clojure.Runtime.currentEnv(editor), passError: true,
+            requiredNamespaces: ["rksm.cloxp-repl", "rksm.cloxp-repl.live-eval", "clojure.data.json"]};
           clojure.Runtime.doEval(code, opts, thenDo);
         }
-
-
 
         function addOverlay(result, thenDo) {
           // module('lively.ide.codeeditor.TextOverlay').load()
@@ -798,14 +795,14 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
 
           var rowOffsets = {};
           var overlays = evalResults.forEach(function(r) {
-            if (!r.pos || !r.value) return;
+            if (!r.pos || !r.printed) return;
 
             var acePos = {column: r.pos.column-1, row: r.pos.line-1};
             var rowEnd = ed.session.getLine(acePos.row).length;
 
-            var text = String(r.value);
+            var text = String(r.printed);
             if (r.out.trim().length) {
-              if (r.value === "nil") text = "";
+              if (r.printed === "nil") text = "";
               text += " " + r.out.trim();
             }
             text = text.truncate(100).replace(/\n/g, "");
@@ -1139,7 +1136,7 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
       clojureDoLiveEvalDebounced();
 
       function clojureDoLiveEvalDebounced() {
-        lively.lang.fun.debounceNamed(ed.$morph.id+"-clojureDoLiveEval", 200, function() {
+        lively.lang.fun.debounceNamed(ed.$morph.id+"-clojureDoLiveEval", 400, function() {
           if (cljState && cljState.evalInProgress) return clojureDoLiveEvalDebounced();
           ed.execCommand("clojureDoLiveEval");
         })();
