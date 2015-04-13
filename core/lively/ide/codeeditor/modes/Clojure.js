@@ -640,12 +640,30 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             } else {
               ed.$morph.ensureStatusMessageMorph().insertion = null;
               msg = String(result).truncate(300)+warn;
-            }
-            ed.$morph.setStatusMessage(msg, err ? Color.red : null);
-            args.thenDo && args.thenDo(err,result);
-          });
-        });
 
+    {
+      name: "clojureMacroexpand",
+      exec: function(ed, args) {
+        var code = !ed.selection.isEmpty() ?
+              ed.session.getTextRange() :
+              clojure.StaticAnalyzer.sourceForLastSexpBeforeCursor(ed),
+            expandFull = args.hasOwnProperty("count"),
+            env = clojure.Runtime.currentEnv(ed.$morph),
+            ns = clojure.Runtime.detectNs(ed.$morph),
+            options = {
+              file: ed.$morph.getTargetFilePath(),
+              env: env, ns: ns, passError: true,
+              prettyPrint: true,
+              macroexpandFull: expandFull
+            }
+        clojure.Runtime.macroexpand(code, options, function(err, result) {
+          ed.execCommand("clojureShowResultOrError", {
+            err: err,
+            msg: result,
+            offerInsertAndOpen: true
+          });
+          args.thenDo && args.thenDo(err, result);
+        });
         return true;
       },
       multiSelectAction: 'forEach'
@@ -902,6 +920,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         "Ctrl-x Ctrl-a":                           "clojureLoadFile",
         "Ctrl-x Ctrl-n":                           "clojureEvalNsForm",
         "Command-i|Ctrl-x Ctrl-i|Alt-Shift-Enter": "clojureEvalAndInspect",
+        "Alt-m|Alt-Shift-m":                       "clojureMacroexpand",
         "Ctrl-x Ctrl-f|Alt-Shift-Space":           "clojureEvalDefun",
         "Alt-o|Command-o":                         "clojureOpenEvalResult",
         "Tab":                                     "pareditExpandSnippetOrIndent",
@@ -1037,6 +1056,7 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
           {isMenuItem: true, isDivider: true},
           ['eval and debug...', ([
               ['interrupt eval (Esc)',                       function() { editor.aceEditor.execCommand("clojureEvalInterrupt"); }],
+              ['macroexpand (Alt-m)',                        function() { editor.aceEditor.execCommand("clojureMacroexpand"); }],
               ['eval and pretty print (Alt-Shift-Enter)', function() { editor.aceEditor.execCommand("clojureEvalAndInspect"); }],
               ['eval top level entity (Alt-Shift-Space)', function() { editor.aceEditor.execCommand("clojureEvalDefun"); }],
               ['undefine entity (Alt-Shift-u)', function() { editor.aceEditor.execCommand("clojureUndef"); }],

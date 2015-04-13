@@ -2,7 +2,6 @@ module('clojure.Runtime').requires().requiresLib({url: Config.codeBase + 'lib/ac
 
 // "exports"
 // lively.ide.codeeditor.modes.Clojure.ReplServer = {};
-clojure.Runtime
 clojure.Runtime.ReplServer = {};
 clojure.StaticAnalyzer;
 
@@ -153,6 +152,18 @@ Object.extend(clojure.Runtime, {
         }
       )(thenDo);
 
+    },
+
+    macroexpand: function(expr, opts, thenDo) {
+      // clojure.Runtime.macroexpand("#'x", show.curry("%s %s"))
+      if (typeof opts === "function") { thenDo = opts; opts = null; }
+      opts = opts || {};
+      opts.passError = true;
+      var macroexpandFull = opts.macroexpandFull;
+
+      var code = lively.lang.string.format("(macroexpand%s '%s)",
+        macroexpandFull ? "" : "-1", expr);
+      clojure.Runtime.doEval(code, opts, thenDo);
     },
 
     evalQueue: [],
