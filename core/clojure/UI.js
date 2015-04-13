@@ -150,22 +150,68 @@ function addCommands() {
       }
     },
 
+    "clojure.ide.showServerProcess": {
+      description: "Clojure: show server process",
+      exec: function(options, thenDo) {
+        options = options || {};
+        var env = options.env = options.env || clojure.Runtime.currentEnv();
+        var cmd = clojure.Runtime.ReplServer.getCurrentServerCommand(options);
+        if (!options.hasOwnProperty("interactive")) options.interactive = true;
+
+        if (!cmd) {
+          if (options.interactive) $world.inform("No Clojure repl server running!");
+          thenDo && thenDo(new Error("No Clojure repl server running!"));
+          return true;
+        }
+
+        lively.lang.fun.composeAsync(
+            function(next) { lively.require('lively.ide.tools.ShellCommandRunner').toRun(function() { next(); }) },
+            function(next) { lively.require('lively.ide.codeeditor.modes.Clojure').toRun(function() { next(); }) },
+            function(next) {
+              var runner = lively.ide.tools.ShellCommandRunner.findOrCreateForCommand(cmd);
+              if (options.interactive && runner) runner.openInWorldCenter().comeForward();
+              next(null, runner);
+            }
+        )(thenDo);
+
+        return true;
+      }
+    },
+
     "clojure.ide.startReplServer": {
       get description() { return "Clojure: Start/Restart a repl server " + clojure.Runtime.printEnv(clojure.Runtime.currentEnv()); },
       exec: function(options, thenDo) {
         options = options || {};
-        var env = options.env || clojure.Runtime.currentEnv();
-        var indicatorClose;
+        var env = options.env || clojure.Runtime.currentEnv(), indicatorClose, prevRunner;
+
         lively.lang.fun.composeAsync(
-            lively.ide.commands.exec.curry("clojure.ide.stopReplServer", options),
-            function(next) { lively.require('lively.morphic.tools.LoadingIndicator').toRun(function() { next(); }) },
-            function(next) { lively.require('lively.ide.tools.ShellCommandRunner').toRun(function() { next(); }) },
             function(next) { lively.require('lively.ide.codeeditor.modes.Clojure').toRun(function() { next(); }) },
+            function(next) { lively.require('lively.morphic.tools.LoadingIndicator').toRun(function() { next(); }) },
             function(next) {
                 lively.morphic.tools.LoadingIndicator.open("Starting server", function(close) { indicatorClose = close; next(); });
             },
-            function(next) { Global.clojure.Runtime.ReplServer.ensure({useLein: true, env: env}, next); },
-            function(cmd, next) { lively.ide.tools.ShellCommandRunner.findOrCreateForCommand(cmd).openInWorldCenter().comeForward(); next(null, cmd); },
+            function(next) {
+              var opts = lively.lang.obj.merge(options, {interactive: false});
+              lively.ide.commands.exec("clojure.ide.showServerProcess", opts, function(err, runner) { next(null, runner); });
+            },
+            function(runner, next) {
+              prevRunner = runner;
+              lively.ide.commands.exec("clojure.ide.stopReplServer", options, function(err) { next(err); })
+            },
+            function(next) {
+              Global.clojure.Runtime.ReplServer.ensure({useLein: true, env: env}, function(err, cmd) { next(err, cmd); });
+            },
+            function(cmd, next) {
+              var runner;
+              if (prevRunner) {
+                prevRunner.attachTo(cmd);
+                runner = prevRunner;
+              } else {
+                runner = lively.ide.tools.ShellCommandRunner.findOrCreateForCommand(cmd);
+              }
+              runner.openInWorldCenter().comeForward();
+              next(null, cmd); 
+            },
             function(cmd, next) {
               var status = $morph("clojureStatusLabel");
               status && status.quickUpdateFor(60);
@@ -184,17 +230,20 @@ function addCommands() {
         var env = options.env || clojure.Runtime.currentEnv();
         var indicatorClose;
         lively.lang.fun.composeAsync(
-            function(next) { lively.require('lively.ide.codeeditor.modes.Clojure').toRun(function() { next(); }) },
-            function(next) { lively.require('lively.ide.tools.ShellCommandRunner').toRun(function() { next(); }) },
             function(next) {
-                var cmd = Global.clojure.Runtime.ReplServer.getCurrentServerCommand();
-                if (cmd) lively.ide.tools.ShellCommandRunner.findOrCreateForCommand(cmd).openInWorldCenter().comeForward();;
-                next(null, cmd);
+              var opts = lively.lang.obj.merge(options, {interactive: false});
+              lively.ide.commands.exec("clojure.ide.showServerProcess", opts, function(err, runner) { next(null, runner); });
             },
-            function(cmd, next) {
-              Global.clojure.Runtime.ReplServer.stop(cmd, env, next);
-              var status = $morph("clojureStatusLabel");
-              status && status.quickUpdateFor(40);
+            function(runner, next) {
+              if (runner) {
+                runner.openInWorldCenter().comeForward();
+                var cmd = runner.targetMorph.currentCommand;
+                var status = $morph("clojureStatusLabel");
+                status && status.quickUpdateFor(40);
+                clojure.Runtime.ReplServer.stop(cmd, env, next);
+              } else {
+                clojure.Runtime.ReplServer.stop(null, env, next);
+              }
             }
         )(thenDo);
         return true;
