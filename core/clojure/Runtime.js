@@ -417,9 +417,10 @@ Object.extend(clojure.Runtime, {
         if (!intern) return n(new Error("Cannot retrieve meta data for " + symbol));
         var file = options.file ? '"' + options.file + '"' : null;
         if (intern.file && file && !file.endsWith(intern.file)) file = null;
+
         var cmd = lively.lang.string.format(
-          "(clojure.data.json/write-str (rksm.system-files/source-for-ns '%s %s))",
-          intern.ns, file || "");
+          "(clojure.data.json/write-str (rksm.system-files/source-for-ns '%s %s #\"\\.clj(x|s)?$\"))",
+          intern.ns, file ? '"'+file+'"' : "nil");
         clojure.Runtime.doEval(cmd,
           {requiredNamespaces: ["rksm.system-files", "clojure.data.json"], resultIsJSON: true},
           function(err,nsSrc) {
@@ -477,20 +478,27 @@ Object.extend(clojure.Runtime, {
   requireNamespaces: function(nss, options, thenDo) {
     if (typeof options === "function") { thenDo = options; options = null; }
 
+    nss = nss.map(function(ea) { return typeof ea === "string" ? {ns: ea} : ea; });
+
     options = lively.lang.obj.merge({
-      passError: true, ns: 'user', warningsAsErrors: false,
-       requiredNamespaces: ["rksm.system-files.loading"],
-       onWarning: function(warn) { warnings.push("require clj " + nss.join(',') + ":\n" + warn); }
+       passError: true, ns: 'user', warningsAsErrors: false,
+       requiredNamespaces: ["rksm.cloxp-repl", "rksm.cloxp-cljs.ns.internals"],
+       onWarning: function(warn) { warnings.push("require clj " + nss.pluck("ns").join(',') + ":\n" + warn); }
       },
       options || {});
 
-    var warnings = [],
-        code = "(do " + nss.map(function(ns) {
-          return lively.lang.string.format(
-            "(rksm.system-files.loading/require-ns '%s nil)", ns);
-        }).join(" ") + ")";
+    var warnings = [];
 
-    Global.clojure.Runtime.doEval(code, options,
+    var requireCode = "(do " + nss.map(function(ns) {
+      var sym = ns.ns, file = ns.file ? '"'+ns.file+'"' : 'nil',
+          isCljs = file.endsWith(".cljs");
+      return lively.lang.string.format(
+        isCljs ?
+          "(rksm.cloxp-cljs.ns.internals/ensure-ns-analyzed! '%s %s)" :
+          "(rksm.cloxp-repl/require-ns '%s %s)", sym, file);
+    }).join(" ") + ")";
+
+    clojure.Runtime.doEval(requireCode, options,
       function(err) { thenDo(err, nss, warnings); });
   }
 
@@ -560,7 +568,8 @@ Object.extend(clojure.Runtime.ReplServer, {
     },
 
     ensure: function(options, thenDo) {
-        if (!thenDo) { thenDo = options; options = {}; }
+        if (typeof options === "function") { thenDo = options; options = {}; }
+        thenDo = thenDo || function() {}
         options = options || {};
         var self = this;
         var cmd = clojure.Runtime.ReplServer.getCurrentServerCommand(options);
@@ -585,7 +594,7 @@ Object.extend(clojure.Runtime.ReplServer, {
     getCurrentServerCommand: function(options) {
         options = options || {};
         var cmdQueueName = "lively.clojure.replServer";
-        if (options.env && options.env.port) cmdQueueName+":"+options.env.port;
+        if (options.env && options.env.port) cmdQueueName += ":"+options.env.port;
         else cmdQueueName = Object.keys(lively.shell.commandQueue)
           .grep(new RegExp(cmdQueueName))
           .detect(function(ea) {
@@ -598,7 +607,8 @@ Object.extend(clojure.Runtime.ReplServer, {
     },
 
     start: function(options, thenDo) {
-        if (!thenDo) { thenDo = options; options = {}; }
+        if (typeof options === "function") { thenDo = options; options = {}; }
+        thenDo = thenDo || function() {}
 
         var env = options.env || clojure.Runtime.currentEnv(),
             port = env ? env.port : "7888",

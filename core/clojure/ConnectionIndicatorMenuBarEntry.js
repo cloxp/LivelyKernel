@@ -23,9 +23,14 @@ lively.BuildSpec("clojure.ClojureConnectionIndicatorMenuBarEntry", lively.BuildS
     // clojure.Runtime.addEnv
     // clojure.Runtime._defaultEnv
     var self = this,
+        cmd = clojure.Runtime.ReplServer.getCurrentServerCommand(),
         items = [
           ["(re)start repl server",   function() { lively.ide.commands.exec("clojure.ide.startReplServer", null, function(err, cmd) {}); }],
-          ["stop repl server",    function() { lively.ide.commands.exec("clojure.ide.stopReplServer", null, function(err, cmd) {}); }],
+          ["stop repl server",    function() { lively.ide.commands.exec("clojure.ide.stopReplServer", null, function(err, cmd) {}); }]
+        ].concat(
+          cmd ? [["show server process", lively.ide.commands.exec.curry("clojure.ide.showServerProcess")]] : []
+        ).concat([
+          {isMenuItem: true, isDivider: true},
           ["open nREPL log",      function() { lively.ide.commands.exec("clojure.ide.openREPLLog"); }],
           ["show evaluation queue", function() {
             var cmd = lively.ide.codeeditor.modes.Clojure.commands.detect(function(ea) {
@@ -39,7 +44,7 @@ lively.BuildSpec("clojure.ClojureConnectionIndicatorMenuBarEntry", lively.BuildS
               self.update();
             }]
           }).concat([["add", function() { lively.ide.commands.exec("clojure.ide.clojureAddEnv"); }]])]
-        ];
+        ]);
     return items;
   },
 
