@@ -507,11 +507,11 @@ Object.extend(clojure.Runtime, {
 Object.extend(clojure.Runtime.ReplServer, {
 
     cloxpLeinProfile:  "; do not modify, this file is auto-generated\n{\n"
-                     + " :dependencies [[org.rksm/system-navigator \"0.1.11\"]\n"
-                     + "                [org.rksm/cloxp-projects \"0.1.1\"]\n"
-                     + "                [org.rksm/cloxp-trace \"0.1.4\"]\n"
-                     + "                [org.rksm/cloxp-repl \"0.1.1\"]\n"
-                     + "                [org.rksm/cloxp-cljs \"0.1.1\"]\n"
+                     + " :dependencies [[org.rksm/system-navigator \"0.1.12-SNAPSHOT\"]\n"
+                     + "                [org.rksm/cloxp-projects \"0.1.2-SNAPSHOT\"]\n"
+                     + "                [org.rksm/cloxp-trace \"0.1.5-SNAPSHOT\"]\n"
+                     + "                [org.rksm/cloxp-repl \"0.1.2-SNAPSHOT\"]\n"
+                     + "                [org.rksm/cloxp-cljs \"0.1.2-SNAPSHOT\"]\n"
                      + '                [pjstadig/humane-test-output "0.6.0"]]\n'
                      + ' :repl-options {:nrepl-middleware [rksm.cloxp-repl.nrepl/wrap-cloxp-eval\n'
                      + '                                   rksm.cloxp-repl.cljx/wrap-nrepl-eval-for-cljx\n'
@@ -519,7 +519,6 @@ Object.extend(clojure.Runtime.ReplServer, {
                      + '                                                                                     ]}\n'
                      + " :injections [(require 'rksm.system-navigator)\n"
                      + "              (require 'rksm.cloxp-repl)\n"
-                     + "              (require 'rksm.system-files.loading)\n"
                      + "              (require 'rksm.system-files.cljx)\n"
                      + "              (rksm.system-files.cljx/enable-cljx-load-support!)\n"
                      + "              (require 'rksm.cloxp-cljs.ns.internals)\n"
