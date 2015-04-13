@@ -52,12 +52,26 @@ function addMorphicExtensions() {
 }
 
 function addCommands() {
-  lively.Config.codeSearchGrepExclusions = [".svn",".git","node_modules","combined.js","BootstrapDebugger.js","target"]
+  // command line
+  lively.Config.codeSearchGrepExclusions = [".svn",".git","node_modules","combined.js","BootstrapDebugger.js","target"];
 
-  // lively.lang.obj.extend(lively.ide.commands.defaultBindings, {
-  //   "clojureShowLastError": "cmd-shift-c e r r"
-  // });
+  // keys
+  (function setupKeys() {
+    var bnds = lively.ide.commands.defaultBindings;
+  
+    // rebind Command-B
+    delete bnds["lively.ide.openSystemCodeBrowser"];
+    bnds["clojure.ide.openBrowser"] = {mac: "Command-B", win: "Control-B"};
+    bnds["clojurescript.ide.openBrowser"] = {mac: "Command-Shift-B", win: "Control-Shift-B"};
+  
+    // rebind Command-K
+    delete bnds["lively.ide.openWorkspace"]
+    bnds["clojure.ide.openWorkspace"] = {mac: "Command-K", win: "Control-K"}
+  
+    bnds["clojureShowLastError"] = {mac:"Command-Shift-c e r r", win:"Control-Shift-c e r r"};
+  })();
 
+  // commands
   lively.lang.obj.extend(lively.ide.commands.byName, {
 
     "clojure.ide.openWorkspace": {
@@ -66,7 +80,8 @@ function addCommands() {
         $world.addCodeEditor({
           title: "Clojure workspace",
           content: "(+ 3 4)",
-          textMode: "clojure"
+          textMode: "clojure",
+          extent: pt(600,300)
         }).getWindow().comeForward();
       }
     },
