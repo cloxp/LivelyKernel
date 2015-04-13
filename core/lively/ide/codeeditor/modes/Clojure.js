@@ -165,6 +165,73 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
     },
 
     {
+      name: "clojureShowResultOrError",
+      exec: function(ed, args) {
+        args = args || {};
+
+        var env = args.env || clojure.Runtime.currentEnv(ed.$morph),
+            ns = args.ns || clojure.Runtime.detectNs(ed.$morph),
+            err = args.err,
+            msg = args.msg ? args.msg : "",
+            warn = args.warnings ? "\n\n" + args.warnings : "",
+            options = args,
+            useLastError = options.hasOwnProperty("useLastError") ?
+              options.useLastError : true,
+            text;
+
+        if (err) {
+          msg = (msg ? msg + ":\n" : "") + err;
+          text = [
+            ["open full stack trace\n", {doit: {context: {isClojureError: true, env: env, ns: ns, err: err}, code: errorRetrieval}}],
+            [msg.truncate(500)],
+            warn ? [warn.truncate(400), {color: Color.orange}] : [""]];
+        } else if (args.offerInsertAndOpen) {
+          var insertion = ed.$morph.ensureStatusMessageMorph().insertion = msg + warn;
+          text = [
+            ["open", {color: Color.white, textAlign: "right", fontSize: 9,
+                      doit: {context: {ed: ed, content: insertion},
+                             code: 'this.ed.execCommand("clojureOpenEvalResult", {insert: false, content: this.content});'}}],
+            [" ", {color: Color.white, textAlign: "right", fontSize: 9}],
+            ["insert", {color: Color.white, textAlign: "right", fontSize: 9, doit: {context: {ed: ed, content: insertion}, code: 'this.ed.execCommand("clojureOpenEvalResult", {insert: true, content: this.content}); this.ed.focus();'}}]
+          ]
+          .concat(warn ?
+            [[" "],
+             ["open full stack trace\n", {color: Color.white, doit: {context: {env: env, ns: ns, err: warn}, code: errorRetrieval}}]] :
+            [])
+          .concat([
+            ["\n", {fontSize: 9, textAlign: "right"}],
+            [msg.truncate(300)],
+            warn ? [warn.truncate(400), {color: Color.orange}] : [""]]);
+        } else {
+          ed.$morph.ensureStatusMessageMorph().insertion = msg + warn;
+          text = String(msg).truncate(500) + warn;
+        }
+
+        ed.$morph.setStatusMessage(text, err ? Color.red : null);
+        args.thenDo && args.thenDo(err, msg);
+
+        return true;
+
+        // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+        function errorRetrieval() {
+          // simply printing what we have
+          // lively.ide.codeeditor.modes.Clojure.update()
+          clojure.Runtime.fullLastErrorStackTrace({open: true, nframes: 999});
+        }
+
+        function showError() {
+          $world.addCodeEditor({
+            extent: pt(700, 500),
+            title: "clojure stack trace",
+            textMode: "text",
+            content: String(this.err)
+          }).getWindow().comeForward();
+        }
+      }
+    },
+
+    {
       name: "clojureRefreshClasspathDirs",
       exec: function(ed, args) {
         args = args || {};
@@ -316,22 +383,11 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       name: "clojureEvalSelectionOrLastSexp",
       exec: function(ed, args) {
         // var ed = that.aceEditor
-        var range = [0,0];
-        if (!ed.selection.isEmpty()) range = ed.$morph.getSelectionRange();
-        else {
-          var ast = ed.session.$ast;
-          var lastSexp = ed.session.$ast && paredit.walk.prevSexp(ast,ed.getCursorIndex());
-          if (lastSexp) {
-            range = [lastSexp.start, lastSexp.end]
-            do {
-              var directLeftSpecial = paredit.walk.sexpsAt(ast, range[0], function(n) {
-                return n.type === "special" && n.start < range[0] && n.end === range[0] }).last();
-              if (directLeftSpecial) range[0] = directLeftSpecial.start;
-            } while(directLeftSpecial);
-          };
-        }
+        var code = !ed.selection.isEmpty() ?
+          ed.session.getTextRange() :
+          clojure.StaticAnalyzer.sourceForLastSexpBeforeCursor(ed);
         var options = lively.lang.obj.merge(
-          {from: range[0], to: range[1], offerInsertAndOpen: true},
+          {code: code, offerInsertAndOpen: true},
           args || {});
         return ed.execCommand("clojureEval", options);
       },
@@ -352,7 +408,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
 
         var options = {
           prettyPrint: true,
-          prettyPrintLevel: (args && args.count) || 6,
+          prettyPrintLevel: (args && args.count) || 9,
           offerInsertAndOpen: true
         }
         return ed.execCommand("clojureEvalSelectionOrLastSexp", options);
@@ -573,73 +629,66 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
     {
       name: "clojureEval",
       exec: function(ed, args) {
-
-        // var ed = that.aceEditor
         args = args || {};
-        if (typeof args.from !== 'number' || typeof args.to !== 'number') {
-          console.warn("clojureEval needs from/to args");
-          show("clojureEval needs from/to args")
-          return;
+
+        var env = clojure.Runtime.currentEnv(ed.$morph),
+            ns = clojure.Runtime.detectNs(ed.$morph),
+            warnings;
+
+        // Note: we pretty print by default but printed output will be
+        // truncated by print level and print length (print depth + max elems
+        // in lists). When doing an "inspect" print we will try to print
+        // everything
+
+        var options = {
+          file: ed.$morph.getTargetFilePath(),
+          env: env, ns: ns, passError: true,
+          prettyPrint: args.hasOwnProperty("prettyPrint") ? args.prettyPrint : true,
+          prettyPrintLevel: args.prettyPrintLevel || (args.hasOwnProperty("prettyPrint") ? null : 10),
+          printLength: args.printLength || (args.hasOwnProperty("prettyPrint") ? null : 20),
+          warningsAsErrors: false,
+          onWarning: function onWarning(warn) { warnings = warn; }
         }
 
-        ed.saveExcursion(function(reset) {
-          ed.selection.setRange({
-            start: ed.idxToPos(args.from),
-            end: ed.idxToPos(args.to)});
+        lively.lang.fun.composeAsync(
+          getCode,
+          function(code, n) { clojure.Runtime.doEval(code, options, n); }
+        )(function(err, result) {
+          ed.execCommand("clojureShowResultOrError", {
+            err: err,
+            warnings: warnings,
+            msg: result,
+            offerInsertAndOpen: args.hasOwnProperty("offerInsertAndOpen") ?
+              args.offerInsertAndOpen : true
+          });
+          args.thenDo && args.thenDo(err, result);
+        });
 
-          var code = ed.session.getTextRange(),
-              env = clojure.Runtime.currentEnv(ed.$morph),
-              ns = clojure.Runtime.detectNs(ed.$morph),
-              warnings,
-              errorRetrieval = lively.lang.fun.extractBody(function() {
-                // simply printing what we have
-                // lively.ide.codeeditor.modes.Clojure.update()
-                clojure.Runtime.fullLastErrorStackTrace({open: true, nframes: 999});
-              });
+        return true;
 
-          // Note: we pretty print by default but printed output will be
-          // truncated by print level and print length (print depth + max elems
-          // in lists). When doing an "inspect" print we will try to print
-          // everything
+        // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-          var options = {
-            file: ed.$morph.getTargetFilePath(),
-            env: env, ns: ns, passError: true,
-            prettyPrint: args.hasOwnProperty("prettyPrint") ? args.prettyPrint : true,
-            prettyPrintLevel: args.prettyPrintLevel || (args.hasOwnProperty("prettyPrint") ? null : 10),
-            printLength: args.printLength || (args.hasOwnProperty("prettyPrint") ? null : 20),
-            warningsAsErrors: false,
-            onWarning: function onWarning(warn) { warnings = warn; }
+        function getCode(next) {
+          if (args.code) return next(null, args.code);
+
+          if (typeof args.from !== 'number' || typeof args.to !== 'number') {
+            console.warn("clojureEval needs from/to args");
+            show("clojureEval needs from/to args")
+            return;
           }
 
-          clojure.Runtime.doEval(code, options, function(err, result) {
+          ed.saveExcursion(function(reset) {
+            ed.selection.setRange({
+              start: ed.idxToPos(args.from),
+              end: ed.idxToPos(args.to)});
+            var code = ed.session.getTextRange();
             reset();
-            var msg, warn = warnings ? "\n\n" + warnings : "";
-            if (err) {
-              msg = [
-                ["open full stack trace\n", {doit: {context: {isClojureError: true, env: env, ns: ns, err: err}, code: errorRetrieval}}],
-                [String(err).truncate(300)],
-                [warn.truncate(400), {color: Color.orange}]];
-            } else if (args.offerInsertAndOpen) {
-              var insertion = ed.$morph.ensureStatusMessageMorph().insertion = result + warn;
-              msg = [
-                ["open", {color: Color.white, textAlign: "right", fontSize: 9,
-                          doit: {context: {ed: ed, content: insertion},
-                                 code: 'this.ed.execCommand("clojureOpenEvalResult", {insert: false, content: this.content});'}}],
-                [" ", {color: Color.white, textAlign: "right", fontSize: 9}],
-                ["insert", {color: Color.white, textAlign: "right", fontSize: 9, doit: {context: {ed: ed, content: insertion}, code: 'this.ed.execCommand("clojureOpenEvalResult", {insert: true, content: this.content}); this.ed.focus();'}}]
-              ]
-              .concat(warnings ?
-                [[" "],
-                 ["open full stack trace\n", {color: Color.white, doit: {context: {env: env, ns: ns, err: warnings}, code: errorRetrieval}}]] :
-                [])
-              .concat([
-                ["\n", {fontSize: 9, textAlign: "right"}],
-                [result.truncate(300)],
-                [warn.truncate(400), {color: Color.orange}]]);
-            } else {
-              ed.$morph.ensureStatusMessageMorph().insertion = null;
-              msg = String(result).truncate(300)+warn;
+            next(null, code);
+          });
+        }
+      },
+      multiSelectAction: 'forEach'
+    },
 
     {
       name: "clojureMacroexpand",
@@ -1043,7 +1092,7 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
                     || editor.owner && editor.owner.owner && editor.owner.owner.isTextEditor);
 
       settings[1].splice(2, 0, [lively.lang.string.format("[%s] use paredit", lively.Config.pareditCorrectionsEnabled ? "X" : " "), function() { lively.Config.toggle("pareditCorrectionsEnabled"); }]);
-      
+
       return [].concat([
         ['eval selection or last expr (Alt-Enter)',         function() { editor.aceEditor.execCommand("clojureEvalSelectionOrLastSexp"); }],
         ]).concat(
@@ -1141,7 +1190,7 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
           ed.execCommand("clojureDoLiveEval");
         })();
       }
-      
+
     },
 
     onSelectionChange: function(evt) {
