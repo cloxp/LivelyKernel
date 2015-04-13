@@ -908,7 +908,8 @@ clojure.Projects = {
       chooseNamespacesToRequire.curry("Clojure"),
       clojure.Runtime.requireNamespaces,
       function(nss, _warnings, n) {
-        cljNamespaces = nss;
+        cljNamespaces = nss.map(function(ea) {
+          return typeof ea !== "string" && ea && ea.ns ? ea.ns : ea; });
         warnings.pushAll(_warnings);
         showWarnings(n);
       },
