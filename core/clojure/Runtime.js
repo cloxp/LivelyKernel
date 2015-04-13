@@ -753,6 +753,19 @@ clojure.StaticAnalyzer = {
     return node.source || aceEd.getValue().slice(node.start,node.end);
   },
 
+  sourceForLastSexpBeforeCursor: function(aceEd) {
+    var ast = aceEd.session.$ast;
+    var lastSexp = aceEd.session.$ast && paredit.walk.prevSexp(ast, aceEd.getCursorIndex());
+    if (!lastSexp) return ""
+    var start = lastSexp.start, end = lastSexp.end;
+    do {
+      var directLeftSpecial = paredit.walk.sexpsAt(ast, start, function(n) {
+        return n.type === "special" && n.start < start && n.end === start }).last();
+      if (directLeftSpecial) start = directLeftSpecial.start;
+    } while(directLeftSpecial);
+    return aceEd.getValue().slice(start, end);
+  },
+
   createDefinitionQuery: function(astOrSource, idx, optNsName) {
     var ast = this.ensureAst(astOrSource);
     var thing = this.nodeAtPoint(ast, idx);
