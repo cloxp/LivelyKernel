@@ -728,9 +728,9 @@ lively.BuildSpec('lively.morphic.tools.PartsBin', {
         } else if (categoryName == "*latest*") {
             this.showMsg("loading latest...");
             var partsbinDir = this.partsBinURL().saveRelativePathFrom(URL.root);
-            lively.ide.CommandLineSearch.findFiles('*.json', {rootDirectory: partsbinDir}, function(result) {
-                result = result.sortByKey('lastModified').reverse().slice(0,20);
-                this.onLoadLatest(result);
+            lively.ide.CommandLineSearch.findFiles('*.json', {rootDirectory: partsbinDir}, function(err, result) {
+              result = result.sortByKey('lastModified').reverse().slice(0,20);
+              this.onLoadLatest(result);
             }.bind(this));
         } else if (categoryName == "*search*") {
             this.doSearch();
