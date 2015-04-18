@@ -415,6 +415,22 @@ Object.extend(clojure.Runtime, {
       options||{}, {requiredNamespaces: reqNs, resultIsJSON: true}), thenDo);
   },
 
+  retrieveSourceForNs: function(nsName, options, thenDo) {
+    // options: file
+    var file = options.file ? '"' + options.file + '"' : 'nil';
+    var cmd = lively.lang.string.format(
+      "(clojure.data.json/write-str (rksm.system-files/source-for-ns '%s %s #\"\\.clj(x|s)?$\"))",
+      nsName, file);
+    clojure.Runtime.doEval(cmd, {
+      requiredNamespaces: ["rksm.system-files", "clojure.data.json"], resultIsJSON: true
+    }, function(err, source) {
+      err = err
+        || (!source && !source.length && new Error("Could no retrieve source for " + nsName))
+        || null;
+      thenDo(err, source);
+    });
+  },
+
   retrieveDefinition: function(symbol, inns, options, thenDo) {
     // options: file
     lively.lang.fun.composeAsync(
@@ -422,16 +438,11 @@ Object.extend(clojure.Runtime, {
 
       function(intern, n) {
         if (!intern) return n(new Error("Cannot retrieve meta data for " + symbol));
-        var file = options.file ? '"' + options.file + '"' : null;
+        var file = options.file;
         if (intern.file && file && !file.endsWith(intern.file)) file = null;
-
-        var cmd = lively.lang.string.format(
-          "(clojure.data.json/write-str (rksm.system-files/source-for-ns '%s %s #\"\\.clj(x|s)?$\"))",
-          intern.ns, file ? '"'+file+'"' : "nil");
-        clojure.Runtime.doEval(cmd,
-          {requiredNamespaces: ["rksm.system-files", "clojure.data.json"], resultIsJSON: true},
-          function(err,nsSrc) {
-            n(err, intern, nsSrc || ""); });
+        clojure.Runtime.retrieveSourceForNs(
+          intern.ns, {file: file},
+          function(err,nsSrc) { n(err, intern, nsSrc || ""); })
       },
 
       function(intern, nsSrc, n) {
