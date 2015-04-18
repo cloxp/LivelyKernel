@@ -4,7 +4,7 @@ Object.extend(clojure.UI, {
 
   showText: function(spec) {
     // $world.addActionText(actionSpec, options)
-    var ed = $world.addCodeEditor(spec)
+    var ed = $world.addCodeEditor(spec);
     ed.getWindow().comeForward();
     return ed;
   },
@@ -12,7 +12,8 @@ Object.extend(clojure.UI, {
   showSource: function(spec) {
     spec = lively.lang.obj.merge({
       textMode: "clojure",
-      extent: pt(600,500)
+      gutter: true,
+      extent: pt(600,600)
     }, spec||{});
     return clojure.UI.showText(spec)
   },
@@ -408,7 +409,7 @@ function addCommands() {
         function openNarrower(n) {
           var narrower = lively.ide.tools.SelectionNarrowing.getNarrower({
             name: 'cloxp.narrowAllNamespaces.clojure.NarrowingList',
-            reactivateWithoutInit: true,
+            // reactivateWithoutInit: true,
             spec: {
               prompt: 'search for namespace: ',
               candidatesUpdaterMinLength: 3,
@@ -505,9 +506,7 @@ function addCommands() {
                 function(err) { n(err, namespace); }); },
             function(ns, n) { browser.saveScheduleSelection(ns, null); }
           )(function(err) {
-            if (err) {
-              browser.get("CodeEditor").setStatusMessage(String(err))
-            }
+            if (err) browser.showClojureError(null, "Load error", {warnings: String(err), offerInsertAndOpen: true});
           });
 
         }

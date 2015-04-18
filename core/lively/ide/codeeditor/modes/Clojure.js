@@ -175,8 +175,6 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             msg = args.msg ? args.msg : "",
             warn = args.warnings ? "\n\n" + args.warnings : "",
             options = args,
-            useLastError = options.hasOwnProperty("useLastError") ?
-              options.useLastError : true,
             text;
 
         if (err) {
