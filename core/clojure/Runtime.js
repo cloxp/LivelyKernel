@@ -522,8 +522,29 @@ Object.extend(clojure.Runtime, {
     )(function(err) { thenDo(err, nss, warnings); })
 
   },
-  }
 
+  traceCode: function(codeToTrace, traceTargets, options, thenDo) {
+    // var traceTargets = ['#"clojure"'];
+    // var codeToTrace = '(println (clojure.java.shell/sh "ls" "-l"))';
+
+    var opts = lively.lang.obj.merge(options || {}, {
+      requiredNamespaces: ["rksm.cloxp-trace.tracing", "clojure.data.json"],
+      passError: true,
+      resultIsJSON: true
+    });
+
+    traceTargets = traceTargets || [];
+
+    var code = lively.lang.string.format(
+      // "(clojure.data.json/write-str (rksm.cloxp-trace.tracing/trace [%s] %s))",
+      "(binding [*out* (java.io.PrintWriter. (java.io.StringWriter.))]\n"
+    + " (clojure.data.json/write-str\n"
+    + "  (rksm.cloxp-trace.tracing/trace [%s] %s)))",
+      traceTargets.join(" "),
+      codeToTrace)
+
+    clojure.Runtime.doEval(code, opts, thenDo);
+  }
 });
 
 Object.extend(clojure.Runtime.ReplServer, {
