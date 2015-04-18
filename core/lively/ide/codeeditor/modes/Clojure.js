@@ -941,6 +941,49 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         return true;
 
       }
+    },
+
+    {
+      name: "clojureTraceCode",
+      exec: function(ed, args) {
+        args = args || {};
+        var code = !ed.selection.isEmpty() ?
+            ed.session.getTextRange() :
+            clojure.StaticAnalyzer.sourceForLastSexpBeforeCursor(ed),
+          // expandFull = args.hasOwnProperty("count"),
+          env = clojure.Runtime.currentEnv(ed.$morph),
+          ns = clojure.Runtime.detectNs(ed.$morph),
+          options = {
+            file: ed.$morph.getTargetFilePath(),
+            env: env, ns: ns, passError: true,
+            code: code
+          }
+
+        lively.lang.fun.composeAsync(
+          function(n) {
+            var id = "clojure.trace-targets-input";
+            var prevInput = lively.LocalStorage.get(id) || "'user\n#\"clojure.*\"";
+            $world.editPrompt(
+              "Enter targets to trace. Can be namespace and var symbols or Clojure regexps,",
+              function(input) {
+                if (!input) return n(new Error("Invalid input"));
+                lively.LocalStorage.set(id, input);
+                var traceTargets = input.split(/\s\n/).invoke("trim").compact();
+                options.traceTargets = traceTargets;
+                n(null);
+              }, {input: prevInput, historyId: id});
+          },
+          function(n) {
+  // lively.ide.codeeditor.modes.Clojure.update()
+            lively.ide.commands.exec("clojureTraceCode", options, n)
+          }
+        )(function(err, viewer) {
+          err && ed.$morph.setStatusMessage(String(err).truncate(500), Color.red);
+        })
+
+        return true;
+
+      }
     }
   ],
 
@@ -969,6 +1012,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         "Command-i|Ctrl-x Ctrl-i|Alt-Shift-Enter": "clojureEvalAndInspect",
         "Alt-m|Alt-Shift-m":                       "clojureMacroexpand",
         "Ctrl-x Ctrl-f|Alt-Shift-Space":           "clojureEvalDefun",
+        "Ctrl-x Ctrl-t":                           "clojureTraceCode",
         "Alt-o|Command-o":                         "clojureOpenEvalResult",
         "Tab":                                     "pareditExpandSnippetOrIndent",
         "Ctrl-x Ctrl-r":                           "clojureRefreshClasspathDirs",
@@ -1117,6 +1161,9 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
                 function() { editor.aceEditor.execCommand("clojureSetLiveEvalEnabled"); }],
             ])
           ],
+          ["trace...", [
+            ['trace selected code or last sexp (Ctrl-x Ctrl-t)', function() { editor.aceEditor.execCommand("clojureTraceCode"); }]
+          ]],
           ["capture...", [
             ['capture values of selection (Alt-Shift-w)', function() { editor.aceEditor.execCommand("clojureCaptureSelection"); }],
             ['show all captures', function() { editor.aceEditor.execCommand("clojureCaptureShowAll"); }],
