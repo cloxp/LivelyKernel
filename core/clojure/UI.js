@@ -58,16 +58,16 @@ function addCommands() {
   // keys
   (function setupKeys() {
     var bnds = lively.ide.commands.defaultBindings;
-  
+
     // rebind Command-B
     delete bnds["lively.ide.openSystemCodeBrowser"];
     bnds["clojure.ide.openBrowser"] = {mac: "Command-B", win: "Control-B"};
     bnds["clojurescript.ide.openBrowser"] = {mac: "Command-Shift-B", win: "Control-Shift-B"};
-  
+
     // rebind Command-K
     delete bnds["lively.ide.openWorkspace"]
     bnds["clojure.ide.openWorkspace"] = {mac: "Command-K", win: "Control-K"}
-  
+
     bnds["clojureShowLastError"] = {mac:"Command-Shift-c e r r", win:"Control-Shift-c e r r"};
   })();
 
@@ -88,20 +88,24 @@ function addCommands() {
 
     "clojure.ide.openBrowser": {
       description: "Clojure: Browser",
-      exec: function() {
+      exec: function(options) {
+        options = options || {};
         $world.loadPartItem("ClojureBrowser", "PartsBin/Clojure", function(err, browser) {
             browser.openInWorldCenter().comeForward();
-            browser.targetMorph.reload();
+            var browser = browser.targetMorph;
+            browser.reload({}, function(err) { options.thenDo && options.thenDo(err, browser); });
         });
       }
     },
 
     "clojurescript.ide.openBrowser": {
       description: "ClojureScript: Browser",
-      exec: function() {
+      exec: function(options) {
+        options = options || {};
         $world.loadPartItem("ClojureScriptBrowser", "PartsBin/Clojure", function(err, browser) {
             browser.openInWorldCenter().comeForward();
-            browser.targetMorph.reload();
+            var browser = browser.targetMorph;
+            browser.reload({}, function(err) { options.thenDo && options.thenDo(err, browser); });
         });
       }
     },
@@ -137,7 +141,8 @@ function addCommands() {
       exec: function(options) {
         options = options || {};
         var browser = $world.loadPartItem("CaptureBrowser", "PartsBin/Clojure")
-        browser.getWindow().openInWorld($world.hand().getPosition()).comeForward();
+        var win = browser.getWindow();
+        win.openInWorld($world.positionForNewMorph(win)).comeForward();
         browser.targetMorph.fetchCapturesAndUpdate(options.id);
         return true;
       }
@@ -146,7 +151,7 @@ function addCommands() {
     "clojure.ide.openProjectController": {
       description: "open project controller",
       exec: function() {
-        $world.loadPartItem("ProjectController", "PartsBin/Clojure").getWindow().openInWorld($world.hand().getPosition()).comeForward();
+        $world.loadPartItem("ProjectManager", "PartsBin/Clojure").getWindow().openInWorld($world.hand().getPosition()).comeForward();
       }
     },
 
@@ -169,7 +174,10 @@ function addCommands() {
             function(next) { lively.require('lively.ide.codeeditor.modes.Clojure').toRun(function() { next(); }) },
             function(next) {
               var runner = lively.ide.tools.ShellCommandRunner.findOrCreateForCommand(cmd);
-              if (options.interactive && runner) runner.openInWorldCenter().comeForward();
+              if (options.interactive && runner) {
+                !runner.world() && runner.openInWorldCenter()
+                runner.comeForward();
+              }
               next(null, runner);
             }
         )(thenDo);
@@ -186,9 +194,10 @@ function addCommands() {
 
         lively.lang.fun.composeAsync(
             function(next) { lively.require('lively.ide.codeeditor.modes.Clojure').toRun(function() { next(); }) },
+            function(next) { lively.require('lively.ide.tools.ShellCommandRunner').toRun(function() { next(); }) },
             function(next) { lively.require('lively.morphic.tools.LoadingIndicator').toRun(function() { next(); }) },
             function(next) {
-                lively.morphic.tools.LoadingIndicator.open("Starting server", function(close) { indicatorClose = close; next(); });
+              lively.morphic.tools.LoadingIndicator.open("Starting server", function(close) { indicatorClose = close; next(); });
             },
             function(next) {
               var opts = lively.lang.obj.merge(options, {interactive: false});
@@ -198,19 +207,21 @@ function addCommands() {
               prevRunner = runner;
               lively.ide.commands.exec("clojure.ide.stopReplServer", options, function(err) { next(err); })
             },
+            function(next) { setTimeout(next, 600); },
             function(next) {
               Global.clojure.Runtime.ReplServer.ensure({useLein: true, env: env}, function(err, cmd) { next(err, cmd); });
             },
             function(cmd, next) {
               var runner;
               if (prevRunner) {
+                prevRunner.get("output").textString = "";
                 prevRunner.attachTo(cmd);
                 runner = prevRunner;
               } else {
                 runner = lively.ide.tools.ShellCommandRunner.findOrCreateForCommand(cmd);
               }
               runner.openInWorldCenter().comeForward();
-              next(null, cmd); 
+              next(null, cmd);
             },
             function(cmd, next) {
               var status = $morph("clojureStatusLabel");
@@ -236,7 +247,7 @@ function addCommands() {
             },
             function(runner, next) {
               if (runner) {
-                runner.openInWorldCenter().comeForward();
+                runner.openInWorld().comeForward();
                 var cmd = runner.targetMorph.currentCommand;
                 var status = $morph("clojureStatusLabel");
                 status && status.quickUpdateFor(40);
