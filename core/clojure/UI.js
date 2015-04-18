@@ -381,6 +381,221 @@ function addCommands() {
       }
     },
 
+    "clojureUserSearchForNamespaceInClasspath": {
+      description: "Clojure: search for namespaces in classpath",
+      exec: function(options, thenDo) {
+        // lively.ide.commands.exec("clojureUserSearchForNamespaceInClasspath")
+        options = options || {};
+
+        var browser = options.browser,
+            nsRe = options.nsRe || /clj(x)?$/;
+
+        openNarrower(function(err, n) {
+          if (err) show(String(err));
+          thenDo && thenDo(err);
+        });
+
+        function ensureBrowser(n) {
+          if (browser) return n(null);
+          lively.ide.commands.exec("clojure.ide.openBrowser", {
+            thenDo: function(err, b) {
+              if (err) return n(err);
+              browser = b; n()
+            }
+          });
+        }
+
+        function openNarrower(n) {
+          var narrower = lively.ide.tools.SelectionNarrowing.getNarrower({
+            name: 'cloxp.narrowAllNamespaces.clojure.NarrowingList',
+            reactivateWithoutInit: true,
+            spec: {
+              prompt: 'search for namespace: ',
+              candidatesUpdaterMinLength: 3,
+              candidates: [],
+              maxItems: 25,
+              candidatesUpdater: searchForNamespace,
+              keepInputOnReactivate: true,
+              actions: [select]
+            },
+          });
+
+          n(null, narrower);
+        }
+
+
+        function searchForNamespace(term, n) {
+          n(['searching for ' + term + "..."]);
+          var terms = term.split(" ");
+          var realTerm = terms[0];
+          lively.lang.fun.debounceNamed("clojure.namespace-search", 200, function() {
+            var code = lively.lang.string.format(
+             '(rksm.cloxp-projects.core/search-for-namespaces-in-local-repo->json #"%s" {:newest true})', realTerm);
+            var opts = {
+              passError: true, resultIsJSON: true,
+              requiredNamespaces: ["rksm.cloxp-projects.core"]
+            };
+            Global.clojure.Runtime.doEval(code, opts, function(err, result) {
+              try {
+                var list = !err && namespacelist(terms, result);
+              } catch (e) { err = e; }
+              n(err ? [String(err)] : (result.length ? list : ["nothing"]))
+            });
+          })();
+        }
+
+        function namespacelist(terms, projects) {
+          return namespaceMatches(terms, projects)
+            .uniqBy(function(a,b) {
+              return a.namespace === b.namespace
+                  && a.name      === b.name
+                  && a.version   === b.version; })
+            .map(function(ea) {
+              return {
+                isListItem: true, value: ea,
+                string: lively.lang.string.format("%s [%s %s]%s",
+                  ea.namespace, ea.name, ea.version,
+                  ea.description && ea.description.trim() ?
+                    " -- " + ea.description.trim().replace(/\n/g, "").truncate(100) : "")
+              }
+            });
+        }
+
+        function namespaceMatches(terms, projects) {
+          return lively.lang.arr.flatmap(projects, function(project) {
+            return lively.lang.arr.flatmap(Object.keys(project.versions).sort().reverse(), function(v) {
+              var proto = {
+                name: (project["group-id"] ? (project["group-id"] + "/") : "") + project["artifact-id"],
+                description: project.description,
+                version: v, namespace: null, namespaceFile: null
+              };
+              return project.versions[v].namespaces
+                .filter(function(ns) { return (ns.file || "").match(nsRe) && terms.every(function(term) { return (ns.ns || ns).match(term); }); })
+                .map(function(ns) { var o = lively.lang.obj.clone(proto); o.namespace = (ns.ns || ns); o.namespaceFile = ns.file; return o; })
+            });
+          })
+        }
+
+        function select(c, n) {
+
+          lively.lang.fun.composeAsync(
+            ensureBrowser,
+            function(n) {
+              n(!c || !c.namespace ? n(new Error("Nothing to select")) : null, c);
+            },
+            function(c, n) {
+              // return n(null, c.namespace);
+
+              var code = lively.lang.string.format(
+                "(if-not (find-ns '%s) (rksm.cloxp-projects.core/install ['%s %s]))",
+                c.namespace, c.name, c.version ? '"'+c.version+'"' : "");
+              var opts = {
+                passError: true, resultIsJSON: false,
+                requiredNamespaces: ["rksm.cloxp-projects.core"]
+              };
+              Global.clojure.Runtime.doEval(code, opts, function(err, result) {
+                n(null, c.namespace, c.namespaceFile); });
+            },
+            function(ns, nsFile, n) {
+              Global.clojure.Runtime.requireNamespaces(
+                [{ns: ns, file: nsFile}], function(err) { n(err, ns); });
+            },
+            function(namespace, n) {
+              browser.reload({namespaces: [namespace]},
+                function(err) { n(err, namespace); }); },
+            function(ns, n) { browser.saveScheduleSelection(ns, null); }
+          )(function(err) {
+            if (err) {
+              browser.get("CodeEditor").setStatusMessage(String(err))
+            }
+          });
+
+        }
+
+        return true;
+      }
+    },
+
+    "clojureUserSearchForNamespaceOrVarInRuntime": {
+      description: "Clojure: search for namespaces and vars in runtime",
+      exec: function(options, thenDo) {
+        // lively.ide.commands.exec("clojureUserSearchForNamespaceInClasspath")
+        options = options || {};
+
+        var browser = options.browser;
+
+        lively.lang.fun.composeAsync(
+            ensureBrowser,
+            prepareCandidates,
+            openNarrower
+        )(thenDo || function() {});
+
+        function ensureBrowser(n) {
+          if (browser) return n(null);
+          lively.ide.commands.exec("clojure.ide.openBrowser", {
+            thenDo: function(err, b) {
+              if (err) return n(err);
+              browser = b; n()
+            }
+          });
+        }
+
+        // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+        function prepareCandidates(next) {
+          // this.namespaceData["cheshire.factory"].interns[3].arglists
+            var candidates = Object.values(browser.namespaceData).reduce(function(candidates, ns) {
+                var name = (ns.name && ns.name.ns) || ns.name;
+                return candidates
+                  .concat([{isListItem: true, string: name, value: ns}])
+                  .concat((ns.interns||[]).map(function(intern) {
+                    return {
+                        isListItem: true,
+                        string: Strings.format("%s/%s %s %s",
+                            intern.ns, intern.name,
+                            intern.arglists ? intern.arglists
+                              .map(printArgList).join(', ') : "",
+                            intern.tag ? "(" + intern.tag + ")" : ""),
+                        value: intern
+                    }
+                }));
+            }, []);
+            next(null, candidates);
+        }
+
+        function printArgList(argList) {
+          return "[" + argList.map(function(arg) {
+           return typeof arg === "object" ?
+            JSON.stringify(arg).replace(/"/g, "").replace(/,/g, " ") :
+               String(arg);
+          }).join(" ") + "]";
+        }
+
+        function openNarrower(candidates, next) {
+          lively.ide.tools.SelectionNarrowing.getNarrower({
+              name: "clojure.namespace.Browser",
+              spec: {
+                candidates: candidates,
+                actions: [
+                  function select(c) {
+                    if (c.interns || !c.ns) { browser.saveScheduleSelection(c.name); }
+                    else browser.saveScheduleSelection(c.ns.trim(), c.name.trim());
+                    if (c.private && !browser.get("privateCheckBox").checked)
+                      (function() {
+                        browser.get("CodeEditor").setStatusMessage(c.name + " is private. Enable private access to see the def.");
+                      }).delay(.1);
+                  }]
+              },
+              reactivateWithoutInit: false,
+              keepInputOnReactivate: true,
+          });
+          next();
+        }
+
+        return true;
+      }
+    },
+
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     // capture
     // -=-=-=-=-
@@ -529,6 +744,35 @@ function addCommands() {
 
         return true;
       }
+    },
+
+    // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    // tracing
+    // -=-=-=-=-
+    "clojureTraceCode": {
+      description: "Clojure: Trace code",
+      exec: function(options) {
+        options = options || {};
+        if (!options.code) return options.thenDo && options.thenDo(new Error("No code specified"));
+
+        clojure.Runtime.traceCode(
+          options.code, options.traceTargets || [], options,
+          function(err, traced) {
+
+            if (err) {
+              show(err);
+              if (options.thenDo) options.thenDo(err);
+              return;
+            }
+
+            $world.loadPartItem("ClojureTraceViewer", "PartsBin/Clojure", function(err, viewer) {
+                viewer.openInWorldCenter().comeForward();
+                viewer.openInWorld($world.positionForNewMorph(viewer)).getWindow().comeForward();
+                viewer.openOn(options.code, traced);
+                if (options.thenDo) options.thenDo(null, viewer);
+            });
+          });
+      },
     },
 
     "clojureShowLastError": {
