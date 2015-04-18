@@ -500,6 +500,7 @@ Object.extend(clojure.Runtime, {
 
     options = lively.lang.obj.merge({
        passError: true, ns: 'user', warningsAsErrors: false,
+       resultIsJSON: true,
        requiredNamespaces: ["rksm.cloxp-repl", "rksm.cloxp-cljs.ns.internals"],
        onWarning: function(warn) { warnings.push("require clj " + nss.pluck("ns").join(',') + ":\n" + warn); }
       },
@@ -514,10 +515,16 @@ Object.extend(clojure.Runtime, {
       function loadClj(n) {
         var nss = cljsAndCljNss[1];
         if (!nss.length) return n();
-        var code = "(rksm.cloxp-repl/require-namespaces ["
-          + nss.map(function(ns) { return "'" + ns.ns || ns; }).join(" ")
-          + "])";
-        clojure.Runtime.doEval(code, options, function(err) { n(err); });
+        var code = lively.lang.string.format(
+          "(clojure.data.json/write-str\n"
+          + " (rksm.cloxp-repl/require-namespaces \n"
+          + "  [%s])\n"
+          + " :value-fn (fn [k v] (cond\n"
+          + "                       (instance? Exception v) (with-out-str (binding [*err* *out*] (clojure.repl/pst v 999)))\n"
+          + "                       :default v)))",
+          nss.map(function(ns) { return "'" + ns.ns || ns; }).join(" "));
+        clojure.Runtime.doEval(code, options, function(err, result) {
+          n(err || result && result.error ? result.error : null); });
       },
 
       function loadCljs(n) {
