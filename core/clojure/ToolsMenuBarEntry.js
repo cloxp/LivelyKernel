@@ -17,11 +17,12 @@ lively.BuildSpec("clojure.ClojureToolsMenuBarEntry", lively.BuildSpec("lively.mo
     function cmd(name) { return function() { lively.ide.commands.exec(name); }; }
     var self = this;
     return [
-          ["new project", function() { clojure.Projects.createProjectInteractively({}, function() {}); }],
           ["open workspace", cmd("clojure.ide.openWorkspace")],
           ["open Clojure browser", cmd("clojure.ide.openBrowser")],
           ["open ClojureScript browser", cmd("clojurescript.ide.openBrowser")],
           ["open clojars", cmd("clojure.ide.openClojarsBrowser")],
+          // ["new project...", function() { clojure.Projects.createProjectInteractively({}, function() {}); }],
+          ["project manager", cmd("clojure.ide.openProjectController")],
           ["js", [
             ['JavaScript Workspace', cmd('lively.ide.openWorkspace')],
             ['JavaScript Browser', cmd('lively.ide.openSystemCodeBrowser')],
