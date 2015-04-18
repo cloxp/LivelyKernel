@@ -127,8 +127,27 @@ Object.extend(clojure.Runtime, {
       options = options || {};
       if (!expr.trim().length) return thenDo(new Error("doc: no input"))
       var self = this;
+
       lively.lang.fun.composeAsync(
-        function(n) {
+        replDoc,
+        function(doc, n) {
+          if (doc && String(doc).trim() !== "nil") return n(null, doc);
+          self.lookupIntern(options.ns, expr, options,
+            function(err, result) {
+              if (err || !result) return n(err || new Error("Could no lookup " + expr), null);
+              if (!result.doc) return replDoc(result.ns + "/" + result.name, n);
+              var string = result.doc,
+                  args = result['method-params'] || result.arglists;
+              if (args) string = "(["+args.join("] [") + "])\n\n" + string;
+              string = result.ns + "/" + result.name + "\n\n" + string;
+              n(err, string);
+          });
+        }
+      )(expr, thenDo);
+
+      // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+      function replDoc(expr, n) {
           self.doEval(
             lively.lang.string.format("(do (ns %s) (clojure.repl/doc %s))", options.ns, expr),
             {
@@ -138,19 +157,7 @@ Object.extend(clojure.Runtime, {
               prettyPrint: true,
               passError: true
             }, function(err, doc) { n(null, doc); });
-        },
-        function(doc, n) {
-          if (doc && String(doc).trim() !== "nil") return n(null, doc);
-          self.lookupIntern(options.ns, expr, options,
-            function(err, result) {
-              if (!result || !result.doc) return n(err, null);
-              var string = result.doc;
-              var args = result['method-params'] || result.arglists;
-              if (args) string = "(["+args.join("] [") + "])\n\n" + string;
-              string = result.ns + "/" + result.name + "\n\n" + string;
-              n(err, string); });
-        }
-      )(thenDo);
+      }
 
     },
 
