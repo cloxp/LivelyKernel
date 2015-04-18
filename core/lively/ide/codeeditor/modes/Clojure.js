@@ -842,11 +842,13 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             thenDo(result);
           } else evalResults = result;
 
-          var rowOffsets = {};
-          var overlays = evalResults.forEach(function(r) {
+          // var rowOffsets = {};
+          var charW = ed.renderer.layerConfig.characterWidth;
+
+          var overlays = evalResults.map(function(r) {
             if (!r.pos || !r.printed) return;
 
-            var acePos = {column: r.pos.column-1, row: r.pos.line-1};
+            var acePos = {column: 0, row: r.pos.line-1};
             var rowEnd = ed.session.getLine(acePos.row).length;
 
             var text = String(r.printed);
@@ -856,16 +858,16 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             }
             text = text.truncate(100).replace(/\n/g, "");
 
-            var offs = rowOffsets[acePos.row] || 0;
-            rowOffsets[acePos.row] = offs + 8 + text.length*6;
             var overlay = {
-              start: {column: rowEnd, row: acePos.row},
+              atLineEnd: true,
+              start: {column: 0, row: acePos.row},
               text: text,
               classNames: ["clojure-live-eval-value"],
-              offset: {x: 15+offs, y: 0},
+              offset: {x: 15, y: 0},
               data: {"clojure-live-eval-value": r}
             }
             editor.addTextOverlay(overlay);
+            return overlay;
           });
 
           thenDo && thenDo(null, result);
@@ -888,7 +890,6 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         });
 
         function findCaptureAt(acePos, next) {
-  // lively.ide.codeeditor.modes.Clojure.update()
           clojure.TraceFrontEnd.retrieveCaptures({}, function(err, captures) {
             var capturesAtRow = !err && clojure.TraceFrontEnd
               .filterCapturesForEditor(ed.$morph, captures)
