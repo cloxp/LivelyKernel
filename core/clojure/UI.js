@@ -596,6 +596,130 @@ function addCommands() {
       }
     },
 
+    "clojureCodeSearch": {
+      description: "Clojure: search for code in loaded namespaces",
+      exec: function(options, thenDo) {
+
+        options = options || {};
+        var env = options.env || {};
+
+        // var namespaceMatcher = options.namespaceMatcher || "rksm.system-navigator.search";
+        var narrower;
+        var searchRunning = false;
+        var m = $world.topMorph();
+        var browser = m && m.targetMorph
+                   && m.targetMorph.name === "ClojureBrowser"
+                   && m.targetMorph;
+
+        lively.lang.fun.composeAsync(
+          promptForNsMatch,
+          function(nsMatch, n) { n(null, nsMatch, startSearch.curry(nsMatch)); },
+          openNarrower
+        )(function(err) { if (err) show(err); thenDo && thenDo(err); });
+
+        function promptForNsMatch(n) {
+          var id = "clojure.ide.codeSearch.matchingRe";
+          var hist = lively.ide.tools.CommandLine.getHistory(id);
+          $world.prompt("Do search in namespaces matching (clojure regexp):", function(input) {
+            show(input);
+            if (typeof input !== "string") n(new Error("Search canceled"));
+            else n(null, input);
+          }, {input:hist.items.last() || "", historyId: id});
+        }
+
+        function startSearch(namespaceMatcher, input, callback) {
+          if (searchRunning) {
+            clojure.Runtime.evalInterrupt(env, function() {
+              searchRunning = false;
+              startSearch(input, callback);
+            });
+            return;
+          }
+
+          searchRunning = true;
+
+          clojure.Runtime.doCodeSearch(input,
+            {namespaceMatcher: namespaceMatcher},
+            function(err, results) {
+              searchRunning = false;
+              if (err) return callback(["error: " + err]);
+              var candidates = results.reduce(function(all, nsResult) {
+                return all.concat(nsResult.finds.map(function(find) {
+                  find.ns = nsResult.ns;
+                  return {isListItem: true, string: printFind(find), value: find};
+                }));
+              }, []);
+
+              if (candidates.length === 0) candidates = ['nothing found'];
+              callback(candidates);
+            });
+        }
+
+        function openNarrower(nsMatch, startSearchFunc, n) {
+          var searchProc = Functions.debounce(600, startSearchFunc);
+          var narrower = lively.ide.tools.SelectionNarrowing.getNarrower({
+              name: 'clojure.ide.doCodeSearch.NarrowingList.' + nsMatch,
+              reactivateWithoutInit: true,
+              spec: {
+                  prompt: 'search for: ',
+                  candidatesUpdaterMinLength: 3,
+                  candidates: [],
+                  maxItems: 25,
+                  candidatesUpdater: candidateBuilder.curry(searchProc),
+                  keepInputOnReactivate: true,
+                  actions: [{name: 'open', exec: showFind}]
+              }
+          });
+          setTimeout(function() { narrower.get("inputLine").focus(); }, 0);
+        }
+
+        function printFind(find) {
+          return lively.lang.string.format(
+            "%s:%s %s", find.ns, find.line-1, find.source);
+        }
+
+        function candidateBuilder(searchProc, input, callback) {
+          callback(['searching...']);
+          searchProc(input, callback);
+        };
+
+        function showFind(find, thenDo) {
+          if (!browser) showFindInNewEditor(find, thenDo);
+          else showFindInBrowser(find, thenDo);
+        }
+
+        function showFindInBrowser(find, thenDo) {
+          browser.getWindow().comeForward();
+          browser.saveScheduleSelection(find.ns, null, false, function(err) {
+            scrollToFind(browser.get("CodeEditor"), find);
+          });
+        }
+
+        function showFindInNewEditor(find, thenDo) {
+          var editor;
+          var editor = Global.clojure.UI.showSource({title: find.ns + " " + find.match});
+          lively.lang.fun.composeAsync(
+            clojure.Runtime.retrieveSourceForNs.bind(clojure.Runtime, find.ns, {env: env}),
+            function(source, n) {
+              editor.textString = source;
+              scrollToFind(editor, find);
+              n();
+            }
+          )(function(err) {
+            err && editor.setStatusMessage(String(err));
+            thenDo && thenDo(err);
+          });
+        }
+
+        function scrollToFind(editor, find) {
+          editor.withAceDo(function(ed) {
+            ed.gotoLine(find.line-1, 1, false);
+            ed.centerSelection();
+          });
+        }
+      }
+    },
+
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     // capture
     // -=-=-=-=-
@@ -883,14 +1007,14 @@ function addConfigSettings() {
 
     lively.morphic.PromptDialog.subclass('clojure.CreateNamespaceDialog',
     'initializing', {
-  
+
       initialize: function($super, label, callback, defaultInputOrOptions) {
         // additional options: fileTypes + defaultFileType
         $super(label, callback, defaultInputOrOptions);
         this.options.fileTypes = this.options.hasOwnProperty("fileTypes")
           ? this.options.fileTypes : ["clj", "cljx"];
       },
-  
+
       buildFileTypeInput: function(bounds) {
         var self = this;
         var labelBounds = bounds.withWidth(bounds.width/2);
@@ -906,7 +1030,7 @@ function addConfigSettings() {
         dl.selection = this.options.defautFileType || this.options.fileTypes[0];
         return dl;
       },
-  
+
       buildView: function($super, extent) {
         var panel = $super(extent);
         this.buildFileTypeInput(lively.rect(5,this.okButton.bounds().top(), 110, 20));

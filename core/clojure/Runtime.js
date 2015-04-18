@@ -123,6 +123,37 @@ Object.extend(clojure.Runtime, {
         function(err) { if (err) $world.logError(err); thenDo && thenDo(err); });
     },
 
+    doCodeSearch: function(searchTerm, options, thenDo) {
+      // options:
+      //  - namespaceMatcher: Clojure re for filtering namespaces
+      //  - excludeNamespaces: Clojure re for excluding namespaces
+
+      var opts = lively.lang.obj.merge(options || {}, {
+        requiredNamespaces: ["rksm.system-navigator.search", "clojure.data.json"],
+        passError: true, resultIsJSON: true
+      });
+
+      var term = ensureClojureRe(searchTerm);
+      var matcher = opts.namespaceMatcher && ensureClojureRe(opts.namespaceMatcher);
+      var excludes = opts.excludeNamespaces && ensureClojureRe(opts.excludeNamespaces);
+
+      var code = lively.lang.string.format(
+        " (clojure.data.json/write-str\n"
+        + "  (rksm.system-navigator.search/code-search %s"
+        + "   :match-ns %s :except-ns %s))",
+          term, matcher || "nil", excludes || "nil");
+  
+      clojure.Runtime.doEval(code, opts, thenDo);
+    
+      // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+      function ensureClojureRe(string) {
+          return string.startsWith("#") ?
+            string : "#\"(?i)" + string + "\"";
+      }
+
+    },
+
     fetchDoc: function(expr, options, thenDo) {
       options = options || {};
       if (!expr.trim().length) return thenDo(new Error("doc: no input"))
