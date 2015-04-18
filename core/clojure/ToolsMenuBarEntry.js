@@ -77,6 +77,7 @@ lively.BuildSpec("clojure.ClojureSearchMenuBarEntry", lively.BuildSpec("lively.m
     function cmd(name) { return function() { lively.ide.commands.exec(name); }; }
     var self = this;
     return [
+          ["code search in runtime", cmd("clojureCodeSearch")],
           ["search for namespaces and vars in runtime", cmd("clojureUserSearchForNamespaceOrVarInRuntime")],
           ["search for namespaces on classpath", cmd("clojureUserSearchForNamespaceInClasspath")]
     ];
