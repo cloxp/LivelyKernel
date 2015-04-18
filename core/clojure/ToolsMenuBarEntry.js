@@ -61,10 +61,35 @@ lively.BuildSpec("clojure.ClojureHelpMenuBarEntry", lively.BuildSpec("lively.mor
   update: function update() {}
 }));
 
+lively.BuildSpec("clojure.ClojureSearchMenuBarEntry", lively.BuildSpec("lively.morphic.tools.MenuBarEntry").customize({
+
+  name: "clojureSearchLabel",
+  menuBarAlign: "left",
+  textString: "search",
+
+  style: lively.lang.obj.merge(lively.BuildSpec("lively.morphic.tools.MenuBarEntry").attributeStore.style, {
+    align: "center",
+    extent: lively.pt(60,20),
+    toolTip: "Search for namespaces, symbols, and code."
+  }),
+
+  morphMenuItems: function morphMenuItems() {
+    function cmd(name) { return function() { lively.ide.commands.exec(name); }; }
+    var self = this;
+    return [
+          ["search for namespaces and vars in runtime", cmd("clojureUserSearchForNamespaceOrVarInRuntime")],
+          ["search for namespaces on classpath", cmd("clojureUserSearchForNamespaceInClasspath")]
+    ];
+  },
+
+  update: function update() {}
+}));
+
 
 Object.extend(clojure.ToolsMenuBarEntry, {
   getMenuBarEntries: function() {
     return [lively.BuildSpec("clojure.ClojureToolsMenuBarEntry").createMorph(),
+            lively.BuildSpec("clojure.ClojureSearchMenuBarEntry").createMorph(),
             lively.BuildSpec("clojure.ClojureHelpMenuBarEntry").createMorph()];
   }
 });
