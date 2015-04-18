@@ -496,17 +496,32 @@ Object.extend(clojure.Runtime, {
 
     var warnings = [];
 
-    var requireCode = "(do " + nss.map(function(ns) {
-      var sym = ns.ns, file = ns.file ? '"'+ns.file+'"' : 'nil',
-          isCljs = file.endsWith(".cljs");
-      return lively.lang.string.format(
-        isCljs ?
-          "(rksm.cloxp-cljs.ns.internals/ensure-ns-analyzed! '%s %s)" :
-          "(rksm.cloxp-repl/require-ns '%s %s)", sym, file);
-    }).join(" ") + ")";
+    var cljsAndCljNss = nss.partition(function(ns) {
+      return ns.file && ns.file.endsWith(".cljs"); })
 
-    clojure.Runtime.doEval(requireCode, options,
-      function(err) { thenDo(err, nss, warnings); });
+    lively.lang.fun.composeAsync(
+      function loadClj(n) {
+        var nss = cljsAndCljNss[1];
+        if (!nss.length) return n();
+        var code = "(rksm.cloxp-repl/require-namespaces ["
+          + nss.map(function(ns) { return "'" + ns.ns || ns; }).join(" ")
+          + "])";
+        clojure.Runtime.doEval(code, options, function(err) { n(err); });
+      },
+
+      function loadCljs(n) {
+        var nss = cljsAndCljNss[0];
+        if (!nss.length) return n();
+        var requireCode = "(do " + nss.map(function(ns) {
+          var sym = ns.ns, file = ns.file ? '"'+ns.file+'"' : 'nil';
+          return lively.lang.string.format(
+              "(rksm.cloxp-cljs.ns.internals/ensure-ns-analyzed! '%s %s)", sym, file);
+        }).join(" ") + ")";
+        clojure.Runtime.doEval(requireCode, options, function(err) { n(err); });
+      }
+    )(function(err) { thenDo(err, nss, warnings); })
+
+  },
   }
 
 });
