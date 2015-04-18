@@ -1267,11 +1267,12 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
       m.removeTextOverlay({className: "clojure-capture"});
       var rowOffsets = {};
       var captures = clojure.TraceFrontEnd.filterCapturesForEditor(m, captures);
+      var w = ed.renderer.layerConfig.characterWidth;
       if (!captures.length) m.hideTextOverlays();
       else captures.forEach(function(c) {
           var rowEnd = ed.session.getLine(c.acePos.row).length;
           var offs = rowOffsets[c.acePos.row] || 0;
-          rowOffsets[c.acePos.row] = offs + (c.string.length * 6) + 5;
+          rowOffsets[c.acePos.row] = offs + (c.string.length * w) + 5;
           m.addTextOverlay({
             start: {column: rowEnd, row: c.acePos.row},
             text: c.string,
