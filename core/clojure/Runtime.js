@@ -55,9 +55,11 @@ Object.extend(clojure.Runtime, {
     currentEnv: function(codeEditor) {
         // clojure.Runtime.currentEnv(that);
         var runtime = clojure.Runtime;
+
         if (codeEditor) {
-            var st = runtime.ensureClojureStateInEditor(codeEditor);
-            if (st.env) return st.env;
+          if (codeEditor.clojureEnv) return codeEditor.clojureEnv();
+          var st = runtime.ensureClojureStateInEditor(codeEditor);
+          if (st.env) return st.env;
         }
 
         return this.environments()[this._defaultEnv];
@@ -286,6 +288,16 @@ Object.extend(clojure.Runtime, {
       if (printLength) {
         bindings.push("clojure.core/*print-length*");
         bindings.push(printLength);
+      }
+
+      if (env.cljs) {
+        if (!env.cljsConnection) return thenDo(new Error("No ClojureScript connection"));
+        requiredNamespaces.push("rksm.cloxp-com.cljs-repl");
+        requiredNamespaces.push("rksm.cloxp-cljs.ns.internals");
+        expr = lively.lang.string.format(
+          "  (cljs.env/with-compiler-env (:compiler-env (rksm.cloxp-cljs.ns.internals/ensure-default-cljs-env))\n"
+        + "    (rksm.cloxp-com.cljs-repl/eval-cljs '%s {:target-id %s}))",
+          expr, env.cljsConnection.id ? '"'+env.cljsConnection.id+'"' : "nil");
       }
 
       return this.queueNreplMessage({
