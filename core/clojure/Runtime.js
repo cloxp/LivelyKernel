@@ -456,9 +456,26 @@ Object.extend(clojure.Runtime, {
       requiredNamespaces: ["rksm.system-files", "clojure.data.json"], resultIsJSON: true
     }, function(err, source) {
       err = err
-        || (!source && !source.length && new Error("Could no retrieve source for " + nsName))
+        || ((!source || !source.length) && new Error("Could no retrieve source for namespace " + nsName))
         || null;
       thenDo(err, source);
+    });
+  },
+
+  retrieveSourceForVar: function(qualifiedVarName, options, thenDo) {
+    // options: file
+    var file = options.file ? '"' + options.file + '"' : 'nil';
+    var cmd = lively.lang.string.format(
+      "(clojure.data.json/write-str {:source (rksm.system-navigator.ns.internals/source-for-symbol '%s)})",
+      qualifiedVarName);
+    clojure.Runtime.doEval(cmd, {
+      requiredNamespaces: ["rksm.system-navigator.ns.internals"], resultIsJSON: true,
+    }, function(err, result) {
+      err = err
+        || ((!result || !result.source || result.source === "nil")
+          && new Error("Could no retrieve source for var " + qualifiedVarName))
+        || null;
+      thenDo(err, result.source);
     });
   },
 
@@ -473,22 +490,37 @@ Object.extend(clojure.Runtime, {
         if (intern.file && file && !file.endsWith(intern.file)) file = null;
         clojure.Runtime.retrieveSourceForNs(
           intern.ns, {file: file},
-          function(err,nsSrc) { n(err, intern, nsSrc || ""); })
-      },
-
-      function(intern, nsSrc, n) {
-        // lively.lang.string.lines(source).length
-        intern.line = intern.line && Number(intern.line);
-        if (typeof intern.line !== 'number' && intern.protocol) intern.line = Number(intern.protocol.line);
-        if (typeof intern.line === 'number') {
-          var range = lively.lang.string.lineNumberToIndexesComputer(nsSrc)(intern.line-1),
-              ast = paredit.parse(nsSrc),
-              rangeDef = range && paredit.navigator.rangeForDefun(ast, range[0]);
-        }
-        n(null, {intern: intern, nsSource: nsSrc, defRange: rangeDef});
+          function(err, nsSrc) {
+            if (err) {
+              var varName = symbol;
+              if (!varName.include("/")) varName = inns + "/" + varName;
+              clojure.Runtime.retrieveSourceForVar(symbol, {file: file},
+                function(err, symSource) {
+                  if (err) n(err);
+                  else {
+                    n(null, {
+                      intern: intern,
+                      nsSource: symSource,
+                      defRange: [0, symSource.length]
+                    })
+                  }
+                });
+            } else nsRangeForVar(intern, nsSrc || "", n);
+          });
       }
-
     )(thenDo);
+
+    function nsRangeForVar(intern, nsSrc, n) {
+      // lively.lang.string.lines(source).length
+      intern.line = intern.line && Number(intern.line);
+      if (typeof intern.line !== 'number' && intern.protocol) intern.line = Number(intern.protocol.line);
+      if (typeof intern.line === 'number') {
+        var range = lively.lang.string.lineNumberToIndexesComputer(nsSrc)(intern.line-1),
+            ast = paredit.parse(nsSrc),
+            rangeDef = range && paredit.navigator.rangeForDefun(ast, range[0]);
+      }
+      n(null, {intern: intern, nsSource: nsSrc, defRange: rangeDef});
+    }
   },
 
   lsSessions: function(options, thenDo) {
