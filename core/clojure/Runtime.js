@@ -271,6 +271,7 @@ Object.extend(clojure.Runtime, {
           // Max elems in collections
           printLength        = options.hasOwnProperty("printLength") ? options.printLength : null,
           bindings           = options.bindings || [],
+          requiredNamespaces = options.requiredNamespaces || [],
           env                = options.env || clojure.Runtime.currentEnv();
 
       if (!options.hasOwnProperty("warningsAsErrors")) options.warningsAsErrors = true;
@@ -298,7 +299,7 @@ Object.extend(clojure.Runtime, {
           ns: options.ns || 'user',
           session: env.session || undefined,
           "eval": undefined,
-          "required-ns": options.requiredNamespaces || [],
+          "required-ns": requiredNamespaces,
           bindings: bindings || [],
           pp: pp ? String(pp) : undefined,
           "pp-level": ppLevel || undefined
@@ -385,6 +386,7 @@ Object.extend(clojure.Runtime, {
           errOut = messages.pluck("err").concat(messages.pluck("ex")).compact().map(String).invoke('trim').compact(),
           errors = messages.pluck("error").compact().concat(errOut),
           isError = status.include("error") || status.include("eval-error") || (options.warningsAsErrors && !!errors.length),
+          value = messages.pluck('value').compact().join('\n'),
           result = messages.pluck('value').concat(messages.pluck('out')).compact().join('\n'),
           err;
 
@@ -403,7 +405,7 @@ Object.extend(clojure.Runtime, {
       }
 
       // if (!isError && options.prettyPrint) try { result = eval(result); } catch (e) {}
-      if (!isError && options.resultIsJSON) try { result = JSON.parse(eval(result)); } catch (e) {
+      if (!isError && options.resultIsJSON) try { result = JSON.parse(eval(value)); } catch (e) {
           err = e;
           result = {error: e, type: "json parse error", input: result};
       }
