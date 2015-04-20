@@ -667,11 +667,12 @@ Object.extend(clojure.Runtime, {
 Object.extend(clojure.Runtime.ReplServer, {
 
     cloxpLeinProfile:  "; do not modify, this file is auto-generated\n{\n"
-                     + " :dependencies [[org.rksm/system-navigator \"0.1.12\"]\n"
-                     + "                [org.rksm/cloxp-projects \"0.1.2\"]\n"
-                     + "                [org.rksm/cloxp-trace \"0.1.5\"]\n"
-                     + "                [org.rksm/cloxp-repl \"0.1.2\"]\n"
-                     + "                [org.rksm/cloxp-cljs \"0.1.2\"]\n"
+                     + " :dependencies [[org.rksm/system-navigator \"0.1.13\"]\n"
+                     + "                [org.rksm/cloxp-projects \"0.1.3\"]\n"
+                     + "                [org.rksm/cloxp-trace \"0.1.6\"]\n"
+                     + "                [org.rksm/cloxp-repl \"0.1.3\"]\n"
+                     + "                [org.rksm/cloxp-cljs \"0.1.3\"]\n"
+                     + "                [org.rksm/cloxp-com \"0.1.1\"]\n"
                      + "                [org.clojure/tools.reader \"0.9.1\"]\n"
                      + '                [pjstadig/humane-test-output "0.6.0"]]\n'
                      + ' :repl-options {:nrepl-middleware [rksm.cloxp-repl.nrepl/wrap-cloxp-eval\n'
