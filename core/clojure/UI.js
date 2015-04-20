@@ -683,7 +683,8 @@ function addCommands() {
         };
 
         function showFind(find, thenDo) {
-          if (!browser) showFindInNewEditor(find, thenDo);
+          if (!find) thenDo(new Error("Nothing found"));
+          else if (!browser) showFindInNewEditor(find, thenDo);
           else showFindInBrowser(find, thenDo);
         }
 
