@@ -632,7 +632,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         // everything
 
         var options = {
-          file: ed.$morph.getTargetFilePath(),
+          file: ed.$morph.getTargetFilePath() || "<doit>",
           env: env, ns: ns, passError: true,
           prettyPrint: args.hasOwnProperty("prettyPrint") ? args.prettyPrint : true,
           prettyPrintLevel: args.prettyPrintLevel || (args.hasOwnProperty("prettyPrint") ? null : 10),

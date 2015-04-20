@@ -281,8 +281,13 @@ Object.extend(clojure.Runtime, {
       if (!pp && !printLength) { printLength = 20; }
 
       if (options.file) {
+        // file gets attached to meta data
         bindings.push("clojure.core/*file*");
         bindings.push(options.file);
+        // source-path gets attached to stack frames
+        bindings.push("clojure.core/*source-path*");
+        var fName = options.file.split(".").last();
+        bindings.push(fName);
       }
 
       if (printLength) {
