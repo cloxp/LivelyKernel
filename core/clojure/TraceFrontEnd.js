@@ -327,57 +327,67 @@ clojure.TraceFrontEnd.SourceMapper = {
 
 clojure.TraceFrontEnd.StackTrace = {
 
-  convertStringToFrameInfos: function(string) {
-    // Takes a stack trace and makes it browsable
-    return lively.lang.string.lines(string)
-      .map(function(line) {
-        var match = line.match(/^\s*(\w[^\/]+)\/([^\s]+) \(([^:]+):([0-9]+)\)\s*$/);
-        if (match) return {clojure: true, ns: match[1], fn: match[2], file: match[3], line: match[4]};
-        var match = line.match(/^\s*(\w[^\s]+) \(([^:]+):([0-9]+)\)\s*$/);
-        if (match) {
-          var parts = match[1].split(".");
-          var method = parts.pop(), klass = parts.join("\.");
-          var result = {java: true, method: method, file: match[2], line: match[3]};
-          result["class"] = klass;
-          return result
-        }
-        return null;
-      })
-      .compact();
-  },
+  printFrames: function(frames, options) {
+    options = options || {};
 
-  printFrames: function(frames) {
+    if (options.indent) addIndent(frames);
 
-    return printFrames(frames);
-  
+    return Array.prototype.concat.apply([], frames.map(printFrame));
+
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-  
-    function printFrames(frames) {
-      return Array.prototype.concat.apply([], frames.map(printFrame));
+
+    function printFileInfo(frame) {
+      return (frame.file || "no file") + ":" + frame.line;
     }
-  
+
+    function addIndent(frames) {
+      var indent = frames.reduce(function(maxIndent, frame) {
+        if (!frame.clojure && !frame.java) return maxIndent;
+        return Math.max(maxIndent, printFileInfo(frame).length);
+      }, 0);
+      frames.forEach(function(frame) {
+        if (!frame.clojure && !frame.java) return;
+        frame.indent = lively.lang.string.indent("", " ", indent - printFileInfo(frame).length);
+      });
+    }
+
     function printFrame(frame) {
       if (frame.clojure) {
         return [
-          [lively.lang.string.format("%s/%s (%s:%s)",
-            frame.ns, frame.fn, frame.file || "no file", frame.line),
+          [frame.indent || ""],
+          [lively.lang.string.format("%s:%s %s/%s ()",
+            frame.file || "no file", frame.line,
+            frame.ns, frame.fn),
             {traceEl: frame, onClick: "browse", type: "action", commands: [{name: "browse", exec: openDef}]}],
           ["\n"]];
       } else if (frame.java) {
         return [
-          [lively.lang.string.format("%s>>%s (%s:%s)",
-            frame["class"], frame.method, frame.file || "no file", frame.line)],
+          [frame.indent || ""],
+          [lively.lang.string.format("%s:%s %s",
+            frame.file || "no file", frame.line, frame.method)],
           ["\n"]];
+      } else if (frame.string) {
+        return [[frame.string], ['\n']];
       } else return [[JSON.stringify(frame)], ["\n"]];
     }
-  
+
     function openDef(ed, args) {
       lively.ide.commands.exec("clojureFindDefinition",
         {name: args.attr.traceEl.fn, ns: args.attr.traceEl.ns, thenDo: function(err) {
           if (err) ed.$morph.setStatusMessage(String(err));
         }});
     }
+  },
+
+  fetchExceptionInfo: function(options, thenDo) {
+    options = lively.lang.obj.merge(options || {}, {
+      requiredNamespaces: ['rksm.cloxp-repl.exception', 'clojure.data.json'],
+      resultIsJSON: true, passError: true
+    });
+    var code = "(clojure.data.json/write-str (rksm.cloxp-repl.exception/process-error *e))";
+    clojure.Runtime.doEval(code, options, thenDo);
   }
+
 }
 
 }) // end of module

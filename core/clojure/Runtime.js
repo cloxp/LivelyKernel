@@ -538,22 +538,39 @@ Object.extend(clojure.Runtime, {
   fullLastErrorStackTrace: function(options, thenDo) {
     // options: nframes
     options = options || {};
-    options.requiredNamespaces = ["clojure.repl"];
-    options.passError = true;
-    clojure.Runtime.doEval(
-      lively.lang.string.format("(clojure.repl/pst %s)", options.nframes || 500),
-      options,
-      function(err, result) {
-        if (options.open) {
-          var ed = $world.addCodeEditor({
-            extent: pt(700, 500),
-            title: "clojure stack trace",
-            textMode: "text",
-            content: String(err||result)
-          }).getWindow().comeForward();
-        }
-        thenDo && thenDo(err, result);
-      });
+    
+
+    lively.lang.fun.composeAsync(
+      function(n) {
+        clojure.TraceFrontEnd.StackTrace.fetchExceptionInfo(options, n)
+      },
+      open
+    )(function(err) {
+      thenDo && thenDo(err);
+    });
+
+    // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+    function open(exInfo, n) {
+      if (!options.open) return n(null, exInfo);
+      if (!exInfo && exInfo !== "") n(new Error("No exception info"));
+      else if (typeof exInfo === "string") {
+        $world.addCodeEditor({
+          extent: pt(700, 500),
+          title: options.title || "clojure stack trace",
+          textMode: "text",
+          content: exInfo
+        }).getWindow().comeForward();
+      } else if (exInfo.lines) {
+        var richText = clojure.TraceFrontEnd.StackTrace.printFrames(exInfo.lines)
+        $world.addActionText(richText, {
+          extent: pt(700, 500),
+          title: options.title || "clojure stack trace",
+        });
+      }
+      n(null, exInfo);
+    }
+
   },
 
   requireNamespaces: function(nss, options, thenDo) {
