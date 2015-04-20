@@ -215,17 +215,10 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         function errorRetrieval() {
           // simply printing what we have
           // lively.ide.codeeditor.modes.Clojure.update()
-          clojure.Runtime.fullLastErrorStackTrace({open: true, nframes: 999});
+          clojure.Runtime.fullLastErrorStackTrace(
+            {env: this.env, ns: this.ns, open: true, nframes: 999});
         }
 
-        function showError() {
-          $world.addCodeEditor({
-            extent: pt(700, 500),
-            title: "clojure stack trace",
-            textMode: "text",
-            content: String(this.err)
-          }).getWindow().comeForward();
-        }
       }
     },
 
@@ -453,7 +446,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         }
 
         function open(content, next) {
-          if (!content) return next();
+          if (!content.trim()) return next();
           if (insert) {
             if (!ed.selection.isEmpty()) ed.selection.clearSelection();
             ed.insert(content);
