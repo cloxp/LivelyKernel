@@ -905,50 +905,6 @@ function addCommands() {
           {open: true, nframes: 999}, function(err) {});
         return true;
       }
-    },
-
-    "clojure.ide.browsifyStack": {
-      description: "Clojure: Takes a stack trace and makes it browsable",
-      exec: function(options) {
-        options = options || {open: true};
-
-        lively.lang.fun.composeAsync(
-          getContent, parse,
-          function(parsed, n) {
-            var attrs = clojure.TraceFrontEnd.StackTrace.printFrames(parsed);
-            n(null, attrs);
-          },
-          function(attributes, n) {
-            if (options.open) openAsText(attributes, options, n);
-            else n(null, attributes);
-          }
-        )(function(err, edOrAttributes) {
-          options.thenDo && options.thenDo(err, edOrAttributes);
-        });
-
-        return true;
-
-        // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-
-        function getContent(thenDo) {
-          if (options.string) return thenDo(null, options.string);
-          var m = lively.morphic.Morph.focusedMorph();
-          if (!m || !m.isCodeEditor) return thenDo(new Error("Cannot retrieve stack trace to parse"));
-          var content = m.aceEditor.session.getTextRange() || m.textString;
-          thenDo(null, content);
-        }
-
-        function parse(string, thenDo) {
-          var parsed = clojure.TraceFrontEnd.StackTrace.convertStringToFrameInfos(string);
-          thenDo(null, parsed)
-        }
-
-        function openAsText(attributes, options, thenDo) {
-          if (!options.title) options.title = "clojure stacktrace";
-          var ed = $world.addActionText(attributes, options);
-          thenDo(null, ed);
-        }
-      },
     }
 
   });
