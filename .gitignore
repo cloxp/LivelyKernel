@@ -32,3 +32,6 @@ DBG_*.js
 
 # cloxp
 /cloxp/
+*-clojars-feed.json
+core/media/cloxp-logo.*
+install.log
