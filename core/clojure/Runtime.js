@@ -1098,7 +1098,7 @@ clojure.Projects = {
       updateBrowsers,
       function(n) { n(null, {dir: projectDir, cljsNamespaces: cljsNamespaces, cljNamespaces: cljNamespaces}); }
     )(function(err, loadResult) {
-      if (err) updateBrowsers(); // make sure browsers are updated, even in case of errors
+      if (err) updateBrowsers(function() {}); // make sure browsers are updated, even in case of errors
       thenDo(err, loadResult);
     });
 
