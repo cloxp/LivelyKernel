@@ -993,6 +993,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       commandKeyBinding: {
         "Command-Shift-\/|Alt-Shift-?|Alt-Shift-\/|¿":         "clojurePrintDoc",
         "Command-Shift-p|Alt-Shift-p":             "clojureListCompletions",
+        "Command-Shift-f|Ctrl-Shift-f":            "global:clojure.ide.codeSearch",
         "Escape|Ctrl-x Ctrl-b":                    "clojureEvalInterrupt",
         "Command-e":                               "clojureChangeEnv",
         "Alt-.":                                   "clojureFindDefinition",

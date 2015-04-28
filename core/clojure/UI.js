@@ -69,6 +69,9 @@ function addCommands() {
     delete bnds["lively.ide.openWorkspace"]
     bnds["clojure.ide.openWorkspace"] = {mac: "Command-K", win: "Control-K"}
 
+    // delete bnds["lively.ide.codeSearch"]
+    bnds["clojure.ide.codeSearch"] = {mac: "Command-Shift-F", win: "Control-Shift-F"}
+
     bnds["clojureShowLastError"] = {mac:"Command-Shift-c e r r", win:"Control-Shift-c e r r"};
   })();
 
@@ -389,7 +392,8 @@ function addCommands() {
         options = options || {};
 
         var browser = options.browser,
-            nsRe = options.nsRe || /clj(x)?$/;
+            nsRe = options.nsRe || /clj(x)?$/,
+            lastSearchTime;
 
         openNarrower(function(err, n) {
           if (err) show(String(err));
@@ -424,12 +428,13 @@ function addCommands() {
           n(null, narrower);
         }
 
-
         function searchForNamespace(term, n) {
+          lastSearchTime = Date.now();
           n(['searching for ' + term + "..."]);
-          var terms = term.split(" ");
-          var realTerm = terms[0];
-          lively.lang.fun.debounceNamed("clojure.namespace-search", 200, function() {
+          var terms = term.split(" "),
+              realTerm = terms[0];
+          lively.lang.fun.debounceNamed("clojure.namespace-search", 200, function(t) {
+            if (t < lastSearchTime) return;
             var code = lively.lang.string.format(
              '(rksm.cloxp-projects.core/search-for-namespaces-in-local-repo->json #"%s" {:newest true})', realTerm);
             var opts = {
@@ -442,7 +447,7 @@ function addCommands() {
               } catch (e) { err = e; }
               n(err ? [String(err)] : (result.length ? list : ["nothing"]))
             });
-          })();
+          })(lastSearchTime);
         }
 
         function namespacelist(terms, projects) {
@@ -595,6 +600,30 @@ function addCommands() {
       }
     },
 
+    "clojure.ide.codeSearch": {
+      description: "code search",
+      exec: function (opts) {
+        opts = opts || {};
+        if (!opts.hasOwnProperty("showTitle")) opts.showTitle = true;
+
+        var win = $world.getActiveWindow();
+        var browser = opts.browser || (win && win.targetMorph && String(win.targetMorph.name).match(/^Clojure.*Browser$/)) ?
+          (opts.browser || win.targetMorph) : null;
+
+        var choices = [
+          ["clojure code search", function() { lively.ide.commands.exec("clojureCodeSearch", {browser: browser}); }],
+          ["search for clojure symbols", function() { lively.ide.commands.exec("clojureUserSearchForNamespaceOrVarInRuntime", {browser: browser}); }],
+          ["search for clojure namespaces", function() { lively.ide.commands.exec("clojureUserSearchForNamespaceInClasspath", {browser: browser}); }],
+          ["JavaScript code search", function() { lively.ide.commands.exec("lively.ide.codeSearch"); }]
+        ];
+
+        var M = lively.morphic.Menu;
+        var open = opts.position ? M.openAt.bind(M, opts.position) : M.openAtHand.bind(M);
+        var m = open(opts.showTitle ? "search..." : null, choices);
+        return m;
+      }
+    },
+
     "clojureCodeSearch": {
       description: "Clojure: search for code in loaded namespaces",
       exec: function(options, thenDo) {
@@ -603,10 +632,11 @@ function addCommands() {
         var env = options.env || {};
 
         // var namespaceMatcher = options.namespaceMatcher || "rksm.system-navigator.search";
-        var narrower;
-        var searchRunning = false;
-        var m = $world.topMorph();
-        var browser = m && m.targetMorph
+        var narrower,
+            searchRunning = false,
+            m = $world.topMorph(),
+            lastSearchTerm, lastCandidates,
+            browser = m && m.targetMorph
                    && m.targetMorph.name === "ClojureBrowser"
                    && m.targetMorph;
 
@@ -630,14 +660,23 @@ function addCommands() {
           if (searchRunning) {
             clojure.Runtime.evalInterrupt(env, function() {
               searchRunning = false;
-              startSearch(input, callback);
+              startSearch(namespaceMatcher, input, callback);
             });
             return;
           }
 
           searchRunning = true;
+          var parts = input.split(" ").invoke("trim");
 
-          clojure.Runtime.doCodeSearch(input,
+          if (lastSearchTerm === parts[0] && lastCandidates) {
+            callback(filterUsingSearchTerms(lastCandidates, parts.slice(1)));
+            return;
+          }
+
+          lastSearchTerm = parts[0];
+
+          callback(['searching...']);
+          clojure.Runtime.doCodeSearch(lastSearchTerm,
             {namespaceMatcher: namespaceMatcher},
             function(err, results) {
               searchRunning = false;
@@ -650,8 +689,15 @@ function addCommands() {
               }, []);
 
               if (candidates.length === 0) candidates = ['nothing found'];
-              callback(candidates);
+              lastCandidates = candidates;
+              callback(filterUsingSearchTerms(candidates, parts.slice(1)));
             });
+        }
+
+        function filterUsingSearchTerms(candidates, searchTerms) {
+          return candidates.filter(function(c) {
+            return searchTerms.every(function(t) { return c.string.include(t); })
+          });
         }
 
         function openNarrower(nsMatch, startSearchFunc, n) {
@@ -678,7 +724,6 @@ function addCommands() {
         }
 
         function candidateBuilder(searchProc, input, callback) {
-          callback(['searching...']);
           searchProc(input, callback);
         };
 

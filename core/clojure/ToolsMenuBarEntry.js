@@ -73,14 +73,9 @@ lively.BuildSpec("clojure.ClojureSearchMenuBarEntry", lively.BuildSpec("lively.m
     toolTip: "Search for namespaces, symbols, and code."
   }),
 
-  morphMenuItems: function morphMenuItems() {
-    function cmd(name) { return function() { lively.ide.commands.exec(name); }; }
-    var self = this;
-    return [
-          ["code search in runtime", cmd("clojureCodeSearch")],
-          ["search for namespaces and vars in runtime", cmd("clojureUserSearchForNamespaceOrVarInRuntime")],
-          ["search for namespaces on classpath", cmd("clojureUserSearchForNamespaceInClasspath")]
-    ];
+  showMenu: function() {
+    this.menu = lively.ide.commands.exec("clojure.ide.codeSearch", {
+      showTitle: false, position: this.globalBounds().bottomLeft()});
   },
 
   update: function update() {}
