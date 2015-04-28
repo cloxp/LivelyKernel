@@ -703,8 +703,11 @@ Object.extend(clojure.Runtime.ReplServer, {
         var profilesDir, profileFile;
         var  profileCode = this.cloxpLeinProfile;
         lively.lang.fun.composeAsync(
-            function(next) {
-                lively.shell.run("echo $HOME", {}, function(err, cmd) {
+          function(next) {
+              lively.shell.run(
+                lively.shell.PLATFORM === 'win32' ?
+                  "echo %HOMEPATH%" : "echo $HOME", {},
+                  function(err, cmd) {
                     if (cmd.getCode()) next(cmd.resultString(true));
                     else {
                         var home = cmd.getStdout().trim()
@@ -713,9 +716,12 @@ Object.extend(clojure.Runtime.ReplServer, {
                         next();
                     }
                 });
-            },
+          },
             function(next) {
-                lively.shell.run("mkdir -p " + profilesDir, {}, function(err, cmd) { next(); });
+                lively.shell.run(
+                  lively.shell.PLATFORM === 'win32' ?
+                  ("mkdir " + profilesDir.replace(/\//g, '\\')) : ("mkdir -p " + profilesDir),
+                  {}, function(err, cmd) { next(); });
             },
             function(next) {
                 lively.ide.CommandLineInterface.writeFile(
@@ -792,7 +798,7 @@ Object.extend(clojure.Runtime.ReplServer, {
             this.ensureCloxpLeinProfile.bind(this),
             function startServer(next) {
                 var cmdString = Strings.format(
-                  useLein ? "lein with-profile +cloxp repl :headless :port %s" : "clj-feather-repl %s", port);
+                  useLein ? "lein with-profile +cloxp repl :headless :port %s :host %s" : "clj-feather-repl %s", port, host);
                 var cmd = lively.shell.run(cmdString, {cwd: cwd, group: cmdQueueName});
                 next(null,cmd);
             },
