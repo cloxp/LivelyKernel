@@ -20,7 +20,7 @@ Object.extend(paredit, {
 Object.extend(clojure.Runtime, {
 
     _cache: {},
-    _environments: [{port: 7888, host: "0.0.0.0", session: null, doAutoLoadSavedFiles: false}],
+    _environments: [{port: 7888, host: "127.0.0.1", session: null, doAutoLoadSavedFiles: false}],
     _defaultEnv: 0,
 
     environments: function() { return this._environments.clone(); },
@@ -28,7 +28,7 @@ Object.extend(clojure.Runtime, {
     reset: function() {
       var runtime = clojure.Runtime;
       runtime._cache = {};
-      runtime._environments = [{port: 7888, host: "0.0.0.0", session: null, doAutoLoadSavedFiles: false}];
+      runtime._environments = [{port: 7888, host: "127.0.0.1", session: null, doAutoLoadSavedFiles: false}];
       runtime._defaultEnv = 0;
     },
 
