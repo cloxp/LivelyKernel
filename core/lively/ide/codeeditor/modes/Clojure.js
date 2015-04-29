@@ -1168,7 +1168,7 @@ lively.ide.codeeditor.modes.Clojure.Mode.addMethods({
           settings
       ]).map(function(ea) {
         if (isMac) return ea;
-        ea[0] = ea[0].replace(/Cmd-/g, "Ctrl-");
+        else if (typeof ea[0] === "string") ea[0] = ea[0].replace(/Cmd-/g, "Ctrl-");
         return ea;
       });
     },
