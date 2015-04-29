@@ -7,7 +7,7 @@ lively.BuildSpec("clojure.ClojureConnectionIndicatorMenuBarEntry", lively.BuildS
   changeColorForMenu: false,
 
   style: lively.lang.obj.merge(lively.BuildSpec("lively.morphic.tools.MenuBarEntry").attributeStore.style, {
-    extent: lively.pt(130,20),
+    extent: lively.pt(180,20),
     textColor: Color.rgb(127,230,127),
     toolTip: "shows the connection status of the currently choosen clojure server and allows to switch between and add clojure servers"
   }),
