@@ -376,9 +376,13 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         // var ed = that.aceEditor
         var code = !ed.selection.isEmpty() ?
           ed.session.getTextRange() :
-          clojure.StaticAnalyzer.sourceForLastSexpBeforeCursor(ed);
+          clojure.StaticAnalyzer.sourceForLastSexpBeforeCursor(ed),
+          lineOffset = (ed.$morph.clojureBaseLineOffset ? ed.$morph.clojureBaseLineOffset() : 0)
+                     + ed.selection.getRange().end.row
+                     - (lively.lang.string.lines(code).length-1);
+
         var options = lively.lang.obj.merge(
-          {code: code, offerInsertAndOpen: true},
+          {code: code, offerInsertAndOpen: true, lineOffset: lineOffset},
           args || {});
         return ed.execCommand("clojureEval", options);
       },
@@ -611,9 +615,14 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
     {
       name: "clojureEvalDefun",
       exec: function(ed, args) {
-        var defun = ed.session.$ast && paredit.navigator.rangeForDefun(ed.session.$ast,ed.getCursorIndex());
-        return defun && ed.execCommand("clojureEval", {from: defun[0], to: defun[1]})
+        var defun = ed.session.$ast
+         && paredit.navigator.rangeForDefun(ed.session.$ast,ed.getCursorIndex());
+        return defun && ed.execCommand("clojureEval", {
+              from: defun[0], to: defun[1],
+              lineOffset: ed.idxToPos(defun[0]).row+(ed.$morph.clojureBaseLineOffset ? ed.$morph.clojureBaseLineOffset() : 0)
+            });
       },
+      // lively.ide.codeeditor.modes.Clojure.update()
       multiSelectAction: 'forEach'
     },
 

@@ -275,6 +275,9 @@ Object.extend(clojure.Runtime, {
           // Max elems in collections
           printLength        = options.hasOwnProperty("printLength") ? options.printLength : null,
           bindings           = options.bindings || [],
+          columnOffset       = options.columnOffset || null,
+          lineOffset         = options.lineOffset || null,
+          evalMethod         = options.evalMethod || null,
           requiredNamespaces = options.requiredNamespaces || [],
           env                = options.env || clojure.Runtime.currentEnv();
 
@@ -295,6 +298,21 @@ Object.extend(clojure.Runtime, {
       if (printLength) {
         bindings.push("clojure.core/*print-length*");
         bindings.push(printLength);
+      }
+
+      if (ppLevel) {
+        bindings.push("clojure.core/*print-level*");
+        bindings.push(ppLevel);
+      }
+
+      if (columnOffset) {
+        bindings.push("rksm.cloxp-repl/*column-offset*");
+        bindings.push(columnOffset);
+      }
+
+      if (lineOffset) {
+        bindings.push("rksm.cloxp-repl/*line-offset*");
+        bindings.push(lineOffset);
       }
 
       if (env.cljs) {
