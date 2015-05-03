@@ -678,6 +678,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
         function prepareCode(code, next) {
+          if (!useCustomEvalMethod) return next(null, code);
           options.bindings.pushAll(["rksm.cloxp-repl/*repl-source*", code]);
           options.requiredNamespaces.pushAll(["rksm.cloxp-repl", "clojure.data.json"])
           next(null, lively.lang.string.format(
