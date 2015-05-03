@@ -224,7 +224,7 @@ function addCommands() {
               } else {
                 runner = lively.ide.tools.ShellCommandRunner.findOrCreateForCommand(cmd);
               }
-              runner.openInWorldCenter().comeForward();
+              if (!runner.world()) runner.openInWorldCenter().comeForward();
               next(null, cmd);
             },
             function(cmd, next) {
@@ -250,8 +250,8 @@ function addCommands() {
               lively.ide.commands.exec("clojure.ide.showServerProcess", opts, function(err, runner) { next(null, runner); });
             },
             function(runner, next) {
-              if (runner) {
-                runner.openInWorld().comeForward();
+              if (options.showServerCommand && runner) {
+                if (!runner.world()) runner.openInWorldCenter().comeForward();
                 var cmd = runner.targetMorph.currentCommand;
                 var status = $morph("clojureStatusLabel");
                 status && status.quickUpdateFor(40);
