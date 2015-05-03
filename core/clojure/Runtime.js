@@ -164,16 +164,18 @@ Object.extend(clojure.Runtime, {
       lively.lang.fun.composeAsync(
         replDoc,
         function(doc, n) {
-          if (doc && String(doc).trim() !== "nil") return n(null, doc);
+          doc = doc.replace(/nil/g, "").trim();
+          if (doc) return n(null, doc);
           self.lookupIntern(options.ns, expr, options,
             function(err, result) {
               if (err || !result) return n(err || new Error("Could no lookup " + expr), null);
               if (!result.doc) return replDoc(result.ns + "/" + result.name, n);
-              var string = result.doc,
+              var doc = result.doc,
+                  doc = doc.replace(/nil/g, "").trim(),
                   args = result['method-params'] || result.arglists;
-              if (args) string = "(["+args.join("] [") + "])\n\n" + string;
-              string = result.ns + "/" + result.name + "\n\n" + string;
-              n(err, string);
+              if (args) doc = "(["+args.join("] [") + "])\n\n" + doc;
+              doc = result.ns + "/" + result.name + "\n\n" + doc;
+              n(err, doc);
           });
         }
       )(expr, thenDo);
@@ -182,9 +184,9 @@ Object.extend(clojure.Runtime, {
 
       function replDoc(expr, n) {
           self.doEval(
-            lively.lang.string.format("(do (ns %s) (clojure.repl/doc %s))", options.ns, expr),
+            lively.lang.string.format("(clojure.repl/doc %s)", expr),
             {
-              ns: 'user',
+              ns: options.ns || 'user',
               requiredNamespaces: ['clojure.repl'],
               env: options.env,
               prettyPrint: true,
