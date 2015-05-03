@@ -633,6 +633,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
 
         var env = clojure.Runtime.currentEnv(ed.$morph),
             ns = clojure.Runtime.detectNs(ed.$morph),
+            useCustomEvalMethod = true,
             warnings;
 
         // Note: we pretty print by default but printed output will be
@@ -641,19 +642,27 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         // everything
 
         var options = {
-          file: ed.$morph.getTargetFilePath() || "<doit>",
-          env: env, ns: ns, passError: true,
-          prettyPrint: args.hasOwnProperty("prettyPrint") ? args.prettyPrint : true,
-          prettyPrintLevel: args.prettyPrintLevel || (args.hasOwnProperty("prettyPrint") ? null : 10),
-          printLength: args.printLength || (args.hasOwnProperty("prettyPrint") ? null : 20),
-          warningsAsErrors: false,
-          onWarning: function onWarning(warn) { warnings = warn; }
-        }
+              file: ed.$morph.getTargetFilePath() || "<doit>",
+              env: env, ns: ns, passError: true,
+              prettyPrint: args.hasOwnProperty("prettyPrint") ? args.prettyPrint : true,
+              prettyPrintLevel: args.prettyPrintLevel || (args.hasOwnProperty("prettyPrint") ? null : 10),
+              printLength: args.printLength || (args.hasOwnProperty("prettyPrint") ? null : 20),
+              lineOffset: args.lineOffset,
+              columnOffset: args.columnOffset,
+              bindings: [],
+              resultIsJSON: !!useCustomEvalMethod,
+              requiredNamespaces: useCustomEvalMethod ? ["rksm.cloxp-repl", "clojure.data.json"] :[],
+              warningsAsErrors: false,
+              onWarning: function onWarning(warn) { warnings = warn; }
+            }
 
         lively.lang.fun.composeAsync(
-          getCode,
+          getCode, prepareCode,
           function(code, n) { clojure.Runtime.doEval(code, options, n); }
         )(function(err, result) {
+          if (useCustomEvalMethod && result && Object.isArray(result)) {
+            result = result[0].trim() + "\n\n" + result[1].trim();
+          }
           ed.execCommand("clojureShowResultOrError", {
             err: err,
             warnings: warnings,
@@ -667,6 +676,17 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         return true;
 
         // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+        function prepareCode(code, next) {
+          options.bindings.pushAll(["rksm.cloxp-repl/*repl-source*", code]);
+          options.requiredNamespaces.pushAll(["rksm.cloxp-repl", "clojure.data.json"])
+          next(null, lively.lang.string.format(
+            "(->> (rksm.cloxp-repl/eval-string rksm.cloxp-repl/*repl-source* '%s {:file \"%s\" :throw-errors? true})\n"
+          + "  ((juxt #(->> % (map (comp %s :value)) (clojure.string/join \"\n\"))\n"
+          + "         #(->> % (map :out) (clojure.string/join \"\n\"))))\n"
+          + "  clojure.data.json/write-str)",
+            options.ns || "user", options.file, options.prettyPrint ? "(fn [x] (with-out-str (clojure.pprint/pprint x)))" : "pr-str"));
+        }
 
         function getCode(next) {
           if (args.code) return next(null, args.code);
@@ -686,6 +706,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             next(null, code);
           });
         }
+
       },
       multiSelectAction: 'forEach'
     },
