@@ -695,6 +695,7 @@ Object.extend(clojure.Runtime.ReplServer, {
                      + "                [org.rksm/cloxp-com \"0.1.7\"]\n"
                      + "                [org.clojure/tools.reader \"0.9.1\"]\n"
                      + '                [pjstadig/humane-test-output "0.6.0"]]\n'
+                     + ' :plugins ^:replace []\n'
                      + ' :repl-options {:nrepl-middleware [rksm.cloxp-repl.nrepl/wrap-cloxp-eval\n'
                      + '                                   rksm.cloxp-repl.cljx/wrap-nrepl-eval-for-cljx\n'
                      + '                                   rksm.cloxp-repl.cljx/wrap-nrepl-load-file-for-cljx\n'
