@@ -167,6 +167,22 @@ function addCommands() {
       }
     },
 
+    "clojure.ide.loadProject": {
+      description: "Clojure: load project",
+      exec: function() {
+        clojure.Projects.loadProjectInteractively(
+          {askToLoadNamespaces: true, setCurrentDir: true, informBrowsers: true},
+          function(err) {
+            err && $world.addCodeEditor({
+              title: "Error loading Clojure project",
+              textMode: "text",
+              content: String(err)
+            });
+          });
+        return true;
+      }
+    },
+
     "clojure.ide.showServerProcess": {
       description: "Clojure: show server process",
       exec: function(options, thenDo) {
