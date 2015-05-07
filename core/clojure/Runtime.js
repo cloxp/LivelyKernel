@@ -318,9 +318,9 @@ Object.extend(clojure.Runtime, {
       if (env.cljs) {
         if (!env.cljsConnection) return thenDo(new Error("No ClojureScript connection"));
         requiredNamespaces.push("rksm.cloxp-com.cljs-repl");
-        requiredNamespaces.push("rksm.cloxp-cljs.ns.internals");
+        requiredNamespaces.push("rksm.cloxp-cljs.analyzer");
         expr = lively.lang.string.format(
-          "  (cljs.env/with-compiler-env (:compiler-env (rksm.cloxp-cljs.ns.internals/ensure-default-cljs-env))\n"
+          "  (cljs.env/with-compiler-env (:compiler-env (rksm.cloxp-cljs.analyzer/ensure-default-cljs-env))\n"
         + "    (rksm.cloxp-com.cljs-repl/eval-cljs '%s {:target-id %s}))",
           expr, env.cljsConnection.id ? '"'+env.cljsConnection.id+'"' : "nil");
       }
@@ -472,9 +472,9 @@ Object.extend(clojure.Runtime, {
 
     if (options.file && options.file.match(/\.cljs$/)) {
       code = Strings.format(
-          "(rksm.cloxp-cljs.ns.internals/symbol-info-for-sym->json '%s '%s \"%s\")",
+          "(rksm.cloxp-cljs.analyzer/var-info->json '%s '%s \"%s\")",
         nsName, symbol, options.file);
-      reqNs = ["rksm.cloxp-cljs.ns.internals"];
+      reqNs = ["rksm.cloxp-cljs.analyzer"];
     } else { code = Strings.format(
         "(rksm.system-navigator.ns.internals/symbol-info->json\n %s '%s)\n",
       nsName ? "(find-ns '"+nsName+")" : "*ns*", symbol);
@@ -620,7 +620,7 @@ Object.extend(clojure.Runtime, {
     options = lively.lang.obj.merge({
        passError: true, ns: 'user', warningsAsErrors: false,
        resultIsJSON: true,
-       requiredNamespaces: ["rksm.cloxp-repl", "rksm.cloxp-cljs.ns.internals"],
+       requiredNamespaces: ["rksm.cloxp-repl", "rksm.cloxp-cljs.analyzer"],
        onWarning: function(warn) { warnings.push("require clj " + nss.pluck("ns").join(',') + ":\n" + warn); }
       },
       options || {});
@@ -651,8 +651,9 @@ Object.extend(clojure.Runtime, {
         if (!nss.length) return n();
         var requireCode = "(do " + nss.map(function(ns) {
           var sym = ns.ns, file = ns.file ? '"'+ns.file+'"' : 'nil';
+          // ensure ns is analyzed
           return lively.lang.string.format(
-              "(rksm.cloxp-cljs.ns.internals/ensure-ns-analyzed! '%s %s)", sym, file);
+              "(rksm.cloxp-cljs.analyzer/namespace-info '%s %s)", sym, file);
         }).join(" ") + ")";
         clojure.Runtime.doEval(requireCode, options, function(err) { n(err); });
       }
@@ -687,24 +688,24 @@ Object.extend(clojure.Runtime, {
 Object.extend(clojure.Runtime.ReplServer, {
 
     cloxpLeinProfile:  "; do not modify, this file is auto-generated\n{\n"
-                     + " :dependencies [[org.rksm/system-navigator \"0.1.16\"]\n"
-                     + "                [org.rksm/cloxp-projects \"0.1.7\"]\n"
-                     + "                [org.rksm/cloxp-trace \"0.1.8\"]\n"
-                     + "                [org.rksm/cloxp-repl \"0.1.5\"]\n"
-                     + "                [org.rksm/cloxp-cljs \"0.1.6\"]\n"
-                     + "                [org.rksm/cloxp-com \"0.1.7\"]\n"
+                     + " :dependencies [[org.rksm/system-navigator \"0.1.18\"]\n"
+                     + "                [org.rksm/system-files \"0.1.6\"]\n"
+                     + "                [org.rksm/cloxp-projects \"0.1.9\"]\n"
+                     + "                [org.rksm/cloxp-trace \"0.1.9\"]\n"
+                     + "                [org.rksm/cloxp-repl \"0.1.7\"]\n"
+                     + "                [org.rksm/cloxp-cljs \"0.1.9\"]\n"
+                     + "                [org.rksm/cloxp-com \"0.1.8\"]\n"
                      + "                [org.clojure/tools.reader \"0.9.1\"]\n"
                      + '                [pjstadig/humane-test-output "0.6.0"]]\n'
                      + ' :plugins ^:replace []\n'
                      + ' :repl-options {:nrepl-middleware [rksm.cloxp-repl.nrepl/wrap-cloxp-eval\n'
                      + '                                   rksm.cloxp-repl.cljx/wrap-nrepl-eval-for-cljx\n'
-                     + '                                   rksm.cloxp-repl.cljx/wrap-nrepl-load-file-for-cljx\n'
-                     + '                                                                                     ]}\n'
+                     + '                                   rksm.cloxp-repl.cljx/wrap-nrepl-load-file-for-cljx]}\n'
                      + " :injections [(require 'rksm.system-navigator)\n"
                      + "              (require 'rksm.cloxp-repl)\n"
                      + "              (require 'rksm.system-files.cljx)\n"
                      + "              (rksm.system-files.cljx/enable-cljx-load-support!)\n"
-                     + "              (require 'rksm.cloxp-cljs.ns.internals)\n"
+                     + "              (require 'rksm.cloxp-cljs.analyzer)\n"
                      + "              (require 'rksm.cloxp-cljs.compilation)\n"
                      + "              (rksm.cloxp-cljs.compilation/patch-cljs-build-reload)\n"
                     // rk 2015-01-31: This tries to auto discover classpath in
@@ -1185,9 +1186,9 @@ clojure.Projects = {
     }
 
     function requireCljsNamespaces(nss, n) {
-      var code = nss.map(function(ns) { return "(rksm.cloxp-cljs.ns.internals/namespace-info '" + ns + ")"; }).join("\n");
+      var code = nss.map(function(ns) { return "(rksm.cloxp-cljs.analyzer/namespace-info '" + ns + ")"; }).join("\n");
       Global.clojure.Runtime.doEval(code, {
-        requireNamespaces: ['rksm.cloxp-cljs.ns.internals'],
+        requireNamespaces: ['rksm.cloxp-cljs.analyzer'],
         passError: true, ns: 'user',
         warningsAsErrors: false,
          onWarning: function(warn) { warnings.push("require cljs " + nss.join(',') + ":\n" + warn); }
