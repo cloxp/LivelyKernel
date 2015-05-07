@@ -17,13 +17,14 @@ lively.BuildSpec("clojure.ClojureToolsMenuBarEntry", lively.BuildSpec("lively.mo
     function cmd(name) { return function() { lively.ide.commands.exec(name); }; }
     var self = this;
     return [
-          ["open workspace", cmd("clojure.ide.openWorkspace")],
-          ["open Clojure browser", cmd("clojure.ide.openBrowser")],
-          ["open ClojureScript browser", cmd("clojurescript.ide.openBrowser")],
-          ["open clojars", cmd("clojure.ide.openClojarsBrowser")],
+          ["open Workspace", cmd("clojure.ide.openWorkspace")],
+          ["open Clojure Browser", cmd("clojure.ide.openBrowser")],
+          ["open ClojureScript Workspace", cmd("clojurescript.ide.openWorkspace")],
+          ["open ClojureScript Browser", cmd("clojurescript.ide.openBrowser")],
+          ["open Clojars Browser", cmd("clojure.ide.openClojarsBrowser")],
           // ["new project...", function() { clojure.Projects.createProjectInteractively({}, function() {}); }],
-          ["project manager", cmd("clojure.ide.openProjectController")],
-          ["js", [
+          ["open ProjectManager", cmd("clojure.ide.openProjectController")],
+          ["JavaScript...", [
             ['JavaScript Workspace', cmd('lively.ide.openWorkspace')],
             ['JavaScript Browser', cmd('lively.ide.openSystemCodeBrowser')],
             ['PartsBin', cmd('lively.PartsBin.open')],

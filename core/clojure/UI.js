@@ -90,6 +90,14 @@ function addCommands() {
       }
     },
 
+    "clojurescript.ide.openWorkspace": {
+      description: "ClojureScript: Workspace",
+      exec: function() {
+        $world.openPartItem("ClojureScriptWorkspace", "PartsBin/Clojure");
+        return true;
+      }
+    },
+
     "clojure.ide.openBrowser": {
       description: "Clojure: Browser",
       exec: function(options) {
