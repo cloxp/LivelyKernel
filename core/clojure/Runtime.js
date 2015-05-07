@@ -593,12 +593,12 @@ Object.extend(clojure.Runtime, {
     function open(exInfo, n) {
       if (!options.open) return n(null, exInfo);
       if (!exInfo && exInfo !== "") n(new Error("No exception info"));
-      else if (typeof exInfo === "string") {
+      else if (typeof exInfo === "string" || exInfo.printed) {
         $world.addCodeEditor({
           extent: pt(700, 500),
           title: options.title || "clojure stack trace",
           textMode: "text",
-          content: exInfo
+          content: exInfo.printed || exInfo
         }).getWindow().comeForward();
       } else if (exInfo.lines) {
         var richText = clojure.TraceFrontEnd.StackTrace.printFrames(exInfo.lines)

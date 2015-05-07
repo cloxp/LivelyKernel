@@ -30,7 +30,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           docString = docString.replace(/"?nil"?/,"").replace(/[-]+\n/m,"").trim()
           clojure.UI.showText({
             title: "clojure doc",
-            content: err ? String(err).truncate(300) : docString,
+            content: err ? String(err) : docString,
             extent: pt(560,250),
             textMode: "text"
           });
@@ -149,7 +149,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           function printEvalCommand(cmd) {
             return [lively.lang.string.format(
               "\neval: %s\nnamespace: %s\nid:%s\nis running: %s",
-                cmd.expr.replace(/\n/g, "").truncate(300), cmd.ns || "user",
+                cmd.expr.replace(/\n/g, ""), cmd.ns || "user",
                 cmd["eval-id"], cmd.isRunning || "false")];
           }
 
@@ -181,8 +181,8 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           msg = (msg ? msg + ":\n" : "") + err;
           text = [
             ["open full stack trace\n", {doit: {context: {isClojureError: true, env: env, ns: ns, err: err}, code: errorRetrieval}}],
-            [msg.truncate(500)],
-            warn ? [warn.truncate(400), {color: Color.orange}] : [""]];
+            [msg],
+            warn ? [warn, {color: Color.orange}] : [""]];
         } else if (args.offerInsertAndOpen) {
           var insertion = ed.$morph.ensureStatusMessageMorph().insertion = msg + warn;
           text = [
@@ -198,11 +198,11 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             [])
           .concat([
             ["\n", {fontSize: 9, textAlign: "right"}],
-            [msg.truncate(300)],
-            warn ? [warn.truncate(400), {color: Color.orange}] : [""]]);
+            [msg],
+            warn ? [warn, {color: Color.orange}] : [""]]);
         } else {
           ed.$morph.ensureStatusMessageMorph().insertion = msg + warn;
-          text = String(msg).truncate(500) + warn;
+          text = String(msg) + warn;
         }
 
         ed.$morph.setStatusMessage(text, err ? Color.red : null);
@@ -364,7 +364,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
       name: "clojureEvalSelectionOrLine",
       exec: function(ed, args) {
         ed.session.getMode().evalAndPrint(ed.$morph, false, false, null, function(err, result) {
-          ed.$morph.setStatusMessage((err ? String(err) : result).truncate(300), err ? Color.red : null);
+          ed.$morph.setStatusMessage((err ? String(err) : result), err ? Color.red : null);
         })
       },
       multiSelectAction: 'forEach'
@@ -438,7 +438,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           var ctx = lively.PropertyPath("textChunks.0.style.doit.context").get(msgMorph);
           if (ctx && ctx.isClojureError) {
             clojure.Runtime.fullLastErrorStackTrace(
-              {open: true, nframes: 999}, function(err) { next(err); });
+              {open: true, nframes: 999}, next);
             return;
           }
 
@@ -450,6 +450,8 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         }
 
         function open(content, next) {
+          if (!content) content = "no exception info received";
+          if (typeof content !== "string") content = JSON.stringify(content, null, 2);
           if (!content.trim()) return next();
           if (insert) {
             if (!ed.selection.isEmpty()) ed.selection.clearSelection();
@@ -949,7 +951,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           var code = lively.lang.string.format("(do (ns-unmap '%s '%s) (ns-unalias '%s '%s))", ns, name, ns, name);
           var opts = {env: clojure.Runtime.currentEnv(ed.$morph), passError: true};
           clojure.Runtime.doEval(code, opts, function(err) {
-            if (err) onError(err.truncate(1000));
+            if (err) onError(err);
             else ed.$morph.setStatusMessage("undefined " + name);
           });
         } else {
@@ -1000,7 +1002,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             lively.ide.commands.exec("clojureTraceCode", options, n)
           }
         )(function(err, viewer) {
-          err && ed.$morph.setStatusMessage(String(err).truncate(500), Color.red);
+          err && ed.$morph.setStatusMessage(String(err), Color.red);
         })
 
         return true;
