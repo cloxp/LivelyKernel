@@ -310,10 +310,8 @@ Object.extend(clojure.Runtime, {
         bindings.push(columnOffset);
       }
 
-      if (lineOffset) {
-        bindings.push("rksm.cloxp-repl/*line-offset*");
-        bindings.push(lineOffset);
-      }
+      bindings.push("rksm.cloxp-repl/*line-offset*");
+      bindings.push(lineOffset || 0);
 
       if (env.cljs) {
         if (!env.cljsConnection) return thenDo(new Error("No ClojureScript connection"));
