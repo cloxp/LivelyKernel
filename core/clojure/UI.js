@@ -635,10 +635,14 @@ function addCommands() {
           (opts.browser || win.targetMorph) : null;
 
         var choices = [
-          ["clojure code search", function() { lively.ide.commands.exec("clojureCodeSearch", {browser: browser}); }],
-          ["search for clojure symbols", function() { lively.ide.commands.exec("clojureUserSearchForNamespaceOrVarInRuntime", {browser: browser}); }],
-          ["search for clojure namespaces", function() { lively.ide.commands.exec("clojureUserSearchForNamespaceInClasspath", {browser: browser}); }],
-          ["JavaScript code search", function() { lively.ide.commands.exec("lively.ide.codeSearch"); }]
+          ["clojure: code search", function() { lively.ide.commands.exec("clojureCodeSearch", {browser: browser}); }],
+          ["clojure: symbol search", function() { lively.ide.commands.exec("clojureUserSearchForNamespaceOrVarInRuntime", {browser: browser}); }],
+          ["clojure: namespace search", function() { lively.ide.commands.exec("clojureUserSearchForNamespaceInClasspath", {browser: browser}); }],
+          {isMenuItem: true, isDivider: true},
+          ["files: search file named", function() { lively.ide.commands.exec("lively.ide.browseFiles"); }],
+          ["files: grep", function() { lively.ide.commands.exec("lively.ide.CommandLineInterface.doGrepSearch"); }],
+          {isMenuItem: true, isDivider: true},
+          ["js: code search", function() { lively.ide.commands.exec("lively.ide.codeSearch"); }],
         ];
 
         var M = lively.morphic.Menu;
