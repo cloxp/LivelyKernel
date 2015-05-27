@@ -487,7 +487,7 @@ Object.extend(clojure.Runtime, {
     // options: file
     var file = options.file ? '"' + options.file + '"' : 'nil';
     var cmd = lively.lang.string.format(
-      "(clojure.data.json/write-str (rksm.system-files/source-for-ns '%s %s #\"\\.clj(x|s)?$\"))",
+      "(clojure.data.json/write-str (rksm.system-files/source-for-ns '%s %s #\"\\.clj(x|s|c)?$\"))",
       nsName, file);
     clojure.Runtime.doEval(cmd, {
       requiredNamespaces: ["rksm.system-files", "clojure.data.json"], resultIsJSON: true
@@ -693,7 +693,7 @@ Object.extend(clojure.Runtime.ReplServer, {
                      + "                [org.rksm/cloxp-repl \"0.1.7\"]\n"
                      + "                [org.rksm/cloxp-cljs \"0.1.9\"]\n"
                      + "                [org.rksm/cloxp-com \"0.1.8\"]\n"
-                     + "                [org.clojure/tools.reader \"0.9.1\"]\n"
+                     + "                [org.clojure/tools.reader \"0.9.2\"]\n"
                      + '                [pjstadig/humane-test-output "0.6.0"]]\n'
                      + ' :plugins ^:replace []\n'
                      + ' :repl-options {:nrepl-middleware [rksm.cloxp-repl.nrepl/wrap-cloxp-eval\n'
@@ -702,7 +702,6 @@ Object.extend(clojure.Runtime.ReplServer, {
                      + " :injections [(require 'rksm.system-navigator)\n"
                      + "              (require 'rksm.cloxp-repl)\n"
                      + "              (require 'rksm.system-files.cljx)\n"
-                     + "              (rksm.system-files.cljx/enable-cljx-load-support!)\n"
                      + "              (require 'rksm.cloxp-cljs.analyzer)\n"
                      + "              (require 'rksm.cloxp-cljs.compilation)\n"
                      + "              (rksm.cloxp-cljs.compilation/patch-cljs-build-reload)\n"
@@ -1104,7 +1103,7 @@ clojure.Projects = {
       showWarnings,
 
       // load clj
-      loadProjectAndFetchNamespaces.curry("cljx?"),
+      loadProjectAndFetchNamespaces.curry("clj(x|c)?"),
       chooseNamespacesToRequire.curry("Clojure"),
       clojure.Runtime.requireNamespaces,
       function(nss, _warnings, n) {
