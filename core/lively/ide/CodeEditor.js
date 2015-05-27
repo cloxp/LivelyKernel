@@ -1859,7 +1859,7 @@ lively.morphic.Morph.subclass('lively.morphic.CodeEditor',
           var visibleBounds = world.visibleBounds(),
               bounds = sm.bounds(),
               height = Math.min(bounds.height+3, maxY),
-              overlapY = bounds.bottom() - visibleBounds.bottom();
+              overlapY = bounds.top() + height - visibleBounds.bottom();
           if (overlapY > 0) sm.moveBy(pt(0, -overlapY));
           sm.applyStyle({fixedHeight: true, fixedWidth: true, clipMode: {x: 'hidden', y: 'auto'}});
           sm.setExtent(pt(maxX, height));
