@@ -15,7 +15,6 @@ Object.subclass('lively.PartsBin.PartItem',
         }
         this.json = null;
     }
-
 },
 'accessing', {
     getLogoURL: function() {
@@ -165,7 +164,7 @@ Object.subclass('lively.PartsBin.PartItem',
 
 },
 'upload and download', {
-    load: function(isAsync, rev) {
+    load: function (isAsync, rev) {
 
         if(!isAsync){
             var webR = new WebResource(this.getFileURL()).noProxy().forceUncached();
@@ -181,7 +180,7 @@ Object.subclass('lively.PartsBin.PartItem',
         }
 
         var url = this.getFileURL(),
-            root = url.withPath("/"),
+            root = this.guessRootForURL(url),
             path = url.relativePathFrom(root),
             self = this,
             query = !!rev || rev === 0 ? {
@@ -248,10 +247,10 @@ Object.subclass('lively.PartsBin.PartItem',
         return this;
     },
 
-    loadPartVersions: function(isAsync) {
+    loadPartVersions: function (isAsync) {
         // FIXME, what if PartsBin is not at root?
         var url = this.getFileURL(),
-            root = url.withPath("/"),
+            root = this.guessRootForURL(url),
             path = url.relativePathFrom(root),
             self = this;
 
@@ -269,7 +268,22 @@ Object.subclass('lively.PartsBin.PartItem',
         return this;
     },
 
-    loadPartMetaInfo: function(isAsync, rev) {
+    guessRootForURL: function (url) {
+        if (url.isIn(URL.root)) {
+            return URL.root
+        }
+        if (url.pathname.match(/\/PartsBin\//)) { // we can make a smarkt guess? Or can't we? #JensLincke
+            return url.withPath(url.pathname.replace(/PartsBin.*/, ""))
+        }
+        // this captures only the current url... but we migth be a general Approach finding the root
+        // can we be sure that it contains the partsbin?
+        // Future work, we might also have to replace these methods by a more specific versions 
+        // for accessing the version history of dropbox, ondrive or other databases that may want to 
+        // decide to put parts in... 
+        return url.withPath("/") // fallback that works for simple localhost and lively-web etc..
+    },
+
+    loadPartMetaInfo: function (isAsync, rev) {
         if (!isAsync) {
             var webR = new WebResource(this.getMetaInfoURL()).beSync();
             webR.forceUncached().get();
@@ -282,7 +296,7 @@ Object.subclass('lively.PartsBin.PartItem',
         }
 
         var url = this.getMetaInfoURL(),
-            root = url.withPath("/"),
+            root = this.guessRootForURL(url),
             path = url.relativePathFrom(root),
             self = this,
             query = !!rev ? {
@@ -462,7 +476,6 @@ Object.subclass('lively.PartsBin.PartItem',
         return 'PartsItem(' + this.name + ',' + this.getPartsSpace() + ')';
     }
 });
-
 Object.subclass('lively.PartsBin.PartsBinMetaInfo',
 'initializing', {
     initialize: function() {
@@ -684,8 +697,44 @@ Object.extend(lively.PartsBin, {
                 }
             )(function(err) { if (err) errors.push(err); files.remove(file); next(); });
         }, function() { thenDo && thenDo(errors.length ? errors : null); });
-    }
+    },
 
+    withAllItemsDo: function(partsBinBaseURL, thenDo) {
+      if (typeof partsBinBaseURL === "function") {
+        thenDo = partsBinBaseURL; partsBinBaseURL = null;
+      }
+      // FIXME: partsBinBaseURL currently not used, defaulting to "the one and
+      // only" PartsBin
+
+      var progressBar = $world.addProgressBar(null, "loading part items");
+      lively.lang.fun.composeAsync(
+        // 1. load parts spaces
+        lively.PartsBin.discoverPartSpaces,
+        
+        // 2. for each space, load items
+        function(spacesByName, next) {
+          var spaces = lively.lang.obj.values(spacesByName);
+          lively.lang.arr.mapAsyncSeries(spaces,
+            function(space, i, next) {
+              lively.bindings.once(space, "partItems", {whenDone: function(items) {
+                progressBar.setValue(i / spaces.length);
+                next(null, space);
+              }}, "whenDone");
+              space.load(true);
+            }, next)
+        },
+        
+        // 3. combine all items
+        function(spaces, next) {
+          progressBar.remove();
+          var itemsPerSpace = spaces.reduce(function(itemsPerSpace, space) {
+            itemsPerSpace[space.name] = space.partItems;
+            return itemsPerSpace;
+          }, {});
+          next(null, itemsPerSpace);
+        }
+      )(thenDo);
+    }
 });
 
 Trait('lively.PartsBin.PartTrait', {

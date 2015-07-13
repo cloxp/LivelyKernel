@@ -100,6 +100,26 @@ Object.extend(lively.ide.commands.byName, {
         exec: function() { $world.setScale(1); }
     },
 
+    'lively.morphic.MenuBar.hide': {
+        description: 'hide the menu bar',
+        exec: function() {
+          $world._MenuBarHidden = true;
+          lively.require('lively.morphic.tools.MenuBar').toRun(function() {
+            lively.morphic.tools.MenuBar.remove();
+          });
+        }
+    },
+
+    'lively.morphic.MenuBar.show': {
+        description: 'show the menu bar',
+        exec: function() {
+          $world._MenuBarHidden = false;
+          lively.require('lively.morphic.tools.MenuBar').toRun(function() {
+            lively.morphic.tools.MenuBar.openOnWorldLoad();
+          });
+        }
+    },
+
     // morphic
     'lively.morphic.Halos.show': {
         description: 'morphic: show halo',
@@ -351,7 +371,7 @@ Object.extend(lively.ide.commands.byName, {
             // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
             function askForHow() {
-                var actions = ['fullscreen','center','right','left','bottom',
+                var actions = ['full', 'fullscreen','center','right','left','bottom',
                                'top',"shrinkWidth", "growWidth","shrinkHeight",
                                "growHeight", 'col1','col2', 'col3', 'col4', 'col5',
                                'reset'];
@@ -362,7 +382,10 @@ Object.extend(lively.ide.commands.byName, {
 
             function doResize(how) {
                 switch(how) {
-                    case 'fullscreen': break;
+                    case 'full': case 'fullscreen': break;
+                    case 'center': bounds = thirdColBounds.withCenter(worldB.center()); break;
+                    case 'right': bounds = thirdColBounds.withTopRight(worldB.topRight()); break;
+                    case 'left': bounds = thirdColBounds.withTopLeft(bounds.topLeft()); break;
                     case 'col3': case 'center': bounds = thirdColBounds.withCenter(worldB.center()); break;
                     case 'col5': case 'right': bounds = thirdColBounds.withTopRight(worldB.topRight()); break;
                     case 'col1': case 'left': bounds = thirdColBounds.withTopLeft(bounds.topLeft()); break;

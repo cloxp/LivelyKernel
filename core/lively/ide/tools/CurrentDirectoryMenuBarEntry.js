@@ -156,9 +156,10 @@ lively.BuildSpec('lively.ide.tools.CurrentDirectoryMenuBarEntry', lively.BuildSp
 
 Object.extend(lively.ide.tools.CurrentDirectoryMenuBarEntry, {
 
-  getMenuBarEntries: function() {
-    return [lively.BuildSpec("lively.ide.tools.CurrentDirectoryMenuBarEntry").createMorph()]
-  }
+    getMenuBarEntries: function() {
+        return [lively.BuildSpec("lively.ide.tools.CurrentDirectoryMenuBarEntry").createMorph()];
+    }
+
 });
 
 }) // end of module

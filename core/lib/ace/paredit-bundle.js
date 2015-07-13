@@ -578,7 +578,7 @@
     'ns', 'in-ns', /^([^\/]+\/)?def/,/^if/,/^when/,/->/, "while", "for",
     /(^|\/)with/, "testing", "while", "cond", "condp", "apply",
     "binding", "locking", "proxy", "reify", /^extend/,
-    
+
     // midje
     "facts"];
 

@@ -455,6 +455,24 @@ lively.morphic.Morph.subclass('lively.morphic.Image',
         return $super(evt)
     }
 },
+'type conversion', {
+
+    convertTo: function(type, quality) {
+        if (!type) return;
+        if (!quality) quality = 1;
+        var imgElement = this.renderContext().imgNode,
+            canvas = document.createElement('canvas'),
+            ext = this.getExtent(),
+            ctx = canvas.getContext('2d');
+        canvas.width = imgElement.width;
+        canvas.height = imgElement.height;
+        ctx.drawImage(imgElement, 0, 0, ext.x, ext.y);
+        var dataURL = canvas.toDataURL(type, quality);
+        this.setImageURL(dataURL);
+        return dataURL;
+    }
+
+},
 'inline image', {
 
     convertToBase64: function() {
@@ -787,7 +805,8 @@ lively.morphic.Box.subclass('lively.morphic.Menu',
         borderWidth: 1,
         borderRadius: 4,
         opacity: 0.95,
-        clipMode: 'visible'
+        clipMode: 'visible',
+        zIndex: 1000
     },
 
     paddingLeft: 20,
@@ -1605,8 +1624,10 @@ lively.morphic.Text.addMethods(
             function() { self.setInputAllowed(!self.inputAllowed()); }
         ], [
             (self.isInputLine ? '[X]' : '[  ]') + ' Return Key accepts value',
-            function() { self.beInputLine(!self.isInputLine);
-                        self.isInputLine = !self.isInputLine;}
+            function() {
+                if (self.isInputLine) self.isInputLine = false;
+                else self.beInputLine();
+            }
         ], [
             (self.evalEnabled ? '[X]' : '[  ]') + ' eval',
             function() { self.evalEnabled = !self.evalEnabled }
@@ -1685,8 +1706,8 @@ lively.morphic.World.addMethods(
     openStyleEditorFor: function(morph, evt) {
         var self = this;
         lively.require('lively.ide.tools.StyleEditor').toRun(function() {
-            var styleEditorWindow = lively.BuildSpec('lively.ide.tools.StyleEditor').createMorph().
-                    openInWorld();
+            var styleEditorWindow = lively.BuildSpec('lively.ide.tools.StyleEditor')
+              .createMorph().openInWorld();
             styleEditorWindow.setTarget(morph);
             var alignPos = morph.getGlobalTransform().transformPoint(morph.innerBounds().bottomLeft()),
                 edBounds = styleEditorWindow.innerBounds(),
@@ -1694,21 +1715,7 @@ lively.morphic.World.addMethods(
             if (visibleBounds.containsRect(edBounds.translatedBy(alignPos))) {
                 styleEditorWindow.setPosition(alignPos);
             } else {
-                styleEditorWindow.setPositionCentered(visibleBounds.center());
-            }
-            if (lively.Config.get('useAceEditor')) {
-                var oldEditor = styleEditorWindow.get("CSSCodePane"),
-                    newEditor = new lively.morphic.CodeEditor(oldEditor.bounds(), oldEditor.textString);
-                newEditor.applyStyle({
-                    fontSize: lively.Config.get('defaultCodeFontSize')-1,
-                    gutter: false,
-                    textMode: 'css',
-                    lineWrapping: false,
-                    printMargin: false,
-                    resizeWidth: true, resizeHeight: true
-                });
-                lively.bindings.connect(newEditor, "savedTextString", oldEditor.get("CSSApplyButton"), "onFire");
-                newEditor.replaceTextMorph(oldEditor);
+                styleEditorWindow.openInWorldCenter();
             }
             styleEditorWindow.comeForward();
         });
@@ -2150,6 +2157,9 @@ lively.morphic.World.addMethods(
                         function(ea) {ea.stopStepping && ea.stopStepping()})}],
             ]],
             ['Preferences', [
+                $world.get(/^MenuBar/) && $world.get(/^MenuBar/).isGlobalMenuBar ?
+                  ['Hide menu bar', lively.ide.commands.exec.bind(null, 'lively.morphic.MenuBar.hide')] :
+                  ['Show menu bar', lively.ide.commands.exec.bind(null, 'lively.morphic.MenuBar.show')],
                 ['Show login info', function() {
                     lively.require("lively.net.Wiki").toRun(function() { lively.net.Wiki.showLoginInfo(); })
                 }],
@@ -2223,14 +2233,17 @@ lively.morphic.World.addMethods(
         var extent = spec.extent || pt(500, 200),
             textMorph = new lively.morphic.Text(extent.extentAsRectangle(), spec.content || ""),
             pane = this.internalAddWindow(textMorph, spec.title, spec.position);
-        textMorph.applyStyle({
+        var defaultStyle = {
             clipMode: 'auto',
             fixedWidth: true, fixedHeight: true,
             resizeWidth: true, resizeHeight: true,
             syntaxHighlighting: spec.syntaxHighlighting,
             padding: Rectangle.inset(4,2),
             fontSize: Config.get('defaultCodeFontSize')
-        });
+        };
+        if(spec.style) {defaultStyle = lively.lang.obj.merge(defaultStyle, spec.style)};
+        textMorph.applyStyle(defaultStyle);
+
         return pane;
     },
 
@@ -2953,8 +2966,7 @@ lively.morphic.Morph.subclass('lively.morphic.Window', Trait('lively.morphic.Dra
         this.expandedTransform = this.getTransform();
         this.expandedExtent = this.getExtent();
         this.expandedPosition = this.getPosition();
-        this.targetMorph.remove();
-        this.helperMorphs = this.submorphs.withoutAll([this.targetMorph, this.titleBar]);
+        this.helperMorphs = this.submorphs.without(this.titleBar);
         this.helperMorphs.invoke('remove');
         this.collapsedExtent = this.computeOptimalCollapsedExtent(this.collapsedExtent);
         if (this.titleBar.lookCollapsedOrNot) this.titleBar.lookCollapsedOrNot(true);
@@ -2982,7 +2994,6 @@ lively.morphic.Morph.subclass('lively.morphic.Window', Trait('lively.morphic.Dra
             if (self.expandedExtent) self.setExtent(self.expandedExtent);
             if (self.expandedPosition) self.setPosition(self.expandedPosition);
             self.helperMorphs.forEach(function(ea) { self.addMorph(ea); });
-            self.addMorph(self.targetMorph);
         }
         this.withCSSTransitionForAllSubmorphsDo(finExpand, 250, function() {
             self.comeForward();
@@ -3974,10 +3985,14 @@ Trait('SelectionMorphTrait',
             .reverse();
 
         this.selectionMorph.selectedMorphs = selectedMorphs;
-        if (selectedMorphs.length == 0) {
+        if (selectedMorphs.length === 0) {
             this.selectionMorph.removeOnlyIt();
             this.selectionMorph.reset();
-            return
+            return;
+        } else if (selectedMorphs.length == 1) {
+            this.selectionMorph.removeOnlyIt();
+            selectedMorphs[0].showHalos();
+            return;
         }
 
         this.selectionMorph.selectMorphs(selectedMorphs);
