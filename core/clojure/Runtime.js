@@ -686,22 +686,21 @@ Object.extend(clojure.Runtime, {
 Object.extend(clojure.Runtime.ReplServer, {
 
     cloxpLeinProfile:  "; do not modify, this file is auto-generated\n{\n"
-                     + " :dependencies [[org.rksm/system-navigator \"0.1.18\"]\n"
-                     + "                [org.rksm/system-files \"0.1.6\"]\n"
-                     + "                [org.rksm/cloxp-projects \"0.1.9\"]\n"
-                     + "                [org.rksm/cloxp-trace \"0.1.9\"]\n"
-                     + "                [org.rksm/cloxp-repl \"0.1.7\"]\n"
-                     + "                [org.rksm/cloxp-cljs \"0.1.9\"]\n"
-                     + "                [org.rksm/cloxp-com \"0.1.8\"]\n"
+                     + " :dependencies [\n"
+                     + "                [org.rksm/system-navigator \"0.1.19-SNAPSHOT\"]\n"
+                     + "                [org.rksm/system-files \"0.1.7-SNAPSHOT\"]\n"
+                     + "                [org.rksm/cloxp-projects \"0.1.10-SNAPSHOT\"]\n"
+                     + "                [org.rksm/cloxp-trace \"0.1.10-SNAPSHOT\"]\n"
+                     + "                [org.rksm/cloxp-repl \"0.1.8-SNAPSHOT\"]\n"
+                     + "                [org.rksm/cloxp-cljs \"0.1.10-SNAPSHOT\"]\n"
+                     + "                [org.rksm/cloxp-com \"0.1.9-SNAPSHOT\"]\n"
                      + "                [org.clojure/tools.reader \"0.9.2\"]\n"
                      + '                [pjstadig/humane-test-output "0.6.0"]]\n'
                      + ' :plugins ^:replace []\n'
-                     + ' :repl-options {:nrepl-middleware [rksm.cloxp-repl.nrepl/wrap-cloxp-eval\n'
-                     + '                                   rksm.cloxp-repl.cljx/wrap-nrepl-eval-for-cljx\n'
-                     + '                                   rksm.cloxp-repl.cljx/wrap-nrepl-load-file-for-cljx]}\n'
-                     + " :injections [(require 'rksm.system-navigator)\n"
+                     + ' :repl-options {:nrepl-middleware [rksm.cloxp-repl.nrepl/wrap-cloxp-eval]}\n'
+                     + " :injections [\n"
+                     + "              (require 'rksm.system-navigator)\n"
                      + "              (require 'rksm.cloxp-repl)\n"
-                     + "              (require 'rksm.system-files.cljx)\n"
                      + "              (require 'rksm.cloxp-cljs.analyzer)\n"
                      + "              (require 'rksm.cloxp-cljs.compilation)\n"
                      + "              (rksm.cloxp-cljs.compilation/patch-cljs-build-reload)\n"
