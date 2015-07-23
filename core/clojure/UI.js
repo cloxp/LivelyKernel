@@ -1011,6 +1011,18 @@ function addConfigSettings() {
     "lively.ide.tools.CurrentDirectoryMenuBarEntry",
     "clojure.ToolsMenuBarEntry"
     ]);
+
+  lively.Config.codeSearchGrepExclusions = [".svn", ".git", "node_modules", "combined.js", "BootstrapDebugger.js", "target", "*.html", "cloxp-cljs-build", "PartsBin"];
+  
+  // -=-=-=-=-=-=-
+  // code editor
+  // -=-=-=-=-=-=-
+  if (typeof process === "undefined") { // FIXME!
+      lively.whenLoaded(function() { lively.Config.set('defaultTabSize', 2); });
+      if (lively.LocalStorage.get("useEmacsyKeys") === null)
+          lively.Config.set("useEmacsyKeys", true);
+  }
+
 }
 
 (function setup() {
@@ -1041,7 +1053,7 @@ function addConfigSettings() {
         // additional options: fileTypes + defaultFileType
         $super(label, callback, defaultInputOrOptions);
         this.options.fileTypes = this.options.hasOwnProperty("fileTypes")
-          ? this.options.fileTypes : ["clj", "cljx"];
+          ? this.options.fileTypes : ["clj", "cljc"];
       },
 
       buildFileTypeInput: function(bounds) {
