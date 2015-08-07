@@ -1009,6 +1009,7 @@ Object.extend(lively.ide.CommandLineSearch, {
 
         lively.bindings.connect(narrower, 'escapePressed', onCancel, 'call');
         lively.bindings.connect(narrower, 'escapePressed', Global, 'show');
+        lively.bindings.connect(narrower, 'confirmedSelection', narrower, "deactivate");
 
         return narrower;
 
