@@ -313,16 +313,6 @@ Object.extend(clojure.Runtime, {
       bindings.push("rksm.cloxp-repl/*line-offset*");
       bindings.push(lineOffset || 0);
 
-      if (env.cljs) {
-        if (!env.cljsConnection) return thenDo(new Error("No ClojureScript connection"));
-        requiredNamespaces.push("rksm.cloxp-com.cljs-repl");
-        requiredNamespaces.push("rksm.cloxp-cljs.analyzer");
-        expr = lively.lang.string.format(
-          "  (cljs.env/with-compiler-env (:compiler-env (rksm.cloxp-cljs.analyzer/ensure-default-cljs-env))\n"
-        + "    (rksm.cloxp-com.cljs-repl/eval-cljs '%s {:target-id %s}))",
-          expr, env.cljsConnection.id ? '"'+env.cljsConnection.id+'"' : "nil");
-      }
-
       return this.queueNreplMessage({
         env: env,
         options: options,
