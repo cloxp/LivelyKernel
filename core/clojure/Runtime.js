@@ -1,4 +1,4 @@
-module('clojure.Runtime').requires().requiresLib({url: Config.codeBase + 'lib/ace/paredit-bundle.js',loadTest: function() { return !!Global.paredit; }}).toRun(function() {
+module('clojure.Runtime').requires().requiresLib({url: Config.codeBase + 'lib/ace/paredit-bundle.js', loadTest: function() { return !!Global.paredit; }}).toRun(function() {
 
 // "exports"
 // lively.ide.codeeditor.modes.Clojure.ReplServer = {};
@@ -258,6 +258,92 @@ Object.extend(clojure.Runtime, {
 
             if (answer.data.error) thenDo && thenDo(answer.data.error, null);
             else clj.processNreplEvalAnswers(nreplMessages, options, thenDo); });
+    },
+
+    doInteractiveEval: function(code, opts, thenDo) {
+        // like doEval but will use improved eval support. Values, output, errors
+        // are gathered for each evaluated top-level expression. Supports cljs eval
+        // as well.
+
+        // Note: we pretty print by default but printed output will be
+        // truncated by print level and print length (print depth + max elems
+        // in lists). When doing an "inspect" print we will try to print
+        // everything
+
+        var useCustomEvalMethod = true, warnings;
+
+        var options = {
+            file: opts.file,
+            env: opts.env || clojure.Runtime.currentEnv(),
+            ns: opts.ns || "user",
+            passError: true,
+            prettyPrint: opts.hasOwnProperty("prettyPrint") ? opts.prettyPrint : true,
+            prettyPrintLevel: opts.prettyPrintLevel || (opts.hasOwnProperty("prettyPrint") ? null : 10),
+            printLength: opts.printLength || (opts.hasOwnProperty("prettyPrint") ? null : 20),
+            lineOffset: opts.lineOffset,
+            columnOffset: opts.columnOffset,
+            bindings: [],
+            resultIsJSON: !!useCustomEvalMethod,
+            requiredNamespaces: [],
+            warningsAsErrors: false,
+            onWarning: function onWarning(warn) { warnings = warn; }
+          }
+
+        code = prepareCode(code);
+
+        clojure.Runtime.doEval(code, options, function(err, result) {
+          if (useCustomEvalMethod && result && Object.isArray(result)) {
+            result = result[0].trim() + "\n\n" + result[1].trim();
+          }
+
+          thenDo && thenDo(err, result);
+        });
+
+        return true;
+
+        // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+        function prepareCode(code) {
+          if (!useCustomEvalMethod) return code;
+
+          options.bindings.pushAll(["rksm.cloxp-repl/*repl-source*", code]);
+          options.requiredNamespaces.pushAll(["rksm.cloxp-repl", "clojure.data.json"]);
+
+          var replCode,
+              prettyPrinter = options.prettyPrint ? "(fn [x] (with-out-str (clojure.pprint/pprint x)))" : "pr-str";
+
+          if (options.env && options.env.cljs) {
+            if (!options.env.cljsConnection) throw new Error("No ClojureScript connection");
+
+            var ns = options.ns || "cljs.user";
+            options.requiredNamespaces.pushAll(["rksm.cloxp-cljs-repl.core", "rksm.cloxp-cljs.analyzer"]);
+            options.ns = "user";
+
+            replCode = lively.lang.string.format(
+              "(->> (rksm.cloxp-cljs.analyzer/with-compiler\n"
+            + "       (rksm.cloxp-cljs-repl.core/eval-cljs-string\n"
+            + "        rksm.cloxp-repl/*repl-source* {:file \"%s\" :target-id %s :ns-sym '%s :throw-errors? true}))"
+            + "  ((juxt #(->> % (map (comp %s :value)) (clojure.string/join \"\n\"))\n"
+            + "         #(->> % (map :out) (clojure.string/join \"\n\"))))\n"
+            + "  clojure.data.json/write-str)",
+              options.file || "",
+              options.env.cljsConnection.id ?
+                '"'+ options.env.cljsConnection.id + '"' : "nil",
+              ns, prettyPrinter);
+
+          } else {
+            replCode = lively.lang.string.format(
+              "(->> (rksm.cloxp-repl/eval-string rksm.cloxp-repl/*repl-source* '%s {:file \"%s\" :throw-errors? true})\n"
+            + "  ((juxt #(->> % (map (comp %s :value)) (clojure.string/join \"\n\"))\n"
+            + "         #(->> % (map :out) (clojure.string/join \"\n\"))))\n"
+            + "  clojure.data.json/write-str)",
+              options.ns || "user",
+              options.file,
+              prettyPrinter);
+          }
+
+          return replCode;
+        }
     },
 
     doEval: function(expr, options, thenDo) {

@@ -657,69 +657,12 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
               warningsAsErrors: false,
               onWarning: function onWarning(warn) { warnings = warn; }
             }
-
-        lively.lang.fun.composeAsync(
-          getCode, prepareCode,
-          function(code, n) { clojure.Runtime.doEval(code, options, n); }
-        )(function(err, result) {
-          if (useCustomEvalMethod && result && Object.isArray(result)) {
-            result = result[0].trim() + "\n\n" + result[1].trim();
-          }
-          ed.execCommand("clojureShowResultOrError", {
-            err: err,
-            warnings: warnings,
-            msg: result,
-            offerInsertAndOpen: args.hasOwnProperty("offerInsertAndOpen") ?
-              args.offerInsertAndOpen : true
-          });
-          args.thenDo && args.thenDo(err, result);
-        });
+  
+        lively.lang.fun.composeAsync(getCode, runEval)(processResult);
 
         return true;
 
         // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-
-        function prepareCode(code, next) {
-          if (!useCustomEvalMethod) return next(null, code);
-
-          options.bindings.pushAll(["rksm.cloxp-repl/*repl-source*", code]);
-          options.requiredNamespaces.pushAll(["rksm.cloxp-repl", "clojure.data.json"])
-
-          var replCode,
-              prettyPrinter = options.prettyPrint ? "(fn [x] (with-out-str (clojure.pprint/pprint x)))" : "pr-str";
-
-          if (env && env.cljs) {
-            if (!env.cljsConnection) return next(new Error("No ClojureScript connection"));
-
-            var ns = options.ns || "cljs.user";
-            options.requiredNamespaces.push("rksm.cloxp-cljs-repl.core");
-            options.requiredNamespaces.push("rksm.cloxp-cljs.analyzer");
-            options.ns = "user";
-
-            replCode = lively.lang.string.format(
-              "(->> (rksm.cloxp-cljs.analyzer/with-compiler\n"
-            + "       (rksm.cloxp-cljs-repl.core/eval-cljs-string\n"
-            + "        rksm.cloxp-repl/*repl-source* {:file \"%s\" :target-id %s :ns-sym '%s}))"
-            + "  ((juxt #(->> % (map (comp %s :value)) (clojure.string/join \"\n\"))\n"
-            + "         #(->> % (map :out) (clojure.string/join \"\n\"))))\n"
-            + "  clojure.data.json/write-str)",
-              options.file || "",
-              env.cljsConnection.id ? '"'+env.cljsConnection.id+'"' : "nil",
-              ns, prettyPrinter);
-
-          } else {
-            replCode = lively.lang.string.format(
-              "(->> (rksm.cloxp-repl/eval-string rksm.cloxp-repl/*repl-source* '%s {:file \"%s\" :throw-errors? true})\n"
-            + "  ((juxt #(->> % (map (comp %s :value)) (clojure.string/join \"\n\"))\n"
-            + "         #(->> % (map :out) (clojure.string/join \"\n\"))))\n"
-            + "  clojure.data.json/write-str)",
-              options.ns || "user",
-              options.file,
-              prettyPrinter);
-          }
-
-          next(null, replCode);
-        }
 
         function getCode(next) {
           if (args.code) return next(null, args.code);
@@ -738,6 +681,21 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             reset();
             next(null, code);
           });
+        }
+
+        function runEval(code, n) {
+          clojure.Runtime.doInteractiveEval(code, options, n);
+        }
+
+        function processResult(err, result) {
+          ed.execCommand("clojureShowResultOrError", {
+            err: err,
+            warnings: warnings,
+            msg: result,
+            offerInsertAndOpen: args.hasOwnProperty("offerInsertAndOpen") ?
+              args.offerInsertAndOpen : true
+          });
+          args.thenDo && args.thenDo(err, result);
         }
 
       },
