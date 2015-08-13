@@ -2221,6 +2221,7 @@ lively.morphic.World.addMethods(
             enableDragging: false
         });
         transparentMorph.isEpiMorph = true;
+        blockMorph.isEpiMorph = true;
         blockMorph.addMorph(transparentMorph);
         if (modalOwner.modalMorph) modalOwner.modalMorph.remove();
         blockMorph.addMorph(morph);
@@ -2230,6 +2231,34 @@ lively.morphic.World.addMethods(
         modalOwner.modalMorph = modalOwner.addMorph(blockMorph);
         blockMorph.modalTarget = morph;
         lively.bindings.connect(morph, 'remove', blockMorph, 'remove');
+        
+        // If we add a modal for a window make sure that no other morphs block
+        // the view on it, i.e. make the modalOwner come to front. When the
+        // modal disappears we reorder the morphs as they were before. This allows
+        // e.g. to add loading labels and have dialogs pop up during the load
+        // process without removing those labels but also without having them
+        // block the view.
+        if (modalOwner.isWindow) {
+          var owner = modalOwner.owner,
+              index = owner.submorphs.indexOf(modalOwner),
+              morphInFront = owner.submorphs[index+1];
+          if (morphInFront) {
+            blockMorph.morphInFront = morphInFront;
+            blockMorph.modalOwner = modalOwner;
+            blockMorph.addScript(function reorderAfterRemove() {
+              var morphInFront = this.morphInFront;
+              var modalOwner = this.modalOwner;
+              delete this.morphInFront;
+              delete this.modalOwner;
+              if (!modalOwner || !modalOwner.owner || !morphInFront
+                || morphInFront.owner !== modalOwner.owner) return;
+              modalOwner.owner.addMorph(modalOwner, morphInFront);
+            });
+            lively.bindings.connect(morph, 'remove', blockMorph, 'reorderAfterRemove');
+          }
+          modalOwner.bringToFront();
+        }
+
         morph.focus();
         return morph;
     },

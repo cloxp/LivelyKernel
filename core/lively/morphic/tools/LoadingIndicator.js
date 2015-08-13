@@ -71,7 +71,8 @@ lively.BuildSpec('lively.morphic.LoadingIndicator', {
     onFromBuildSpecCreated: function onFromBuildSpecCreated() {
         $super();
         this.whenOpenedInWorld(function() {
-            this.setPositionCentered(this.world().visibleBounds().extent().scaleBy(0.5));
+          this.setPositionCentered(
+            this.world().visibleBounds().center());
         });
     },
     setLabel: function setLabel(text) { this.get('Text').textString = text; }
