@@ -180,7 +180,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
         if (err) {
           msg = (msg ? msg + ":\n" : "") + err;
           text = [
-            ["open full stack trace\n", {doit: {context: {isClojureError: true, env: env, ns: ns, err: err}, code: errorRetrieval}}],
+            ["open full stack trace\n", {doit: {context: {isClojureError: true, env: env, ns: ns, err: err}, code: lively.lang.fun.extractBody(errorRetrieval)}}],
             [msg],
             warn ? [warn, {color: Color.orange}] : [""]];
         } else if (args.offerInsertAndOpen) {
@@ -194,7 +194,7 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
           ]
           .concat(warn ?
             [[" "],
-             ["open full stack trace\n", {color: Color.white, doit: {context: {env: env, ns: ns, err: warn}, code: errorRetrieval}}]] :
+             ["open full stack trace\n", {color: Color.white, doit: {context: {env: env, ns: ns, err: warn}, code: lively.lang.fun.extractBody(errorRetrieval)}}]] :
             [])
           .concat([
             ["\n", {fontSize: 9, textAlign: "right"}],

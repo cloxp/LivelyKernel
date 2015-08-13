@@ -512,7 +512,7 @@ Object.extend(clojure.Runtime, {
             var cause = messages.pluck('root-ex').flatten().compact();
             if (cause.length) errors.pushAll(["root-cause:"].concat(cause));
           }
-          err = errors.flatten().compact().invoke('trim').join('\n');
+          err = errors.flatten().compact().invoke('trim').uniq().join('\n');
       }
 
       // if (!isError && options.prettyPrint) try { result = eval(result); } catch (e) {}
