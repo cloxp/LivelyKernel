@@ -307,7 +307,7 @@ Object.extend(clojure.Runtime, {
           if (!useCustomEvalMethod) return code;
 
           options.bindings.pushAll(["rksm.cloxp-repl/*repl-source*", code]);
-          options.requiredNamespaces.pushAll(["rksm.cloxp-repl", "clojure.data.json"]);
+          options.requiredNamespaces.pushAll(["rksm.cloxp-repl", "rksm.cloxp-repl.nrepl", "clojure.data.json"]);
 
           var replCode,
               prettyPrinter = options.prettyPrint ? "(fn [x] (with-out-str (clojure.pprint/pprint x)))" : "pr-str";
@@ -333,10 +333,12 @@ Object.extend(clojure.Runtime, {
 
           } else {
             replCode = lively.lang.string.format(
-              "(->> (rksm.cloxp-repl/eval-string rksm.cloxp-repl/*repl-source* '%s {:file \"%s\" :throw-errors? true})\n"
+              "(binding [*out* (or rksm.cloxp-repl.nrepl/*cloxp-out* *out*)"
+            + "          *err* (or rksm.cloxp-repl.nrepl/*cloxp-err* *err*)]"
+            + "(->> (rksm.cloxp-repl/eval-string rksm.cloxp-repl/*repl-source* '%s {:file \"%s\" :throw-errors? true})\n"
             + "  ((juxt #(->> % (map (comp %s :value)) (clojure.string/join \"\n\"))\n"
             + "         #(->> % (map :out) (clojure.string/join \"\n\"))))\n"
-            + "  clojure.data.json/write-str)",
+            + "  clojure.data.json/write-str))",
               options.ns || "user",
               options.file,
               prettyPrinter);
