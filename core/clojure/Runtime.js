@@ -781,7 +781,7 @@ Object.extend(clojure.Runtime.ReplServer, {
                      + "                [org.rksm/cloxp-repl \"0.1.8-SNAPSHOT\"]\n"
                      + "                [org.rksm/cloxp-cljs \"0.1.10-SNAPSHOT\"]\n"
                      + "                [org.rksm/cloxp-com \"0.1.9-SNAPSHOT\"]\n"
-                     + "                [org.clojure/tools.reader \"0.10.0-SNAPSHOT\"]\n"
+                     + "                [org.clojure/tools.reader \"0.10.0-alpha1\"]\n"
                      + '                [pjstadig/humane-test-output "0.6.0"]]\n'
                      + ' :plugins ^:replace []\n'
                      + ' :repl-options {:nrepl-middleware [rksm.cloxp-repl.nrepl/wrap-cloxp-eval]}\n'
