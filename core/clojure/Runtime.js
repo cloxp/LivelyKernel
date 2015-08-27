@@ -404,6 +404,10 @@ Object.extend(clojure.Runtime, {
       bindings.push("rksm.cloxp-repl/*line-offset*");
       bindings.push(lineOffset || 0);
 
+      expr = "(binding [*out* (or rksm.cloxp-repl.nrepl/*cloxp-out* *out*)]"
+            + expr
+            + ")";
+
       return this.queueNreplMessage({
         env: env,
         options: options,
