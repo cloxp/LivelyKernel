@@ -172,8 +172,11 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             options = args,
             text;
 
+        if (warn) console.warn(warn);
+
         if (err) {
           msg = (msg ? msg + ":\n" : "") + err;
+          console.error(msg);
           text = [
             ["open full stack trace\n", {doit: {context: {isClojureError: true, env: env, ns: ns, err: err}, code: lively.lang.fun.extractBody(errorRetrieval)}}],
             [msg],
