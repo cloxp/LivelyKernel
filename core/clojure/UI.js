@@ -367,12 +367,17 @@ function addCommands() {
             return;
           }
 
+          var nsName = data.intern.ns,
+              targetName = data.intern.name,
+              internFile = data.intern.file;
+
           try {
             if (!codeEditor || data.intern.ns !== opts.ns
              || !data.defRange || !scrollToAndSelect(codeEditor, data.defRange, data.intern.name)) {
               var editor = clojure.UI.showSource({
                 title: data.intern.ns + "/" + data.intern.name,
-                content: data.nsSource
+                content: data.nsSource,
+                file: internFile
               });
               if (data.defRange) scrollToAndSelect(editor, data.defRange, data.intern.name);
             }
@@ -416,7 +421,7 @@ function addCommands() {
         options = options || {};
 
         var browser = options.browser,
-            nsRe = options.nsRe || /clj(x)?$/,
+            nsRe = options.nsRe || /clj(x|c|s)?$/,
             lastSearchTime;
 
         openNarrower(function(err, n) {
@@ -769,10 +774,12 @@ function addCommands() {
         }
 
         function showFindInNewEditor(find, thenDo) {
-          var editor;
-          var editor = Global.clojure.UI.showSource({title: find.ns + " " + find.match});
+          var editor = Global.clojure.UI.showSource({
+            title: find.ns + " " + find.match,
+            file: find.file
+          });
           lively.lang.fun.composeAsync(
-            clojure.Runtime.retrieveSourceForNs.bind(clojure.Runtime, find.ns, {env: env}),
+            clojure.Runtime.retrieveSourceForNs.bind(clojure.Runtime, find.ns, {file: find.file, env: env}),
             function(source, n) {
               editor.textString = source;
               scrollToFind(editor, find);
@@ -957,7 +964,7 @@ function addCommands() {
           function(err, traced) {
 
             if (err) {
-              show(err);
+              $world.inform(err);
               if (options.thenDo) options.thenDo(err);
               return;
             }
