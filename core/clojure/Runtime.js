@@ -606,13 +606,14 @@ Object.extend(clojure.Runtime, {
 
   retrieveDefinition: function(symbol, inns, options, thenDo) {
     // options: file
+
     lively.lang.fun.composeAsync(
       function(n) { clojure.Runtime.lookupIntern(inns, symbol, options, n); },
 
       function(intern, n) {
+
         if (!intern) return n(new Error("Cannot retrieve meta data for " + symbol));
-        var file = options.file;
-        if (intern.file && file && !file.endsWith(intern.file)) file = null;
+        var file = intern.file || options.file;
         clojure.Runtime.retrieveSourceForNs(
           intern.ns, {file: file},
           function(err, nsSrc) {
@@ -714,7 +715,7 @@ Object.extend(clojure.Runtime, {
     var warnings = [];
 
     var cljsAndCljNss = nss.partition(function(ns) {
-      return ns.file && ns.file.endsWith(".cljs"); })
+      return ns.file && (ns.file.endsWith(".cljs") || ns.file.endsWith(".cljc")); })
 
     lively.lang.fun.composeAsync(
       function loadClj(n) {
@@ -761,11 +762,9 @@ Object.extend(clojure.Runtime, {
 
     var code = lively.lang.string.format(
       // "(clojure.data.json/write-str (rksm.cloxp-trace.tracing/trace [%s] %s))",
-      "(binding [*out* (java.io.PrintWriter. (java.io.StringWriter.))]\n"
-    + " (clojure.data.json/write-str\n"
-    + "  (rksm.cloxp-trace.tracing/trace [%s] %s)))",
+      "(clojure.data.json/write-str (rksm.cloxp-trace.tracing/trace [%s] %s))",
       traceTargets.join(" "),
-      codeToTrace)
+      codeToTrace);
 
     clojure.Runtime.doEval(code, opts, thenDo);
   }
@@ -782,7 +781,7 @@ Object.extend(clojure.Runtime.ReplServer, {
                      + "                [org.rksm/cloxp-repl \"0.1.8-SNAPSHOT\"]\n"
                      + "                [org.rksm/cloxp-cljs \"0.1.10-SNAPSHOT\"]\n"
                      + "                [org.rksm/cloxp-com \"0.1.9-SNAPSHOT\"]\n"
-                     + "                [org.clojure/tools.reader \"0.9.2\"]\n"
+                     + "                [org.clojure/tools.reader \"0.10.0-SNAPSHOT\"]\n"
                      + '                [pjstadig/humane-test-output "0.6.0"]]\n'
                      + ' :plugins ^:replace []\n'
                      + ' :repl-options {:nrepl-middleware [rksm.cloxp-repl.nrepl/wrap-cloxp-eval]}\n'
@@ -1139,7 +1138,7 @@ clojure.Projects = {
     }
 
     function createInitialDirs(n) {
-      var cljNsDir = projectName.replace(/-/g, "_")
+      var cljNsDir = projectName.replace(/-/g, "_");
       var ns = projectName + ".core";
       var cljDir = lively.lang.string.joinPath(projectDir, "src/" + cljNsDir);
 
