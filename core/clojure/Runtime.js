@@ -183,15 +183,18 @@ Object.extend(clojure.Runtime, {
       // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
       function replDoc(expr, n) {
-          self.doEval(
-            lively.lang.string.format("(clojure.repl/doc %s)", expr),
+          var src = lively.lang.string.format("(let [writer (java.io.StringWriter.)]\n"
+                  + " (binding [*out* (java.io.PrintWriter. writer)]\n"
+                  + "   (clojure.repl/doc %s))\n"
+                  + " (clojure.data.json/write-str {:doc (str writer)}))\n", expr);
+          self.doEval(src,
             {
               ns: options.ns || 'user',
               requiredNamespaces: ['clojure.repl'],
               env: options.env,
-              prettyPrint: true,
+              resultIsJSON: true,
               passError: true
-            }, function(err, doc) { n(null, doc); });
+            }, function(err, doc) { n(null, doc && doc.doc); });
       }
 
     },
