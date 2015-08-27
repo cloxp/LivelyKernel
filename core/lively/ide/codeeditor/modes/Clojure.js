@@ -22,18 +22,13 @@ Object.extend(lively.ide.codeeditor.modes.Clojure, {
             env = runtime.currentEnv(ed.$morph),
             ns = clojure.Runtime.detectNs(ed.$morph),
             file = ed.$morph.getTargetFilePath();
-        clojure.Runtime.fetchDoc(string, {passError: true, env: env, ns: ns, file: file}, function(err, docString) {
+        clojure.Runtime.fetchDoc(string, {env: env, ns: ns, file: file}, function(err, docString) {
           // ed.$morph.printObject(ed, err ? err : docString);
           if (!docString || !(docString.trim()) && !err) err = new Error("Cannot retrieve documentation for\n" + string);
           if (err) return ed.$morph.setStatusMessage(String(err), Color.red);
 
-          docString = docString.replace(/"?nil"?/,"").replace(/[-]+\n/m,"").trim()
-          clojure.UI.showText({
-            title: "clojure doc",
-            content: err ? String(err) : docString,
-            extent: pt(560,250),
-            textMode: "text"
-          });
+          docString = docString.replace(/"?nil"?/,"").replace(/[-]+\n/m,"").trim();
+          ed.$morph.setStatusMessage(docString);
         });
       },
       multiSelectAction: 'forEach'
