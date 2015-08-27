@@ -551,21 +551,24 @@ Object.extend(clojure.Runtime, {
   lookupIntern: function(nsName, symbol, options, thenDo) {
     // options: file
     options = options || {};
-    var code, reqNs;
+    var code, reqNs,
+        isCljs = (options.env && options.env.hasOwnProperty("cljs"))
+              || (options.file && options.file.match(/\.cljs$/));
 
-    if (options.file && options.file.match(/\.cljs$/)) {
+    if (isCljs) {
       code = Strings.format(
           "(rksm.cloxp-cljs.analyzer/var-info->json '%s '%s \"%s\")",
         nsName, symbol, options.file);
       reqNs = ["rksm.cloxp-cljs.analyzer"];
     } else { code = Strings.format(
         "(rksm.system-navigator.ns.internals/symbol-info->json\n %s '%s)\n",
-      nsName ? "(find-ns '"+nsName+")" : "*ns*", symbol);
+        nsName ? "(find-ns '"+nsName+")" : "*ns*", symbol);
       reqNs = ["rksm.system-navigator"];
     }
 
-    this.doEval(code, lively.lang.obj.merge(
-      options||{}, {requiredNamespaces: reqNs, resultIsJSON: true}), thenDo);
+    this.doEval(code,
+      lively.lang.obj.merge(options,
+        {ns: 'user', requiredNamespaces: reqNs, resultIsJSON: true, passError: true}), thenDo);
   },
 
   retrieveSourceForNs: function(nsName, options, thenDo) {
