@@ -1048,29 +1048,39 @@ Object.extend(lively.ide.commands.byName, {
 
     'lively.ide.CommandLineInterface.printDirectory': {
         description: 'Print directory hierarchy',
-        exec: function() {
-            lively.ide.CommandLineSearch.interactivelyChooseFileSystemItem(
-                'choose directory: ',
-                lively.shell.cwd(),
-                function(files) { return files.filterByKey('isDirectory'); },
-                "lively.ide.CommandLineInterface.printDirectory.NarrowingList",
-                [function printIt(dir) {
-                  lively.lang.fun.composeAsync(
-                    function(n) { lively.require('lively.data.DirectoryUpload').toRun(function() { n(); }); },
-                    function(n) {
-                      var excludes = lively.lang.string.format("\\( -iname %s \\) -prune -o",
-                          lively.Config.codeSearchGrepExclusions.map(Strings.print).join(' -o -iname ')),
-                        cmdString = lively.lang.string.format("find %s %s -print",
-                          typeof dir === "string" ? dir : dir.path, excludes);
-                      lively.shell.run(cmdString, {}, n);
-                    },
-                    function(cmd, n) { n(null, cmd.getStdout().split('\n')); }
-                  )(function(err, files) {
-                    if (err) $world.inform("Error printing dir hierarchy of " + dir.path + "\n" + err)
-                    else new lively.data.DirectoryUpload.Handler().printFileNameListAsTree(
-                      files, "Directory hierarchy of " + dir);
-                  })
-                }]);
+        exec: function(opts) {
+            var dir = opts && opts.dir;
+            
+            if (dir) printIt(dir);
+            else {
+              lively.ide.CommandLineSearch.interactivelyChooseFileSystemItem(
+                  'choose directory: ',
+                  lively.shell.cwd(),
+                  function(files) { return files.filterByKey('isDirectory'); },
+                  "lively.ide.CommandLineInterface.printDirectory.NarrowingList",
+                  [printIt]);
+            }
+
+            // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+            function printIt(dir) {
+              if (!dir) return;
+              lively.lang.fun.composeAsync(
+                function(n) { lively.require('lively.data.DirectoryUpload').toRun(function() { n(); }); },
+                function(n) {
+                  var excludes = lively.lang.string.format("\\( -iname %s \\) -prune -o",
+                      lively.Config.codeSearchGrepExclusions.map(Strings.print).join(' -o -iname ')),
+                    cmdString = lively.lang.string.format("find %s %s -print",
+                      typeof dir === "string" ? dir : dir.path, excludes);
+                  lively.shell.run(cmdString, {}, n);
+                },
+                function(cmd, n) { n(null, cmd.getStdout().split('\n')); }
+              )(function(err, files) {
+                if (err) $world.inform("Error printing dir hierarchy of " + dir.path + "\n" + err)
+                else new lively.data.DirectoryUpload.Handler().printFileNameListAsTree(
+                  files, "Directory hierarchy of " + dir);
+              })
+            }
         }
     },
 
@@ -1078,7 +1088,7 @@ Object.extend(lively.ide.commands.byName, {
         description: 'execute shell command',
         exec: function(codeEditor, args) {
             var insertResult   = !args || typeof args.insert === 'undefined' || !!args.insert,
-                insertProgress = args  && !!args.insertProgress,
+                showProgress   = args  && !!args.showProgress,
                 openInWindow   = !codeEditor || (args && args.count !== 4)/*universal argument*/,
                 addToHistory   = args && args.addToHistory,
                 group          = (args && args.group) || 'interactive-shell-command',
@@ -1107,35 +1117,70 @@ Object.extend(lively.ide.commands.byName, {
             }
 
             function runCommand(command) {
-                var ed = ensureCodeEditor(command), mergeUndos;
+                var ed = ensureCodeEditor(command),
+                    mergeUndos, connections = [],
+                    title = ed.getWindow().getTitle(),
+                    msgMorph;
 
-                var title = ed.getWindow().getTitle();
                 if (ed.getWindow()) ed.getWindow().setTitle("[running] " + title);
 
-                ed.mergeUndosOf(function(triggerMerge) {
-                    mergeUndos = triggerMerge;
+                var cmd = lively.shell.run(command, {addToHistory: addToHistory, group: group}, function(err, cmd) {
+                  connections.invoke("disconnect");
+                  var result = cmd.resultString(true);
 
-                    var cmd = lively.shell.run(command, {addToHistory: addToHistory, group: group}, function(err, cmd) {
-                        if (!insertProgress && insertResult)
-                            ed.printObject(null, cmd.resultString(true));
+                  if (!showProgress && insertResult) ed.printObject(null, result);
+                  if (msgMorph) {
+                    msgMorph.insertion = result;
+                    msgMorph.appendRichText("\nExited with " + cmd.getCode());
+                    msgMorph.enableRemoveOnTargetMorphChange();
+                    msgMorph.ensureOpenFor(ed);
+                  }
+                  if (ed.getWindow()) ed.getWindow().setTitle(title);
 
-                        if (ed.getWindow()) ed.getWindow().setTitle(title);
-
-                        mergeUndos && mergeUndos();
-                    });
-
-                    if (insertProgress) {
-                        ed.collapseSelection('end');
-                        ed.addScript(function insertAndGrowSelection(string) {
-                            var rangeBefore = this.getSelectionRangeAce();
-                            this.printObject(null,string);
-                            var rangeAfter = this.getSelectionRangeAce();
-                            this.setSelectionRangeAce({start: rangeBefore.start, end: rangeAfter.end});
-                        });
-                        lively.bindings.connect(cmd, 'stdout', ed, 'insertAtCursor', {updater: function($upd, string) { $upd(string, false, false, true); }});
-                        lively.bindings.connect(cmd, 'stderr', ed, 'insertAtCursor', {updater: function($upd, string) { $upd(string, false, false, true); }});
-                    }
+                  mergeUndos && mergeUndos();
                 });
+
+                if (insertResult) {
+                  ed.mergeUndosOf(function(triggerMerge) {
+                      mergeUndos = triggerMerge;
+                      if (showProgress) {
+                          ed.collapseSelection('end');
+                          ed.addScript(function insertAndGrowSelection(string) {
+                              var rangeBefore = this.getSelectionRangeAce();
+                              this.printObject(null,string);
+                              var rangeAfter = this.getSelectionRangeAce();
+                              this.setSelectionRangeAce({start: rangeBefore.start, end: rangeAfter.end});
+                          });
+                          connections.pushAll([
+                            lively.bindings.connect(cmd, 'stdout', ed, 'insertAtCursor', {updater: function($upd, string) { $upd(string, false, false, true); }}),
+                            lively.bindings.connect(cmd, 'stderr', ed, 'insertAtCursor', {updater: function($upd, string) { $upd(string, false, false, true); }})]);
+                      }
+                  });
+                } else {
+                  if (showProgress) {
+                    // show progress in status message morph, don't modify source text
+                    msgMorph = ed.ensureStatusMessageMorph();
+                    msgMorph.disableRemoveOnTargetMorphChange();
+                    if (!msgMorph.owner) { ed.setStatusMessage(""); }
+  
+                    var connectionSpec = {
+                      updater: function($upd, newContent) {
+                        if (this.targetObj.textString.length > 1000) {
+                          newContent = "...";
+                          connections.invoke("disconnect");
+                        }
+                        $upd(newContent, {});
+                        this.targetObj.alignAtBottomOf(ed);
+                      },
+                      varMapping: {ed: ed, connections: connections}
+                    }
+  
+                    connections.pushAll([
+                      lively.bindings.connect(cmd, 'stdout', msgMorph, 'appendRichText', connectionSpec),
+                      lively.bindings.connect(cmd, 'stderr', msgMorph, 'appendRichText', connectionSpec)]);
+                  }
+
+                }
             }
 
         }
@@ -1198,11 +1243,11 @@ Object.extend(lively.ide.commands.byName, {
     },
     'lively.ide.CommandLineInterface.showRunningShellCommands': {
         description: 'show shell command processes',
-        exec: function() {
-            var ed =$world.addCodeEditor({
-                title: 'Running commands',
-                textMode: 'text'
-            });
+        exec: function(opts) {
+            opts = opts || {};
+
+            var ed = $world.addCodeEditor({title: 'Running commands', textMode: 'text'});
+
             ed.addScript(function update() {
                 // this.startStepping(100, 'update')
                 var q = lively.ide.CommandLineInterface.commandQueue;
@@ -1339,7 +1384,7 @@ Object.extend(lively.ide.commands.byName, {
 
             var editors;
 
-            Functions.composeAsync(
+            lively.lang.fun.composeAsync(
                 loadRequiredModules,
                 fetchEditorsIfRequired,
                 selectEditor1,
