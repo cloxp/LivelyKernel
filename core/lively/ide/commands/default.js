@@ -1,7 +1,5 @@
 module('lively.ide.commands.default').requires().toRun(function() {
 
-lively.module("lively.ide.tools.SelectionNarrowing").load();
-
 Object.extend(lively.ide.commands, {
     byName: {},
     defaultBindings: {},
@@ -22,7 +20,90 @@ Object.extend(lively.ide.commands, {
         else lively.ide.commands.byName[name] = command;
     },
 
+    addKeyBinding: function(cmdName, binding) {
+      lively.ide.commands.getKeyboardBindings()[cmdName] = binding;
+      if (module("lively.morphic.Events").isLoaded())
+        lively.morphic.KeyboardDispatcher.reset();
+    },
+
     getKeyboardBindings: function() { return this.defaultBindings; },
+
+    getCommands: function(context) {
+      var platform = UserAgent.isMacOS ? "mac" : "win",
+          commands = getDefaultCommands();
+      if (context && context.editor) {
+        commands = lively.lang.obj.merge(
+          commands,
+          getCodeEditorCommands(context.editor));
+      }
+      return commands;
+
+      // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+      function getGlobalCommandKeyBindings() {
+        var h = lively.morphic.KeyboardDispatcher.global();
+        return h.getGlobalKeybindings().reduce(function(bindings, ea) {
+          (bindings[ea.name] || (bindings[ea.name] = [])).push(ea.keys);
+          return bindings;
+        }, {});
+      }
+
+      function readableKeys(keys) {
+        return keys.replace(/c-/gi, "Control-")
+                .replace(/m-/gi, "Alt-")
+                .replace(/cmd-/gi, "Command-")
+                .replace(/s-/gi, "Shift-");
+      }
+
+      function getDefaultCommands() {
+          var globalBindings = getGlobalCommandKeyBindings();
+          var commandNames = Object.keys(lively.ide.commands.byName);
+          return commandNames.reduce(function(cmds, cmdName) {
+            var cmd = lively.ide.commands.byName[cmdName];
+            var keys = globalBindings[cmdName];
+            cmds[cmdName] = lively.lang.obj.merge(cmd, {
+              name: cmdName,
+              bindKey: keys,
+              readableKeyBinding: keys ? readableKeys(keys.join(" | ")) : null
+            });
+            return cmds;
+          }, {});
+      }
+
+      function printBoundKeys(bindKey) {
+        if (!bindKey) return "";
+        if (typeof bindKey === "string") return bindKey.replace(/([^\s])\|([^\s])/g, "$1 | $2");
+        if (Array.isArray(bindKey)) return bindKey.map(printBoundKeys).join(" | ");
+        if (bindKey[platform]) return printBoundKeys(bindKey[platform]);
+        return "";
+      }
+
+      function getCodeEditorCommands(codeEditor) {
+          var shortcutMgr = lively.ide.CodeEditor.KeyboardShortcuts.defaultInstance(),
+              editorCommands = shortcutMgr.allCommandsOf(codeEditor),
+              cmdNames = Object.keys(editorCommands);
+          return cmdNames.reduce(function(cmds, cmdName) {
+              var cmd = editorCommands[cmdName];
+              cmds[cmdName] = lively.lang.obj.merge(cmd, {
+                exec: function(args) { cmd.exec(codeEditor.aceEditor, args); },
+                readableKeyBinding: printBoundKeys(cmd.bindKey)
+              })
+              return cmds;
+          }, {});
+      }
+
+    },
+
+    getCommandsAsListItems: function(context) {
+      var commands = lively.ide.commands.getCommands(context);
+      return Object.keys(commands).map(function(cmdName) {
+        var cmd = commands[cmdName],
+            label = cmd.desscription || cmdName;
+        if (cmd.readableKeyBinding)
+          label += " (" + cmd.readableKeyBinding + ")"
+        return {isListItem: true,string: label,value: cmd};
+      });
+    },
 
     helper: {
         noCodeEditorActive: function() {
@@ -537,41 +618,20 @@ Object.extend(lively.ide.commands.byName, {
     'lively.ide.commands.execute': {
         description: 'execute command',
         exec: function() {
-            function getDefaultCommands() {
-                return Properties.forEachOwn(lively.ide.commands.byName, function(name, cmd) {
-                    var label = cmd.description || name;
-                    return {isListItem: true, string: label, value: cmd}
-                });
-            }
-            function getCodeEditorCommands(codeEditor) {
-                var shortcutMgr = lively.ide.CodeEditor.KeyboardShortcuts.defaultInstance(),
-                    cmds = shortcutMgr.allCommandsOf(codeEditor),
-                    candidates = Properties.forEachOwn(cmds, function(name, cmd) {
-                        return {
-                            isListItem: true,
-                            string: '[text] ' + name,
-                            value: {exec: function(attribute) { cmd.exec(codeEditor.aceEditor); }}
-                        };
-                    });
-                return candidates;
-            }
-            function getCommands() {
-                var commands = getDefaultCommands(),
-                    focused = lively.morphic.Morph.focusedMorph();
-                focused.isCodeEditor && commands.pushAll(getCodeEditorCommands(focused));
-                return commands;
-            }
-            lively.ide.tools.SelectionNarrowing.getNarrower({
-                name: 'lively.ide.commands.execute.NarrowingList',
-                spec: {
-                    prompt: 'exec command: ',
-                    candidates: getCommands(),
-                    maxItems: 25,
-                    keepInputOnReactivate: true,
-                    actions: [function(candidate) { candidate.exec(); }]
-                }
-            });
-            return true;
+          var focused = lively.morphic.Morph.focusedMorph(),
+              commands = lively.ide.commands.getCommandsAsListItems(
+                {editor: focused.isCodeEditor && focused});
+          lively.ide.tools.SelectionNarrowing.getNarrower({
+              name: 'lively.ide.commands.execute.NarrowingList',
+              spec: {
+                  prompt: 'exec command: ',
+                  candidates: commands,
+                  maxItems: 25,
+                  keepInputOnReactivate: true,
+                  actions: [function(candidate) { candidate.exec(); }]
+              }
+          });
+          return true;
         }
     },
 
@@ -614,7 +674,9 @@ Object.extend(lively.ide.commands.byName, {
             var showsInitialCandidates = true,
                 initialCandidates = [],
                 searchForMatchingDebounced = lively.lang.fun.debounce(1000, searchForMatching),
-                lastSearchInput = null, lastFiles;
+                lastSearchInput = null, lastMatchParts = [],
+                ignoreResult = {}, // flag
+                lastFiles, lastFindCmd;
 
             lively.ide.tools.SelectionNarrowing.getNarrower({
                   name: 'lively.ide.browseFiles.NarrowingList',
@@ -647,14 +709,17 @@ Object.extend(lively.ide.commands.byName, {
               var parts = input.split(" "),
                   matchParts = parts.slice(1).compact().map(function(ea) { return new RegExp(ea, "i"); }),
                   searchAgain = lastSearchInput !== parts[0];
+
               lastSearchInput = parts[0];
+              lastMatchParts = matchParts;
               doSearch(searchAgain, parts[0], matchParts, callback);
             }
 
             function makeCandidates(dir, files) {
-                return files.map(function(fullPath) {
-                    var relativePath = fullPath.slice(dir.length+1).replace(/\\/g, '/');
+                return files.map(function(fileName) {
+                    var relativePath = fileName;
                     if (relativePath.length === 0) return null;
+                    var fullPath = lively.lang.string.joinPath(dir, fileName)
                     return {
                         string: relativePath,
                         value: {dir: dir, fullPath: fullPath, relativePath: relativePath},
@@ -671,8 +736,10 @@ Object.extend(lively.ide.commands.byName, {
                       var opts = {sync: false, matchPath: true}
                       if (input.length < 3) opts.depth = 2;
                       input = "*" + input.replace(/^\*?|\*?$/g, "") + "*";
-                      lively.ide.CommandLineSearch.findFiles(
-                        input, opts, function(err, files) {
+                      lastFindCmd = lively.ide.CommandLineSearch.findFiles(
+                        input, opts, function(err, files, cmd) {
+                          if (lastFindCmd && lastFindCmd.getStartTime() > cmd.getStartTime()) return next(ignoreResult);
+                          lastFindCmd = null;
                           if (err) next(new Error('Cannot fetch files for ' + dir + ":\n" + err));
                           else { lastFiles = files; next(null, files, dir); }
                       });
@@ -680,19 +747,25 @@ Object.extend(lively.ide.commands.byName, {
                     function(files, dir, next) {
                       var paths = files
                         .filter(function(ea) { return !ea.isDirectory; })
-                        .map(function(ea) { return lively.lang.string.joinPath(dir, ea.fileName); })
-                        .filter(function(ea) { return matchParts.every(function(match) { return match.test(ea); })});
+                        // .map(function(ea) { return lively.lang.string.joinPath(dir, ea.fileName); })
+                        .map(function(ea) { return ea.fileName; })
+                        .filter(function(ea) { return lastMatchParts.every(function(match) { return match.test(ea); })});
                       next(null, paths, dir);
                     },
                     function(files, dir, next) { next(null, makeCandidates(dir, files)); }
                 )(function(err, candidates) {
-                    if (err) show("Error browsing files: %s", err);
+                    if (err === ignoreResult) {/*...*/}
+                    else if (err) show("Error browsing files: %s", err);
                     else thenDo(candidates);
                 });
             }
 
         } :
 
+        // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+        // This is the old version that might be faster but relays
+        // on the currently broken  dir watcher
+        // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
           function browseFilesWithDirWatcher() {
 
             var actions = [
@@ -981,22 +1054,21 @@ Object.extend(lively.ide.commands.byName, {
 
             // If there is a list of known dirs first offer to choose from those
             function chooseFromKnownWorkingDirectories(n) {
-              if (!$world.knownWorkingDirectories || !$world.knownWorkingDirectories.length)
-                return n();
-                lively.ide.tools.SelectionNarrowing.getNarrower({
-                  name: 'lively.ide.CommandLineInterface.changeShellBaseDirectory.chooseKnown',
-                  spec: {
-                    candidates: ['choose different directory...'].concat(knownDirectories()),
-                    preselect: 1,
-                    actions: [
-                      function select(c) { n(null, c === 'choose different directory...' ? null : c); },
-                      function remove(c) {
-                        var path = (c && (Object.isString(c) ? c : c.path)) || null;
-                        ($world.knownWorkingDirectories || []).remove(c);
-                        lively.ide.commands.exec('lively.ide.CommandLineInterface.changeShellBaseDirectory');
-                      }]
-                  }
-                })
+              if (!$world.knownWorkingDirectories || !$world.knownWorkingDirectories.length) return n(null,null);
+              lively.ide.tools.SelectionNarrowing.getNarrower({
+                name: 'lively.ide.CommandLineInterface.changeShellBaseDirectory.chooseKnown',
+                spec: {
+                  candidates: ['choose different directory...'].concat(knownDirectories()),
+                  preselect: 1,
+                  actions: [
+                    function select(c) { n(null, c === 'choose different directory...' ? null : c); },
+                    function remove(c) {
+                      var path = (c && (Object.isString(c) ? c : c.path)) || null;
+                      ($world.knownWorkingDirectories || []).remove(c);
+                      lively.ide.commands.exec('lively.ide.CommandLineInterface.changeShellBaseDirectory');
+                    }]
+                }
+              })
             },
 
             // Otherwise choose by navigating the fs
@@ -1418,7 +1490,7 @@ Object.extend(lively.ide.commands.byName, {
                 var fn1 = ed1.getTargetFilePath() || 'no file',
                     fn2 = ed2.getTargetFilePath() || 'no file';
                 var fn = fn1 === fn2 ? fn1 : fn1 + ' vs. ' + fn2;
-                lively.ide.diffNonInteractive(fn, ed1.textString, ed2.textString, function(err, diff) {
+                lively.ide.diffNonInteractiveIgnoringWhitespace(fn, ed1.textString, ed2.textString, function(err, diff) {
                     next(err, fn, diff); });
             }
 
@@ -1450,6 +1522,67 @@ Object.extend(lively.ide.commands.byName, {
             // require('lively.ide.tools.Differ').toRun(function() {
             //     lively.BuildSpec('lively.ide.tools.Differ').createMorph().openInWorldCenter().comeForward();
             // });
+
+            return true;
+        }
+    },
+
+    'lively.morphic.diffMorphScripts': {
+        description: 'diff morph scripts',
+        exec: function(morph1, morph2) {
+
+            var morphs;
+
+            lively.lang.fun.composeAsync(
+                loadRequiredModules,
+                fetchMorphssIfRequired,
+                selectMorph1,
+                selectMorph2,
+                doDiff
+            )();
+
+            function loadRequiredModules(next) {
+                lively.require('lively.ide.tools.Differ').toRun(function() { next(); });
+            }
+
+            function fetchMorphssIfRequired(next) {
+                var world = $world;
+                if (!morph1 || !morph2) morphs = $world.withAllSubmorphsSelect(function(ea) {
+                    return ea.owner === $world || (ea.owner && ea.owner.owner === $world);
+                }).reverse();
+                next(null);
+            }
+
+            function selectMorph1(next) {
+                if (morph1) next(null, morph1);
+                else selectMorph(morphs, next);
+            }
+
+            function selectMorph2(morph1, next) {
+                if (morph2) next(null, morph1, morph2);
+                else selectMorph(morphs.without(morph1), function(err, morph2) {
+                    next(err, morph1, morph2); });
+            }
+
+            function doDiff(m1, m2, next) {
+                lively.ide.diffNonInteractiveMorphScripts(m1, m2, function(err, diff) { next(err); });
+            }
+
+            function selectMorph(morphs, thenDo) {
+                var candidates = morphs.map(function(ea) {
+                    return {isListItem: true, value: ea, string: ea.name || String(ea)};
+                });
+                lively.ide.tools.SelectionNarrowing.getNarrower({
+                    name: 'lively.ide.diffMorphScripts',
+                    setup: function(narrower) { lively.bindings.connect(narrower, 'selection', Global, 'show'); },
+                    input: '',
+                    spec: {
+                        prompt: 'choose editor: ',
+                        candidates: candidates,
+                        actions: [function choose(morph) { thenDo(null, morph); }]
+                    }
+                });
+            }
 
             return true;
         }
@@ -1795,5 +1928,7 @@ Object.extend(lively.ide.commands.defaultBindings, { // bind commands to default
     // normally browser fwd/bwd shortcut:
     'disabled': {mac: ["Command-[", "Command-]"], win: ["Control-[", "Control-]"]},
 });
+
+lively.module("lively.ide.tools.SelectionNarrowing").load();
 
 }) // end of module

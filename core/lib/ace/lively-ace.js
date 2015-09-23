@@ -38,69 +38,62 @@
 
 var ACE_NAMESPACE = "ace";
 
-var global = (function() {
-    return this;
-})();
+var global = (function() { return this; })();
+if (!global && typeof window != "undefined") global = window; // strict mode
 
 
 if (!ACE_NAMESPACE && typeof requirejs !== "undefined")
     return;
 
 
-var _define = function(module, deps, payload) {
-    if (typeof module !== 'string') {
-        if (_define.original)
-            _define.original.apply(window, arguments);
+var define = function(module, deps, payload) {
+    if (typeof module !== "string") {
+        if (define.original)
+            define.original.apply(this, arguments);
         else {
-            console.error('dropping module because define wasn\'t a string.');
+            console.error("dropping module because define wasn\'t a string.");
             console.trace();
         }
         return;
     }
-
     if (arguments.length == 2)
         payload = deps;
-
-    if (!_define.modules) {
-        _define.modules = {};
-        _define.payloads = {};
+    if (!define.modules[module]) {
+        define.payloads[module] = payload;
+        define.modules[module] = null;
     }
-
-    _define.payloads[module] = payload;
-    _define.modules[module] = null;
 };
+
+define.modules = {};
+define.payloads = {};
 
 /**
  * Get at functionality ace.define()ed using the function above
  */
 var _require = function(parentId, module, callback) {
-    if (Object.prototype.toString.call(module) === "[object Array]") {
+    if (typeof module === "string") {
+        var payload = lookup(parentId, module);
+        if (payload != undefined) {
+            callback && callback();
+            return payload;
+        }
+    } else if (Object.prototype.toString.call(module) === "[object Array]") {
         var params = [];
         for (var i = 0, l = module.length; i < l; ++i) {
             var dep = lookup(parentId, module[i]);
-            if (!dep && _require.original)
-                return _require.original.apply(window, arguments);
+            if (dep == undefined && require.original)
+                return;
             params.push(dep);
         }
-        if (callback) {
-            callback.apply(null, params);
-        }
+        return callback && callback.apply(null, params) || true;
     }
-    else if (typeof module === 'string') {
-        var payload = lookup(parentId, module);
-        if (!payload && _require.original)
-            return _require.original.apply(window, arguments);
+};
 
-        if (callback) {
-            callback();
-        }
-
-        return payload;
-    }
-    else {
-        if (_require.original)
-            return _require.original.apply(window, arguments);
-    }
+var require = function(module, callback) {
+    var packagedModule = _require("", module, callback);
+    if (packagedModule == undefined && require.original)
+        return require.original.apply(this, arguments);
+    return packagedModule;
 };
 
 var normalizeModule = function(parentId, moduleName) {
@@ -119,7 +112,6 @@ var normalizeModule = function(parentId, moduleName) {
             moduleName = moduleName.replace(/\/\.\//, "/").replace(/[^\/]+\/\.\.\//, "");
         }
     }
-
     return moduleName;
 };
 
@@ -128,12 +120,11 @@ var normalizeModule = function(parentId, moduleName) {
  * definition function if needed.
  */
 var lookup = function(parentId, moduleName) {
-
     moduleName = normalizeModule(parentId, moduleName);
 
-    var module = _define.modules[moduleName];
+    var module = define.modules[moduleName];
     if (!module) {
-        module = _define.payloads[moduleName];
+        module = define.payloads[moduleName];
         if (typeof module === 'function') {
             var exports = {};
             var mod = {
@@ -149,19 +140,15 @@ var lookup = function(parentId, moduleName) {
 
             var returnValue = module(req, exports, mod);
             exports = returnValue || mod.exports;
-            _define.modules[moduleName] = exports;
-            delete _define.payloads[moduleName];
+            define.modules[moduleName] = exports;
+            delete define.payloads[moduleName];
         }
-        module = _define.modules[moduleName] = exports || module;
+        module = define.modules[moduleName] = exports || module;
     }
     return module;
 };
 
 function exportAce(ns) {
-    var require = function(module, callback) {
-        return _require("", module, callback);
-    };
-
     var root = global;
     if (ns) {
         if (!global[ns])
@@ -170,13 +157,13 @@ function exportAce(ns) {
     }
 
     if (!root.define || !root.define.packaged) {
-        _define.original = root.define;
-        root.define = _define;
+        define.original = root.define;
+        root.define = define;
         root.define.packaged = true;
     }
 
     if (!root.require || !root.require.packaged) {
-        _require.original = root.require;
+        require.original = root.require;
         root.require = require;
         root.require.packaged = true;
     }
@@ -967,16 +954,13 @@ require("./es5-shim");
 ace.define("ace/lib/dom",["require","exports","module"], function(require, exports, module) {
 "use strict";
 
-if (typeof document == "undefined")
-    return;
-
 var XHTML_NS = "http://www.w3.org/1999/xhtml";
 
 exports.getDocumentHead = function(doc) {
     if (!doc)
         doc = document;
     return doc.head || doc.getElementsByTagName("head")[0] || doc.documentElement;
-}
+};
 
 exports.createElement = function(tag, ns) {
     return document.createElementNS ?
@@ -1015,7 +999,7 @@ exports.toggleCssClass = function(el, name) {
         add = false;
         classes.splice(index, 1);
     }
-    if(add)
+    if (add)
         classes.push(name);
 
     el.className = classes.join(" ");
@@ -1051,16 +1035,16 @@ exports.importCssString = function importCssString(cssText, id, doc) {
     
     var style;
     
+    if (id)
+        cssText += "\n/*# sourceURL=ace/css/" + id + " */";
+    
     if (doc.createStyleSheet) {
         style = doc.createStyleSheet();
         style.cssText = cssText;
         if (id)
             style.owningElement.id = id;
     } else {
-        style = doc.createElementNS
-            ? doc.createElementNS(XHTML_NS, "style")
-            : doc.createElement("style");
-
+        style = exports.createElement("style");
         style.appendChild(doc.createTextNode(cssText));
         if (id)
             style.id = id;
@@ -1096,38 +1080,6 @@ exports.getInnerHeight = function(element) {
         element.clientHeight
     );
 };
-
-if (window.pageYOffset !== undefined) {
-    exports.getPageScrollTop = function() {
-        return window.pageYOffset;
-    };
-
-    exports.getPageScrollLeft = function() {
-        return window.pageXOffset;
-    };
-}
-else {
-    exports.getPageScrollTop = function() {
-        return document.body.scrollTop;
-    };
-
-    exports.getPageScrollLeft = function() {
-        return document.body.scrollLeft;
-    };
-}
-
-if (window.getComputedStyle)
-    exports.computedStyle = function(element, style) {
-        if (style)
-            return (window.getComputedStyle(element, "") || {})[style] || "";
-        return window.getComputedStyle(element, "") || {};
-    };
-else
-    exports.computedStyle = function(element, style) {
-        if (style)
-            return element.currentStyle[style];
-        return element.currentStyle;
-    };
 
 exports.scrollbarWidth = function(document) {
     var inner = exports.createElement("ace_inner");
@@ -1165,6 +1117,43 @@ exports.scrollbarWidth = function(document) {
 
     return noScrollbar-withScrollbar;
 };
+
+if (typeof document == "undefined") {
+    exports.importCssString = function() {};
+    return;
+}
+
+if (window.pageYOffset !== undefined) {
+    exports.getPageScrollTop = function() {
+        return window.pageYOffset;
+    };
+
+    exports.getPageScrollLeft = function() {
+        return window.pageXOffset;
+    };
+}
+else {
+    exports.getPageScrollTop = function() {
+        return document.body.scrollTop;
+    };
+
+    exports.getPageScrollLeft = function() {
+        return document.body.scrollLeft;
+    };
+}
+
+if (window.getComputedStyle)
+    exports.computedStyle = function(element, style) {
+        if (style)
+            return (window.getComputedStyle(element, "") || {})[style] || "";
+        return window.getComputedStyle(element, "") || {};
+    };
+else
+    exports.computedStyle = function(element, style) {
+        if (style)
+            return element.currentStyle[style];
+        return element.currentStyle;
+    };
 exports.setInnerHtml = function(el, innerHtml) {
     var element = el.cloneNode(false);//document.createElement("div");
     element.innerHTML = innerHtml;
@@ -1342,8 +1331,8 @@ var Keys = (function() {
            73: 'i',  74: 'j',  75: 'k',  76: 'l',  77: 'm',  78: 'n', 79:  'o',
            80: 'p',  81: 'q',  82: 'r',  83: 's',  84: 't',  85: 'u', 86:  'v',
            87: 'w',  88: 'x',  89: 'y',  90: 'z', 107: '+', 109: '-', 110: '.',
-          187: '=', 188: ',', 189: '-', 190: '.', 191: '/', 192: '`', 219: '[',
-          220: '\\',221: ']', 222: '\''
+          186: ';', 187: '=', 188: ',', 189: '-', 190: '.', 191: '/', 192: '`',
+          219: '[', 220: '\\',221: ']', 222: '\''
         }
     };
     var name, i;
@@ -1373,7 +1362,7 @@ var Keys = (function() {
     })();
 
     ret.KEY_MODS[0] = "";
-    ret.KEY_MODS[-1] = "input";
+    ret.KEY_MODS[-1] = "input-";
 
     return ret;
 })();
@@ -1408,32 +1397,17 @@ exports.normalizeCommandKeys = function normalizeCommandKeys(callback, e, keyCod
         if (keyCode === 18 || keyCode === 17) {
             var location = "location" in e ? e.location : e.keyLocation;
             if (keyCode === 17 && location === 1) {
-                ts = e.timeStamp;
+                if (pressedKeys[keyCode] == 1)
+                    ts = e.timeStamp;
             } else if (keyCode === 18 && hashId === 3 && location === 2) {
-                var dt = -ts;
-                ts = e.timeStamp;
-                dt += ts;
-                if (dt < 3)
+                var dt = e.timeStamp - ts;
+                if (dt < 50)
                     pressedKeys.altGr = true;
             }
         }
     }
 
     if (keyCode in Keys.MODIFIER_KEYS) {
-        switch (Keys.MODIFIER_KEYS[keyCode]) {
-            case "Alt":
-                hashId = 2;
-                break;
-            case "Shift":
-                hashId = 4;
-                break;
-            case "Ctrl":
-                hashId = 1;
-                break;
-            default:
-                hashId = 8;
-                break;
-        }
         keyCode = -1;
     }
 
@@ -1631,6 +1605,29 @@ exports.capture = function(el, eventHandler, releaseCaptureHandler) {
     return onMouseUp;
 };
 
+exports.addTouchMoveListener = function (el, callback) {
+    if ("ontouchmove" in el) {
+        var startx, starty;
+        exports.addListener(el, "touchstart", function (e) {
+            var touchObj = e.changedTouches[0];
+            startx = touchObj.clientX;
+            starty = touchObj.clientY;
+        });
+        exports.addListener(el, "touchmove", function (e) {
+            var factor = 1,
+            touchObj = e.changedTouches[0];
+
+            e.wheelX = -(touchObj.clientX - startx) / factor;
+            e.wheelY = -(touchObj.clientY - starty) / factor;
+
+            startx = touchObj.clientX;
+            starty = touchObj.clientY;
+
+            callback(e);
+        });
+    } 
+};
+
 exports.addMouseWheelListener = function(el, callback) {
     if ("onmousewheel" in el) {
         exports.addListener(el, "mousewheel", function(e) {
@@ -1745,7 +1742,7 @@ exports.addCommandKeyListener = function(el, callback) {
         var lastDefaultPrevented = null;
 
         addListener(el, "keydown", function(e) {
-            pressedKeys[e.keyCode] = true;
+            pressedKeys[e.keyCode] = (pressedKeys[e.keyCode] || 0) + 1;
             var result = keys.normalizeCommandKeys(callback, e, e.keyCode, pressedKeys);
             lastDefaultPrevented = e.defaultPrevented;
             return result;
@@ -1763,14 +1760,14 @@ exports.addCommandKeyListener = function(el, callback) {
         });
 
         if (!pressedKeys) {
-            pressedKeys = Object.create(null);
-            addListener(window, "focus", function(e) {
-                pressedKeys = Object.create(null);
-            });
+            resetPressedKeys();
+            addListener(window, "focus", resetPressedKeys);
         }
     }
 };
-
+function resetPressedKeys(e) {
+    pressedKeys = Object.create(null);
+}
 
 function toUnicode(charCode) {
     var result = charCode.toString(16).toUpperCase();
@@ -1834,7 +1831,7 @@ exports.createKeyboardEvent = function(spec) {
 }
 
 
-if (window.postMessage && !useragent.isOldIE) {
+if (typeof window == "object" && window.postMessage && !useragent.isOldIE) {
     var postMessageId = 1;
     exports.nextTick = function(callback, win) {
         win = win || window;
@@ -1850,11 +1847,11 @@ if (window.postMessage && !useragent.isOldIE) {
     };
 }
 
-exports.nextFrame = window.requestAnimationFrame ||
-    window.mozRequestAnimationFrame ||
-    window.webkitRequestAnimationFrame ||
-    window.msRequestAnimationFrame ||
-    window.oRequestAnimationFrame;
+exports.nextFrame = typeof window == "object" && (window.requestAnimationFrame
+    || window.mozRequestAnimationFrame
+    || window.webkitRequestAnimationFrame
+    || window.msRequestAnimationFrame
+    || window.oRequestAnimationFrame);
 
 if (exports.nextFrame)
     exports.nextFrame = exports.nextFrame.bind(window);
@@ -1917,20 +1914,24 @@ exports.copyArray = function(array){
     return copy;
 };
 
-exports.deepCopy = function (obj) {
+exports.deepCopy = function deepCopy(obj) {
     if (typeof obj !== "object" || !obj)
         return obj;
+    var copy;
+    if (Array.isArray(obj)) {
+        copy = [];
+        for (var key = 0; key < obj.length; key++) {
+            copy[key] = deepCopy(obj[key]);
+        }
+        return copy;
+    }
     var cons = obj.constructor;
     if (cons === RegExp)
         return obj;
     
-    var copy = cons();
+    copy = cons();
     for (var key in obj) {
-        if (typeof obj[key] === "object") {
-            copy[key] = exports.deepCopy(obj[key]);
-        } else {
-            copy[key] = obj[key];
-        }
+        copy[key] = deepCopy(obj[key]);
     }
     return copy;
 };
@@ -2067,13 +2068,13 @@ var TextInput = function(parentNode, host) {
     if (useragent.isTouchPad)
         text.setAttribute("x-palm-disable-auto-cap", true);
 
-    text.wrap = "off";
-    text.autocorrect = "off";
-    text.autocapitalize = "off";
-    text.spellcheck = false;
+    text.setAttribute("wrap", "off");
+    text.setAttribute("autocorrect", "off");
+    text.setAttribute("autocapitalize", "off");
+    text.setAttribute("spellcheck", false);
 
     text.style.opacity = "0";
-    if (useragent.isOldIE) text.style.top = "-100px";
+    if (useragent.isOldIE) text.style.top = "-1000px";
     parentNode.insertBefore(text, parentNode.firstChild);
 
     var PLACEHOLDER = "\x01\x01";
@@ -2094,8 +2095,21 @@ var TextInput = function(parentNode, host) {
         host.onFocus(e);
         resetSelection();
     });
-    this.focus = function() { text.focus(); };
-    this.blur = function() { text.blur(); };
+    this.focus = function() {
+        if (tempStyle) return text.focus();
+        var top = text.style.top;
+        text.style.position = "fixed";
+        text.style.top = "-1000px";
+        text.focus();
+        setTimeout(function() {
+            text.style.position = "";
+            if (text.style.top == "-1000px")
+                text.style.top = top;
+        }, 0);
+    };
+    this.blur = function() {
+        text.blur();
+    };
     this.isFocused = function() {
         return isFocused;
     };
@@ -2112,6 +2126,8 @@ var TextInput = function(parentNode, host) {
     function resetSelection(isEmpty) {
         if (inComposition)
             return;
+        inComposition = true;
+        
         if (inputHandler) {
             selectionStart = 0;
             selectionEnd = isEmpty ? 0 : text.value.length - 1;
@@ -2122,6 +2138,8 @@ var TextInput = function(parentNode, host) {
         try {
             text.setSelectionRange(selectionStart, selectionEnd);
         } catch(e){}
+        
+        inComposition = false;
     }
 
     function resetValue() {
@@ -2296,7 +2314,7 @@ var TextInput = function(parentNode, host) {
         var data = handleClipboardData(e);
         if (typeof data == "string") {
             if (data)
-                host.onPaste(data);
+                host.onPaste(data, e);
             if (useragent.isIE)
                 setTimeout(resetSelection);
             event.preventDefault(e);
@@ -2462,7 +2480,7 @@ var TextInput = function(parentNode, host) {
     this.onContextMenuClose = onContextMenuClose;
     var closeTimeout;
     function onContextMenuClose() {
-        clearTimeout(closeTimeout)
+        clearTimeout(closeTimeout);
         closeTimeout = setTimeout(function () {
             if (tempStyle) {
                 text.style.cssText = tempStyle;
@@ -2504,6 +2522,7 @@ function DefaultHandlers(mouseHandler) {
     editor.setDefaultHandler("tripleclick", this.onTripleClick.bind(mouseHandler));
     editor.setDefaultHandler("quadclick", this.onQuadClick.bind(mouseHandler));
     editor.setDefaultHandler("mousewheel", this.onMouseWheel.bind(mouseHandler));
+    editor.setDefaultHandler("touchmove", this.onTouchMove.bind(mouseHandler));
 
     var exports = ["select", "startSelect", "selectEnd", "selectAllEnd", "selectByWordsEnd",
         "selectByLinesEnd", "dragWait", "dragWaitEnd", "focusWait"];
@@ -2528,9 +2547,10 @@ function DefaultHandlers(mouseHandler) {
         if (button !== 0) {
             var selectionRange = editor.getSelectionRange();
             var selectionEmpty = selectionRange.isEmpty();
-
+            editor.$blockScrolling++;
             if (selectionEmpty)
                 editor.selection.moveToPosition(pos);
+            editor.$blockScrolling--;
             editor.textInput.onContextMenu(ev.domEvent);
             return; // stopping event here breaks contextmenu on ff mac
         }
@@ -2553,7 +2573,7 @@ function DefaultHandlers(mouseHandler) {
     this.startSelect = function(pos, waitForClickSelection) {
         pos = pos || this.editor.renderer.screenToTextCoordinates(this.x, this.y);
         var editor = this.editor;
-        
+        editor.$blockScrolling++;
         if (this.mousedownEvent.getShiftKey())
             editor.selection.selectToPosition(pos);
         else if (!waitForClickSelection)
@@ -2565,12 +2585,13 @@ function DefaultHandlers(mouseHandler) {
         }
         editor.setStyle("ace_selecting");
         this.setState("select");
+        editor.$blockScrolling--;
     };
 
     this.select = function() {
         var anchor, editor = this.editor;
         var cursor = editor.renderer.screenToTextCoordinates(this.x, this.y);
-
+        editor.$blockScrolling++;
         if (this.$clickSelection) {
             var cmp = this.$clickSelection.comparePoint(cursor);
 
@@ -2586,7 +2607,7 @@ function DefaultHandlers(mouseHandler) {
             editor.selection.setSelectionAnchor(anchor.row, anchor.column);
         }
         editor.selection.selectToPosition(cursor);
-
+        editor.$blockScrolling--;
         editor.renderer.scrollCursorIntoView();
     };
 
@@ -2594,7 +2615,7 @@ function DefaultHandlers(mouseHandler) {
         var anchor, editor = this.editor;
         var cursor = editor.renderer.screenToTextCoordinates(this.x, this.y);
         var range = editor.selection[unitName](cursor.row, cursor.column);
-
+        editor.$blockScrolling++;
         if (this.$clickSelection) {
             var cmpStart = this.$clickSelection.comparePoint(range.start);
             var cmpEnd = this.$clickSelection.comparePoint(range.end);
@@ -2618,7 +2639,7 @@ function DefaultHandlers(mouseHandler) {
             editor.selection.setSelectionAnchor(anchor.row, anchor.column);
         }
         editor.selection.selectToPosition(cursor);
-
+        editor.$blockScrolling--;
         editor.renderer.scrollCursorIntoView();
     };
 
@@ -2695,6 +2716,19 @@ function DefaultHandlers(mouseHandler) {
         var t = ev.domEvent.timeStamp;
         var dt = t - (this.$lastScrollTime||0);
         
+        var editor = this.editor;
+        var isScrolable = editor.renderer.isScrollableBy(ev.wheelX * ev.speed, ev.wheelY * ev.speed);
+        if (isScrolable || dt < 200) {
+            this.$lastScrollTime = t;
+            editor.renderer.scrollBy(ev.wheelX * ev.speed, ev.wheelY * ev.speed);
+            return ev.stop();
+        }
+    };
+    
+    this.onTouchMove = function (ev) {
+        var t = ev.domEvent.timeStamp;
+        var dt = t - (this.$lastScrollTime || 0);
+
         var editor = this.editor;
         var isScrolable = editor.renderer.isScrollableBy(ev.wheelX * ev.speed, ev.wheelY * ev.speed);
         if (isScrolable || dt < 200) {
@@ -3564,16 +3598,140 @@ exports.EventEmitter = EventEmitter;
 
 });
 
-ace.define("ace/config",["require","exports","module","ace/lib/lang","ace/lib/oop","ace/lib/net","ace/lib/event_emitter"], function(require, exports, module) {
+ace.define("ace/lib/app_config",["require","exports","module","ace/lib/oop","ace/lib/event_emitter"], function(require, exports, module) {
+"no use strict";
+
+var oop = require("./oop");
+var EventEmitter = require("./event_emitter").EventEmitter;
+
+var optionsProvider = {
+    setOptions: function(optList) {
+        Object.keys(optList).forEach(function(key) {
+            this.setOption(key, optList[key]);
+        }, this);
+    },
+    getOptions: function(optionNames) {
+        var result = {};
+        if (!optionNames) {
+            optionNames = Object.keys(this.$options);
+        } else if (!Array.isArray(optionNames)) {
+            result = optionNames;
+            optionNames = Object.keys(result);
+        }
+        optionNames.forEach(function(key) {
+            result[key] = this.getOption(key);
+        }, this);
+        return result;
+    },
+    setOption: function(name, value) {
+        if (this["$" + name] === value)
+            return;
+        var opt = this.$options[name];
+        if (!opt) {
+            return warn('misspelled option "' + name + '"');
+        }
+        if (opt.forwardTo)
+            return this[opt.forwardTo] && this[opt.forwardTo].setOption(name, value);
+
+        if (!opt.handlesSet)
+            this["$" + name] = value;
+        if (opt && opt.set)
+            opt.set.call(this, value);
+    },
+    getOption: function(name) {
+        var opt = this.$options[name];
+        if (!opt) {
+            return warn('misspelled option "' + name + '"');
+        }
+        if (opt.forwardTo)
+            return this[opt.forwardTo] && this[opt.forwardTo].getOption(name);
+        return opt && opt.get ? opt.get.call(this) : this["$" + name];
+    }
+};
+
+function warn(message) {
+    if (typeof console != "undefined" && console.warn)
+        console.warn.apply(console, arguments);
+}
+
+function reportError(msg, data) {
+    var e = new Error(msg);
+    e.data = data;
+    if (typeof console == "object" && console.error)
+        console.error(e);
+    setTimeout(function() { throw e; });
+}
+
+var AppConfig = function() {
+    this.$defaultOptions = {};
+};
+
+(function() {
+    oop.implement(this, EventEmitter);
+    this.defineOptions = function(obj, path, options) {
+        if (!obj.$options)
+            this.$defaultOptions[path] = obj.$options = {};
+
+        Object.keys(options).forEach(function(key) {
+            var opt = options[key];
+            if (typeof opt == "string")
+                opt = {forwardTo: opt};
+
+            opt.name || (opt.name = key);
+            obj.$options[opt.name] = opt;
+            if ("initialValue" in opt)
+                obj["$" + opt.name] = opt.initialValue;
+        });
+        oop.implement(obj, optionsProvider);
+
+        return this;
+    };
+
+    this.resetOptions = function(obj) {
+        Object.keys(obj.$options).forEach(function(key) {
+            var opt = obj.$options[key];
+            if ("value" in opt)
+                obj.setOption(key, opt.value);
+        });
+    };
+
+    this.setDefaultValue = function(path, name, value) {
+        var opts = this.$defaultOptions[path] || (this.$defaultOptions[path] = {});
+        if (opts[name]) {
+            if (opts.forwardTo)
+                this.setDefaultValue(opts.forwardTo, name, value);
+            else
+                opts[name].value = value;
+        }
+    };
+
+    this.setDefaultValues = function(path, optionHash) {
+        Object.keys(optionHash).forEach(function(key) {
+            this.setDefaultValue(path, key, optionHash[key]);
+        }, this);
+    };
+    
+    this.warn = warn;
+    this.reportError = reportError;
+    
+}).call(AppConfig.prototype);
+
+exports.AppConfig = AppConfig;
+
+});
+
+ace.define("ace/config",["require","exports","module","ace/lib/lang","ace/lib/oop","ace/lib/net","ace/lib/app_config"], function(require, exports, module) {
 "no use strict";
 
 var lang = require("./lib/lang");
 var oop = require("./lib/oop");
 var net = require("./lib/net");
-var EventEmitter = require("./lib/event_emitter").EventEmitter;
+var AppConfig = require("./lib/app_config").AppConfig;
+
+module.exports = exports = new AppConfig();
 
 var global = (function() {
-    return this;
+    return this || typeof window != "undefined" && window;
 })();
 
 var options = {
@@ -3603,8 +3761,6 @@ exports.set = function(key, value) {
 exports.all = function() {
     return lang.copyObject(options);
 };
-oop.implement(exports, EventEmitter);
-
 exports.moduleUrl = function(name, component) {
     if (options.$moduleUrls[name])
         return options.$moduleUrls[name];
@@ -3727,99 +3883,6 @@ function deHyphenate(str) {
     return str.replace(/-(.)/g, function(m, m1) { return m1.toUpperCase(); });
 }
 
-var optionsProvider = {
-    setOptions: function(optList) {
-        Object.keys(optList).forEach(function(key) {
-            this.setOption(key, optList[key]);
-        }, this);
-    },
-    getOptions: function(optionNames) {
-        var result = {};
-        if (!optionNames) {
-            optionNames = Object.keys(this.$options);
-        } else if (!Array.isArray(optionNames)) {
-            result = optionNames;
-            optionNames = Object.keys(result);
-        }
-        optionNames.forEach(function(key) {
-            result[key] = this.getOption(key);
-        }, this);
-        return result;
-    },
-    setOption: function(name, value) {
-        if (this["$" + name] === value)
-            return;
-        var opt = this.$options[name];
-        if (!opt) {
-            if (typeof console != "undefined" && console.warn)
-                console.warn('misspelled option "' + name + '"');
-            return undefined;
-        }
-        if (opt.forwardTo)
-            return this[opt.forwardTo] && this[opt.forwardTo].setOption(name, value);
-
-        if (!opt.handlesSet)
-            this["$" + name] = value;
-        if (opt && opt.set)
-            opt.set.call(this, value);
-    },
-    getOption: function(name) {
-        var opt = this.$options[name];
-        if (!opt) {
-            if (typeof console != "undefined" && console.warn)
-                console.warn('misspelled option "' + name + '"');
-            return undefined;
-        }
-        if (opt.forwardTo)
-            return this[opt.forwardTo] && this[opt.forwardTo].getOption(name);
-        return opt && opt.get ? opt.get.call(this) : this["$" + name];
-    }
-};
-
-var defaultOptions = {};
-exports.defineOptions = function(obj, path, options) {
-    if (!obj.$options)
-        defaultOptions[path] = obj.$options = {};
-
-    Object.keys(options).forEach(function(key) {
-        var opt = options[key];
-        if (typeof opt == "string")
-            opt = {forwardTo: opt};
-
-        opt.name || (opt.name = key);
-        obj.$options[opt.name] = opt;
-        if ("initialValue" in opt)
-            obj["$" + opt.name] = opt.initialValue;
-    });
-    oop.implement(obj, optionsProvider);
-
-    return this;
-};
-
-exports.resetOptions = function(obj) {
-    Object.keys(obj.$options).forEach(function(key) {
-        var opt = obj.$options[key];
-        if ("value" in opt)
-            obj.setOption(key, opt.value);
-    });
-};
-
-exports.setDefaultValue = function(path, name, value) {
-    var opts = defaultOptions[path] || (defaultOptions[path] = {});
-    if (opts[name]) {
-        if (opts.forwardTo)
-            exports.setDefaultValue(opts.forwardTo, name, value);
-        else
-            opts[name].value = value;
-    }
-};
-
-exports.setDefaultValues = function(path, optionHash) {
-    Object.keys(optionHash).forEach(function(key) {
-        exports.setDefaultValue(path, key, optionHash[key]);
-    });
-};
-
 });
 
 ace.define("ace/mouse/mouse_handler",["require","exports","module","ace/lib/event","ace/lib/useragent","ace/mouse/default_handlers","ace/mouse/default_gutter_handler","ace/mouse/mouse_event","ace/mouse/dragdrop_handler","ace/config"], function(require, exports, module) {
@@ -3840,13 +3903,13 @@ var MouseHandler = function(editor) {
     new DefaultHandlers(this);
     new DefaultGutterHandler(this);
     new DragdropHandler(this);
-    
-    var focusEditor = function(e) { 
-        if (!editor.isFocused() && editor.textInput)
-            editor.textInput.moveToMouse(e);
-        editor.focus() 
+
+    var focusEditor = function(e) {
+        if (!document.hasFocus || !document.hasFocus())
+            window.focus();
+        editor.focus();
     };
-    
+
     var mouseTarget = editor.renderer.getMouseEventTarget();
     event.addListener(mouseTarget, "click", this.onMouseEvent.bind(this, "click"));
     event.addListener(mouseTarget, "mousemove", this.onMouseMove.bind(this, "mousemove"));
@@ -3856,10 +3919,11 @@ var MouseHandler = function(editor) {
         event.addMultiMouseDownListener(editor.renderer.scrollBarH.inner, [400, 300, 250], this, "onMouseEvent");
         if (useragent.isIE) {
             event.addListener(editor.renderer.scrollBarV.element, "mousedown", focusEditor);
-            event.addListener(editor.renderer.scrollBarH.element, "mousemove", focusEditor);
+            event.addListener(editor.renderer.scrollBarH.element, "mousedown", focusEditor);
         }
     }
     event.addMouseWheelListener(editor.container, this.onMouseWheel.bind(this, "mousewheel"));
+    event.addTouchMoveListener(editor.container, this.onTouchMove.bind(this, "touchmove"));
 
     var gutterEl = editor.renderer.$gutter;
     event.addListener(gutterEl, "mousedown", this.onMouseEvent.bind(this, "guttermousedown"));
@@ -3877,12 +3941,12 @@ var MouseHandler = function(editor) {
     editor.on("mousemove", function(e){
         if (_self.state || _self.$dragDelay || !_self.$dragEnabled)
             return;
-        
-        var char = editor.renderer.screenToTextCoordinates(e.x, e.y);
+
+        var character = editor.renderer.screenToTextCoordinates(e.x, e.y);
         var range = editor.session.selection.getRange();
         var renderer = editor.renderer;
 
-        if (!range.isEmpty() && range.insideStart(char.row, char.column)) {
+        if (!range.isEmpty() && range.insideStart(character.row, character.column)) {
             renderer.setCursorStyle("default");
         } else {
             renderer.setCursorStyle("");
@@ -3909,6 +3973,14 @@ var MouseHandler = function(editor) {
         mouseEvent.wheelX = e.wheelX;
         mouseEvent.wheelY = e.wheelY;
 
+        this.editor._emit(name, mouseEvent);
+    };
+    
+    this.onTouchMove = function (name, e) {
+        var mouseEvent = new MouseEvent(e, this.editor);
+        mouseEvent.speed = 1;//this.$scrollSpeed * 2;
+        mouseEvent.wheelX = e.wheelX;
+        mouseEvent.wheelY = e.wheelY;
         this.editor._emit(name, mouseEvent);
     };
 
@@ -4114,8 +4186,16 @@ var KeyBinding = function(editor) {
     this.getKeyboardHandler = function() {
         return this.$handlers[this.$handlers.length - 1];
     };
+    
+    this.getStatusText = function() {
+        var data = this.$data;
+        var editor = data.editor;
+        return this.$handlers.map(function(h) {
+            return h.getStatusText && h.getStatusText(editor, data) || "";
+        }).filter(Boolean).join(" ");
+    };
 
-    this.$callKeyboardHandlers = function (hashId, keyString, keyCode, e) {
+    this.$callKeyboardHandlers = function(hashId, keyString, keyCode, e) {
         var toExecute;
         var success = false;
         var commands = this.$editor.commands;
@@ -4887,7 +4967,7 @@ var Selection = function(session) {
         }
 
         var docPos = this.session.screenToDocumentPosition(screenPos.row + rows, screenPos.column);
-
+        
         if (rows !== 0 && chars === 0 && docPos.row === this.lead.row && docPos.column === this.lead.column) {
             if (this.session.lineWidgets && this.session.lineWidgets[docPos.row])
                 docPos.row++;
@@ -4974,7 +5054,7 @@ var Selection = function(session) {
                 this.toSingleRange(data[0]);
                 for (var i = data.length; i--; ) {
                     var r = Range.fromPoints(data[i].start, data[i].end);
-                    if (data.isBackwards)
+                    if (data[i].isBackwards)
                         r.cursor = r.start;
                     this.addRange(r, true);
                 }
@@ -4999,28 +5079,17 @@ var Selection = function(session) {
         }
         return true;
     };
-    this.getRangeOfMovements = function(func) {
-        var start = this.getCursor();
-        try {
-            func.call(null, this);
-            var end = this.getCursor();
-            return Range.fromPoints(start,end);
-        } catch(e) {
-            return Range.fromPoints(start,start);
-        } finally {
-            this.moveCursorToPosition(start);
-        }
-    };
 
 }).call(Selection.prototype);
 
 exports.Selection = Selection;
-
 });
 
-ace.define("ace/tokenizer",["require","exports","module"], function(require, exports, module) {
+ace.define("ace/tokenizer",["require","exports","module","ace/config"], function(require, exports, module) {
 "use strict";
-var MAX_TOKEN_COUNT = 1000;
+
+var config = require("./config");
+var MAX_TOKEN_COUNT = 2000;
 var Tokenizer = function(rules) {
     this.states = rules;
 
@@ -5051,9 +5120,11 @@ var Tokenizer = function(rules) {
                 if (rule.token.length == 1 || matchcount == 1) {
                     rule.token = rule.token[0];
                 } else if (matchcount - 1 != rule.token.length) {
-                    throw new Error("number of classes and regexp groups in '" + 
-                        rule.token + "'\n'" + rule.regex +  "' doesn't match\n"
-                        + (matchcount - 1) + "!=" + rule.token.length);
+                    this.reportError("number of classes and regexp groups doesn't match", { 
+                        rule: rule,
+                        groupCount: matchcount - 1
+                    });
+                    rule.token = rule.token[0];
                 } else {
                     rule.tokenArray = rule.token;
                     rule.token = null;
@@ -5204,6 +5275,7 @@ var Tokenizer = function(rules) {
 
         var match, tokens = [];
         var lastIndex = 0;
+        var matchAttempts = 0;
 
         var token = {type: null, value: ""};
 
@@ -5244,7 +5316,7 @@ var Tokenizer = function(rules) {
                     
                     state = this.states[currentState];
                     if (!state) {
-                        window.console && console.error && console.error(currentState, "doesn't exist");
+                        this.reportError("state doesn't exist", currentState);
                         currentState = "start";
                         state = this.states[currentState];
                     }
@@ -5257,7 +5329,7 @@ var Tokenizer = function(rules) {
             }
 
             if (value) {
-                if (typeof type == "string") {
+                if (typeof type === "string") {
                     if ((!rule || rule.merge !== false) && token.type === type) {
                         token.value += value;
                     } else {
@@ -5279,7 +5351,13 @@ var Tokenizer = function(rules) {
 
             lastIndex = index;
 
-            if (tokens.length > MAX_TOKEN_COUNT) {
+            if (matchAttempts++ > MAX_TOKEN_COUNT) {
+                if (matchAttempts > 2 * line.length) {
+                    this.reportError("infinite loop with in ace tokenizer", {
+                        startState: startState,
+                        line: line
+                    });
+                }
                 while (lastIndex < line.length) {
                     if (token.type)
                         tokens.push(token);
@@ -5306,7 +5384,9 @@ var Tokenizer = function(rules) {
             state : stack.length ? stack : currentState
         };
     };
-
+    
+    this.reportError = config.reportError;
+    
 }).call(Tokenizer.prototype);
 
 exports.Tokenizer = Tokenizer;
@@ -5689,6 +5769,9 @@ var TokenIterator = function(session, initialRow, initialColumn) {
         
         return column;  
     };
+    this.getCurrentTokenPosition = function() {
+        return {row: this.$row, column: this.getCurrentTokenColumn()};
+    };
             
 }).call(TokenIterator.prototype);
 
@@ -6048,6 +6131,71 @@ var Mode = function() {
 exports.Mode = Mode;
 });
 
+ace.define("ace/apply_delta",["require","exports","module"], function(require, exports, module) {
+"use strict";
+
+function throwDeltaError(delta, errorText){
+    console.log("Invalid Delta:", delta);
+    throw "Invalid Delta: " + errorText;
+}
+
+function positionInDocument(docLines, position) {
+    return position.row    >= 0 && position.row    <  docLines.length &&
+           position.column >= 0 && position.column <= docLines[position.row].length;
+}
+
+function validateDelta(docLines, delta) {
+    if (delta.action != "insert" && delta.action != "remove")
+        throwDeltaError(delta, "delta.action must be 'insert' or 'remove'");
+    if (!(delta.lines instanceof Array))
+        throwDeltaError(delta, "delta.lines must be an Array");
+    if (!delta.start || !delta.end)
+       throwDeltaError(delta, "delta.start/end must be an present");
+    var start = delta.start;
+    if (!positionInDocument(docLines, delta.start))
+        throwDeltaError(delta, "delta.start must be contained in document");
+    var end = delta.end;
+    if (delta.action == "remove" && !positionInDocument(docLines, end))
+        throwDeltaError(delta, "delta.end must contained in document for 'remove' actions");
+    var numRangeRows = end.row - start.row;
+    var numRangeLastLineChars = (end.column - (numRangeRows == 0 ? start.column : 0));
+    if (numRangeRows != delta.lines.length - 1 || delta.lines[numRangeRows].length != numRangeLastLineChars)
+        throwDeltaError(delta, "delta.range must match delta lines");
+}
+
+exports.applyDelta = function(docLines, delta, doNotValidate) {
+    
+    var row = delta.start.row;
+    var startColumn = delta.start.column;
+    var line = docLines[row] || "";
+    switch (delta.action) {
+        case "insert":
+            var lines = delta.lines;
+            if (lines.length === 1) {
+                docLines[row] = line.substring(0, startColumn) + delta.lines[0] + line.substring(startColumn);
+            } else {
+                var args = [row, 1].concat(delta.lines);
+                docLines.splice.apply(docLines, args);
+                docLines[row] = line.substring(0, startColumn) + docLines[row];
+                docLines[row + delta.lines.length - 1] += line.substring(startColumn);
+            }
+            break;
+        case "remove":
+            var endColumn = delta.end.column;
+            var endRow = delta.end.row;
+            if (row === endRow) {
+                docLines[row] = line.substring(0, startColumn) + line.substring(endColumn);
+            } else {
+                docLines.splice(
+                    row, endRow - row + 1,
+                    line.substring(0, startColumn) + docLines[endRow].substring(endColumn)
+                );
+            }
+            break;
+    }
+}
+});
+
 ace.define("ace/anchor",["require","exports","module","ace/lib/oop","ace/lib/event_emitter"], function(require, exports, module) {
 "use strict";
 
@@ -6074,70 +6222,46 @@ var Anchor = exports.Anchor = function(doc, row, column) {
         return this.document;
     };
     this.$insertRight = false;
-    this.onChange = function(e) {
-        var delta = e.data;
-        var range = delta.range;
-
-        if (range.start.row == range.end.row && range.start.row != this.row)
+    this.onChange = function(delta) {
+        if (delta.start.row == delta.end.row && delta.start.row != this.row)
             return;
 
-        if (range.start.row > this.row)
+        if (delta.start.row > this.row)
             return;
-
-        if (range.start.row == this.row && range.start.column > this.column)
-            return;
-
-        var row = this.row;
-        var column = this.column;
-        var start = range.start;
-        var end = range.end;
-
-        if (delta.action === "insertText") {
-            if (start.row === row && start.column <= column) {
-                if (start.column === column && this.$insertRight) {
-                } else if (start.row === end.row) {
-                    column += end.column - start.column;
-                } else {
-                    column -= start.column;
-                    row += end.row - start.row;
-                }
-            } else if (start.row !== end.row && start.row < row) {
-                row += end.row - start.row;
-            }
-        } else if (delta.action === "insertLines") {
-            if (start.row === row && column === 0 && this.$insertRight) {
-            }
-            else if (start.row <= row) {
-                row += end.row - start.row;
-            }
-        } else if (delta.action === "removeText") {
-            if (start.row === row && start.column < column) {
-                if (end.column >= column)
-                    column = start.column;
-                else
-                    column = Math.max(0, column - (end.column - start.column));
-
-            } else if (start.row !== end.row && start.row < row) {
-                if (end.row === row)
-                    column = Math.max(0, column - end.column) + start.column;
-                row -= (end.row - start.row);
-            } else if (end.row === row) {
-                row -= end.row - start.row;
-                column = Math.max(0, column - end.column) + start.column;
-            }
-        } else if (delta.action == "removeLines") {
-            if (start.row <= row) {
-                if (end.row <= row)
-                    row -= end.row - start.row;
-                else {
-                    row = start.row;
-                    column = 0;
-                }
-            }
-        }
-
-        this.setPosition(row, column, true);
+            
+        var point = $getTransformedPoint(delta, {row: this.row, column: this.column}, this.$insertRight);
+        this.setPosition(point.row, point.column, true);
     };
+    
+    function $pointsInOrder(point1, point2, equalPointsInOrder) {
+        var bColIsAfter = equalPointsInOrder ? point1.column <= point2.column : point1.column < point2.column;
+        return (point1.row < point2.row) || (point1.row == point2.row && bColIsAfter);
+    }
+            
+    function $getTransformedPoint(delta, point, moveIfEqual) {
+        var deltaIsInsert = delta.action == "insert";
+        var deltaRowShift = (deltaIsInsert ? 1 : -1) * (delta.end.row    - delta.start.row);
+        var deltaColShift = (deltaIsInsert ? 1 : -1) * (delta.end.column - delta.start.column);
+        var deltaStart = delta.start;
+        var deltaEnd = deltaIsInsert ? deltaStart : delta.end; // Collapse insert range.
+        if ($pointsInOrder(point, deltaStart, moveIfEqual)) {
+            return {
+                row: point.row,
+                column: point.column
+            };
+        }
+        if ($pointsInOrder(deltaEnd, point, !moveIfEqual)) {
+            return {
+                row: point.row + deltaRowShift,
+                column: point.column + (point.row == deltaEnd.row ? deltaColShift : 0)
+            };
+        }
+        
+        return {
+            row: deltaStart.row,
+            column: deltaStart.column
+        };
+    }
     this.setPosition = function(row, column, noClip) {
         var pos;
         if (noClip) {
@@ -6197,22 +6321,23 @@ var Anchor = exports.Anchor = function(doc, row, column) {
 
 });
 
-ace.define("ace/document",["require","exports","module","ace/lib/oop","ace/lib/event_emitter","ace/range","ace/anchor"], function(require, exports, module) {
+ace.define("ace/document",["require","exports","module","ace/lib/oop","ace/apply_delta","ace/lib/event_emitter","ace/range","ace/anchor"], function(require, exports, module) {
 "use strict";
 
 var oop = require("./lib/oop");
+var applyDelta = require("./apply_delta").applyDelta;
 var EventEmitter = require("./lib/event_emitter").EventEmitter;
 var Range = require("./range").Range;
 var Anchor = require("./anchor").Anchor;
 
-var Document = function(text) {
-    this.$lines = [];
-    if (text.length === 0) {
+var Document = function(textOrLines) {
+    this.$lines = [""];
+    if (textOrLines.length === 0) {
         this.$lines = [""];
-    } else if (Array.isArray(text)) {
-        this._insertLines(0, text);
+    } else if (Array.isArray(textOrLines)) {
+        this.insertMergedLines({row: 0, column: 0}, textOrLines);
     } else {
-        this.insert({row: 0, column:0}, text);
+        this.insert({row: 0, column:0}, textOrLines);
     }
 };
 
@@ -6220,9 +6345,9 @@ var Document = function(text) {
 
     oop.implement(this, EventEmitter);
     this.setValue = function(text) {
-        var len = this.getLength();
-        this.remove(new Range(0, 0, len, this.getLine(len-1).length));
-        this.insert({row: 0, column:0}, text);
+        var len = this.getLength() - 1;
+        this.remove(new Range(0, 0, len, this.getLine(len).length));
+        this.insert({row: 0, column: 0}, text);
     };
     this.getValue = function() {
         return this.getAllLines().join(this.getNewLineCharacter());
@@ -6230,14 +6355,15 @@ var Document = function(text) {
     this.createAnchor = function(row, column) {
         return new Anchor(this, row, column);
     };
-    if ("aaa".split(/a/).length === 0)
+    if ("aaa".split(/a/).length === 0) {
         this.$split = function(text) {
             return text.replace(/\r\n|\r/g, "\n").split("\n");
         };
-    else
+    } else {
         this.$split = function(text) {
             return text.split(/\r\n|\r|\n/);
         };
+    }
 
 
     this.$detectNewLine = function(text) {
@@ -6284,251 +6410,246 @@ var Document = function(text) {
         return this.$lines.length;
     };
     this.getTextRange = function(range) {
-        if (range.start.row == range.end.row) {
-            return this.getLine(range.start.row)
-                .substring(range.start.column, range.end.column);
-        }
-        var lines = this.getLines(range.start.row, range.end.row);
-        lines[0] = (lines[0] || "").substring(range.start.column);
-        var l = lines.length - 1;
-        if (range.end.row - range.start.row == l)
-            lines[l] = lines[l].substring(0, range.end.column);
-        return lines.join(this.getNewLineCharacter());
+        return this.getLinesForRange(range).join(this.getNewLineCharacter());
     };
-
+    this.getLinesForRange = function(range) {
+        var lines;
+        if (range.start.row === range.end.row) {
+            lines = [this.getLine(range.start.row).substring(range.start.column, range.end.column)];
+        } else {
+            lines = this.getLines(range.start.row, range.end.row);
+            lines[0] = (lines[0] || "").substring(range.start.column);
+            var l = lines.length - 1;
+            if (range.end.row - range.start.row == l)
+                lines[l] = lines[l].substring(0, range.end.column);
+        }
+        return lines;
+    };
+    this.insertLines = function(row, lines) {
+        console.warn("Use of document.insertLines is deprecated. Use the insertFullLines method instead.");
+        return this.insertFullLines(row, lines);
+    };
+    this.removeLines = function(firstRow, lastRow) {
+        console.warn("Use of document.removeLines is deprecated. Use the removeFullLines method instead.");
+        return this.removeFullLines(firstRow, lastRow);
+    };
+    this.insertNewLine = function(position) {
+        console.warn("Use of document.insertNewLine is deprecated. Use insertMergedLines(position, [\'\', \'\']) instead.");
+        return this.insertMergedLines(position, ["", ""]);
+    };
+    this.insert = function(position, text) {
+        if (this.getLength() <= 1)
+            this.$detectNewLine(text);
+        
+        return this.insertMergedLines(position, this.$split(text));
+    };
+    this.insertInLine = function(position, text) {
+        var start = this.clippedPos(position.row, position.column);
+        var end = this.pos(position.row, position.column + text.length);
+        
+        this.applyDelta({
+            start: start,
+            end: end,
+            action: "insert",
+            lines: [text]
+        }, true);
+        
+        return this.clonePos(end);
+    };
+    
+    this.clippedPos = function(row, column) {
+        var length = this.getLength();
+        if (row === undefined) {
+            row = length;
+        } else if (row < 0) {
+            row = 0;
+        } else if (row >= length) {
+            row = length - 1;
+            column = undefined;
+        }
+        var line = this.getLine(row);
+        if (column == undefined)
+            column = line.length;
+        column = Math.min(Math.max(column, 0), line.length);
+        return {row: row, column: column};
+    };
+    
+    this.clonePos = function(pos) {
+        return {row: pos.row, column: pos.column};
+    };
+    
+    this.pos = function(row, column) {
+        return {row: row, column: column};
+    };
+    
     this.$clipPosition = function(position) {
         var length = this.getLength();
         if (position.row >= length) {
             position.row = Math.max(0, length - 1);
-            position.column = this.getLine(length-1).length;
-        } else if (position.row < 0)
-            position.row = 0;
-        return position;
-    };
-    this.insert = function(position, text) {
-        if (!text || text.length === 0)
-            return position;
-
-        position = this.$clipPosition(position);
-        if (this.getLength() <= 1)
-            this.$detectNewLine(text);
-
-        var lines = this.$split(text);
-        var firstLine = lines.splice(0, 1)[0];
-        var lastLine = lines.length == 0 ? null : lines.splice(lines.length - 1, 1)[0];
-
-        position = this.insertInLine(position, firstLine);
-        if (lastLine !== null) {
-            position = this.insertNewLine(position); // terminate first line
-            position = this._insertLines(position.row, lines);
-            position = this.insertInLine(position, lastLine || "");
+            position.column = this.getLine(length - 1).length;
+        } else {
+            position.row = Math.max(0, position.row);
+            position.column = Math.min(Math.max(position.column, 0), this.getLine(position.row).length);
         }
         return position;
     };
-    this.insertLines = function(row, lines) {
-        if (row >= this.getLength())
-            return this.insert({row: row, column: 0}, "\n" + lines.join("\n"));
-        return this._insertLines(Math.max(row, 0), lines);
-    };
-    this._insertLines = function(row, lines) {
-        if (lines.length == 0)
-            return {row: row, column: 0};
-        while (lines.length > 0xF000) {
-            var end = this._insertLines(row, lines.slice(0, 0xF000));
-            lines = lines.slice(0xF000);
-            row = end.row;
+    this.insertFullLines = function(row, lines) {
+        row = Math.min(Math.max(row, 0), this.getLength());
+        var column = 0;
+        if (row < this.getLength()) {
+            lines = lines.concat([""]);
+            column = 0;
+        } else {
+            lines = [""].concat(lines);
+            row--;
+            column = this.$lines[row].length;
         }
-
-        var args = [row, 0];
-        args.push.apply(args, lines);
-        this.$lines.splice.apply(this.$lines, args);
-
-        var range = new Range(row, 0, row + lines.length, 0);
-        var delta = {
-            action: "insertLines",
-            range: range,
+        this.insertMergedLines({row: row, column: column}, lines);
+    };    
+    this.insertMergedLines = function(position, lines) {
+        var start = this.clippedPos(position.row, position.column);
+        var end = {
+            row: start.row + lines.length - 1,
+            column: (lines.length == 1 ? start.column : 0) + lines[lines.length - 1].length
+        };
+        
+        this.applyDelta({
+            start: start,
+            end: end,
+            action: "insert",
             lines: lines
-        };
-        this._signal("change", { data: delta });
-        return range.end;
-    };
-    this.insertNewLine = function(position) {
-        position = this.$clipPosition(position);
-        var line = this.$lines[position.row] || "";
-
-        this.$lines[position.row] = line.substring(0, position.column);
-        this.$lines.splice(position.row + 1, 0, line.substring(position.column, line.length));
-
-        var end = {
-            row : position.row + 1,
-            column : 0
-        };
-
-        var delta = {
-            action: "insertText",
-            range: Range.fromPoints(position, end),
-            text: this.getNewLineCharacter()
-        };
-        this._signal("change", { data: delta });
-
-        return end;
-    };
-    this.insertInLine = function(position, text) {
-        if (text.length == 0)
-            return position;
-
-        var line = this.$lines[position.row] || "";
-
-        this.$lines[position.row] = line.substring(0, position.column) + text
-                + line.substring(position.column);
-
-        var end = {
-            row : position.row,
-            column : position.column + text.length
-        };
-
-        var delta = {
-            action: "insertText",
-            range: Range.fromPoints(position, end),
-            text: text
-        };
-        this._signal("change", { data: delta });
-
-        return end;
+        });
+        
+        return this.clonePos(end);
     };
     this.remove = function(range) {
-        if (!(range instanceof Range))
-            range = Range.fromPoints(range.start, range.end);
-        range.start = this.$clipPosition(range.start);
-        range.end = this.$clipPosition(range.end);
-
-        if (range.isEmpty())
-            return range.start;
-
-        var firstRow = range.start.row;
-        var lastRow = range.end.row;
-
-        if (range.isMultiLine()) {
-            var firstFullRow = range.start.column == 0 ? firstRow : firstRow + 1;
-            var lastFullRow = lastRow - 1;
-
-            if (range.end.column > 0)
-                this.removeInLine(lastRow, 0, range.end.column);
-
-            if (lastFullRow >= firstFullRow)
-                this._removeLines(firstFullRow, lastFullRow);
-
-            if (firstFullRow != firstRow) {
-                this.removeInLine(firstRow, range.start.column, this.getLine(firstRow).length);
-                this.removeNewLine(range.start.row);
-            }
-        }
-        else {
-            this.removeInLine(firstRow, range.start.column, range.end.column);
-        }
-        return range.start;
+        var start = this.clippedPos(range.start.row, range.start.column);
+        var end = this.clippedPos(range.end.row, range.end.column);
+        this.applyDelta({
+            start: start,
+            end: end,
+            action: "remove",
+            lines: this.getLinesForRange({start: start, end: end})
+        });
+        return this.clonePos(start);
     };
     this.removeInLine = function(row, startColumn, endColumn) {
-        if (startColumn == endColumn)
-            return;
-
-        var range = new Range(row, startColumn, row, endColumn);
-        var line = this.getLine(row);
-        var removed = line.substring(startColumn, endColumn);
-        var newLine = line.substring(0, startColumn) + line.substring(endColumn, line.length);
-        this.$lines.splice(row, 1, newLine);
-
-        var delta = {
-            action: "removeText",
-            range: range,
-            text: removed
-        };
-        this._signal("change", { data: delta });
-        return range.start;
+        var start = this.clippedPos(row, startColumn);
+        var end = this.clippedPos(row, endColumn);
+        
+        this.applyDelta({
+            start: start,
+            end: end,
+            action: "remove",
+            lines: this.getLinesForRange({start: start, end: end})
+        }, true);
+        
+        return this.clonePos(start);
     };
-    this.removeLines = function(firstRow, lastRow) {
-        if (firstRow < 0 || lastRow >= this.getLength())
-            return this.remove(new Range(firstRow, 0, lastRow + 1, 0));
-        return this._removeLines(firstRow, lastRow);
-    };
-
-    this._removeLines = function(firstRow, lastRow) {
-        var range = new Range(firstRow, 0, lastRow + 1, 0);
-        var removed = this.$lines.splice(firstRow, lastRow - firstRow + 1);
-
-        var delta = {
-            action: "removeLines",
-            range: range,
-            nl: this.getNewLineCharacter(),
-            lines: removed
-        };
-        this._signal("change", { data: delta });
-        return removed;
+    this.removeFullLines = function(firstRow, lastRow) {
+        firstRow = Math.min(Math.max(0, firstRow), this.getLength() - 1);
+        lastRow  = Math.min(Math.max(0, lastRow ), this.getLength() - 1);
+        var deleteFirstNewLine = lastRow == this.getLength() - 1 && firstRow > 0;
+        var deleteLastNewLine  = lastRow  < this.getLength() - 1;
+        var startRow = ( deleteFirstNewLine ? firstRow - 1                  : firstRow                    );
+        var startCol = ( deleteFirstNewLine ? this.getLine(startRow).length : 0                           );
+        var endRow   = ( deleteLastNewLine  ? lastRow + 1                   : lastRow                     );
+        var endCol   = ( deleteLastNewLine  ? 0                             : this.getLine(endRow).length ); 
+        var range = new Range(startRow, startCol, endRow, endCol);
+        var deletedLines = this.$lines.slice(firstRow, lastRow + 1);
+        
+        this.applyDelta({
+            start: range.start,
+            end: range.end,
+            action: "remove",
+            lines: this.getLinesForRange(range)
+        });
+        return deletedLines;
     };
     this.removeNewLine = function(row) {
-        var firstLine = this.getLine(row);
-        var secondLine = this.getLine(row+1);
-
-        var range = new Range(row, firstLine.length, row+1, 0);
-        var line = firstLine + secondLine;
-
-        this.$lines.splice(row, 2, line);
-
-        var delta = {
-            action: "removeText",
-            range: range,
-            text: this.getNewLineCharacter()
-        };
-        this._signal("change", { data: delta });
+        if (row < this.getLength() - 1 && row >= 0) {
+            this.applyDelta({
+                start: this.pos(row, this.getLine(row).length),
+                end: this.pos(row + 1, 0),
+                action: "remove",
+                lines: ["", ""]
+            });
+        }
     };
     this.replace = function(range, text) {
-        if (!(range instanceof Range))
+        if (!range instanceof Range)
             range = Range.fromPoints(range.start, range.end);
-        if (text.length == 0 && range.isEmpty())
+        if (text.length === 0 && range.isEmpty())
             return range.start;
         if (text == this.getTextRange(range))
             return range.end;
 
         this.remove(range);
+        var end;
         if (text) {
-            var end = this.insert(range.start, text);
+            end = this.insert(range.start, text);
         }
         else {
             end = range.start;
         }
-
+        
         return end;
     };
     this.applyDeltas = function(deltas) {
         for (var i=0; i<deltas.length; i++) {
-            var delta = deltas[i];
-            var range = Range.fromPoints(delta.range.start, delta.range.end);
-
-            if (delta.action == "insertLines")
-                this.insertLines(range.start.row, delta.lines);
-            else if (delta.action == "insertText")
-                this.insert(range.start, delta.text);
-            else if (delta.action == "removeLines")
-                this._removeLines(range.start.row, range.end.row - 1);
-            else if (delta.action == "removeText")
-                this.remove(range);
+            this.applyDelta(deltas[i]);
         }
     };
     this.revertDeltas = function(deltas) {
         for (var i=deltas.length-1; i>=0; i--) {
-            var delta = deltas[i];
-
-            var range = Range.fromPoints(delta.range.start, delta.range.end);
-
-            if (delta.action == "insertLines")
-                this._removeLines(range.start.row, range.end.row - 1);
-            else if (delta.action == "insertText")
-                this.remove(range);
-            else if (delta.action == "removeLines")
-                this._insertLines(range.start.row, delta.lines);
-            else if (delta.action == "removeText")
-                this.insert(range.start, delta.text);
+            this.revertDelta(deltas[i]);
         }
+    };
+    this.applyDelta = function(delta, doNotValidate) {
+        var isInsert = delta.action == "insert";
+        if (isInsert ? delta.lines.length <= 1 && !delta.lines[0]
+            : !Range.comparePoints(delta.start, delta.end)) {
+            return;
+        }
+        
+        if (isInsert && delta.lines.length > 20000)
+            this.$splitAndapplyLargeDelta(delta, 20000);
+        applyDelta(this.$lines, delta, doNotValidate);
+        this._signal("change", delta);
+    };
+    
+    this.$splitAndapplyLargeDelta = function(delta, MAX) {
+        var lines = delta.lines;
+        var l = lines.length;
+        var row = delta.start.row; 
+        var column = delta.start.column;
+        var from = 0, to = 0;
+        do {
+            from = to;
+            to += MAX - 1;
+            var chunk = lines.slice(from, to);
+            if (to > l) {
+                delta.lines = chunk;
+                delta.start.row = row + from;
+                delta.start.column = column;
+                break;
+            }
+            chunk.push("");
+            this.applyDelta({
+                start: this.pos(row + from, column),
+                end: this.pos(row + to, column = 0),
+                action: delta.action,
+                lines: chunk
+            }, true);
+        } while(true);
+    };
+    this.revertDelta = function(delta) {
+        this.applyDelta({
+            start: this.clonePos(delta.start),
+            end: this.clonePos(delta.end),
+            action: (delta.action == "insert" ? "remove" : "insert"),
+            lines: delta.lines.slice()
+        });
     };
     this.indexToPosition = function(index, startRow) {
         var lines = this.$lines || this.getAllLines();
@@ -6579,11 +6700,10 @@ var BackgroundTokenizer = function(tokenizer, editor) {
         var endLine = -1;
         var doc = self.doc;
 
+        var startLine = currentLine;
         while (self.lines[currentLine])
             currentLine++;
-
-        var startLine = currentLine;
-
+        
         var len = doc.getLength();
         var processedLines = 0;
         self.running = false;
@@ -6645,13 +6765,12 @@ var BackgroundTokenizer = function(tokenizer, editor) {
     }
 
     this.$updateOnChange = function(delta) {
-        var range = delta.range;
-        var startRow = range.start.row;
-        var len = range.end.row - startRow;
+        var startRow = delta.start.row;
+        var len = delta.end.row - startRow;
 
         if (len === 0) {
             this.lines[startRow] = null;
-        } else if (delta.action == "removeText" || delta.action == "removeLines") {
+        } else if (delta.action == "remove") {
             this.lines.splice(startRow, len + 1, null);
             this.states.splice(startRow, len + 1, null);
         } else {
@@ -7123,14 +7242,13 @@ var RangeList = function() {
         this.session = null;
     };
 
-    this.$onChange = function(e) {
-        var changeRange = e.data.range;
-        if (e.data.action[0] == "i"){
-            var start = changeRange.start;
-            var end = changeRange.end;
+    this.$onChange = function(delta) {
+        if (delta.action == "insert"){
+            var start = delta.start;
+            var end = delta.end;
         } else {
-            var end = changeRange.start;
-            var start = changeRange.end;
+            var end = delta.start;
+            var start = delta.end;
         }
         var startRow = start.row;
         var endRow = end.row;
@@ -7862,7 +7980,8 @@ function Folding() {
             
         this.$foldMode = foldMode;
         
-        this.removeListener('change', this.$updateFoldWidgets);
+        this.off('change', this.$updateFoldWidgets);
+        this.off('tokenizerUpdate', this.$tokenizerUpdateFoldWidgets);
         this._emit("changeAnnotation");
         
         if (!foldMode || this.$foldStyle == "manual") {
@@ -7875,8 +7994,9 @@ function Folding() {
         this.getFoldWidgetRange = foldMode.getFoldWidgetRange.bind(foldMode, this, this.$foldStyle);
         
         this.$updateFoldWidgets = this.updateFoldWidgets.bind(this);
+        this.$tokenizerUpdateFoldWidgets = this.tokenizerUpdateFoldWidgets.bind(this);
         this.on('change', this.$updateFoldWidgets);
-        
+        this.on('tokenizerUpdate', this.$tokenizerUpdateFoldWidgets);
     };
 
     this.getParentFoldRangeData = function (row, ignoreCurrent) {
@@ -7957,7 +8077,7 @@ function Folding() {
             this.foldAll(startRow, endRow, options.all ? 10000 : 0);
         } else if (options.children) {
             endRow = range ? range.end.row : this.getLength();
-            this.foldAll(row + 1, range.end.row, options.all ? 10000 : 0);
+            this.foldAll(row + 1, endRow, options.all ? 10000 : 0);
         } else if (range) {
             if (options.all) 
                 range.collapseChildren = 10000;
@@ -7991,15 +8111,13 @@ function Folding() {
         }
     };
 
-    this.updateFoldWidgets = function(e) {
-        var delta = e.data;
-        var range = delta.range;
-        var firstRow = range.start.row;
-        var len = range.end.row - firstRow;
+    this.updateFoldWidgets = function(delta) {
+        var firstRow = delta.start.row;
+        var len = delta.end.row - firstRow;
 
         if (len === 0) {
             this.foldWidgets[firstRow] = null;
-        } else if (delta.action == "removeText" || delta.action == "removeLines") {
+        } else if (delta.action == 'remove') {
             this.foldWidgets.splice(firstRow, len + 1, null);
         } else {
             var args = Array(len + 1);
@@ -8007,7 +8125,13 @@ function Folding() {
             this.foldWidgets.splice.apply(this.foldWidgets, args);
         }
     };
-
+    this.tokenizerUpdateFoldWidgets = function(e) {
+        var rows = e.data;
+        if (rows.first != rows.last) {
+            if (this.foldWidgets.length > rows.first)
+                this.foldWidgets.splice(rows.first, this.foldWidgets.length);
+        }
+    }
 }
 
 exports.Folding = Folding;
@@ -8103,7 +8227,7 @@ function BracketMatch() {
             typeRe = new RegExp(
                 "(\\.?" +
                 token.type.replace(".", "\\.").replace("rparen", ".paren")
-                    .replace(/\b(?:end|start|begin)\b/, "")
+                    .replace(/\b(?:end)\b/, "(?:start|begin|end)")
                 + ")+"
             );
         }
@@ -8155,7 +8279,7 @@ function BracketMatch() {
             typeRe = new RegExp(
                 "(\\.?" +
                 token.type.replace(".", "\\.").replace("lparen", ".paren")
-                    .replace(/\b(?:end|start|begin)\b/, "")
+                    .replace(/\b(?:start|begin)\b/, "(?:start|begin|end)")
                 + ")+"
             );
         }
@@ -8221,7 +8345,7 @@ var EditSession = function(text, mode) {
     this.$foldData = [];
     this.$foldData.toString = function() {
         return this.join("\n");
-    }
+    };
     this.on("changeFold", this.onChangeFold.bind(this));
     this.$onChange = this.onChange.bind(this);
 
@@ -8302,13 +8426,12 @@ var EditSession = function(text, mode) {
         this.$resetRowCache(fold.start.row);
     };
 
-    this.onChange = function(e) {
-        var delta = e.data;
+    this.onChange = function(delta) {
         this.$modified = true;
 
-        this.$resetRowCache(delta.range.start.row);
+        this.$resetRowCache(delta.start.row);
 
-        var removedFolds = this.$updateInternalDataOnChange(e);
+        var removedFolds = this.$updateInternalDataOnChange(delta);
         if (!this.$fromUndo && this.$undoManager && !delta.ignore) {
             this.$deltasDoc.push(delta);
             if (removedFolds && removedFolds.length != 0) {
@@ -8322,7 +8445,7 @@ var EditSession = function(text, mode) {
         }
 
         this.bgTokenizer && this.bgTokenizer.$updateOnChange(delta);
-        this._signal("change", e);
+        this._signal("change", delta);
     };
     this.setValue = function(text) {
         this.doc.setValue(text);
@@ -8666,17 +8789,17 @@ var EditSession = function(text, mode) {
         config.loadModule(["mode", path], function(m) {
             if (this.$modeId !== path)
                 return cb && cb();
-            if (this.$modes[path] && !options)
-                return this.$onChangeMode(this.$modes[path]);
-            if (m && m.Mode) {
+            if (this.$modes[path] && !options) {
+                this.$onChangeMode(this.$modes[path]);
+            } else if (m && m.Mode) {
                 m = new m.Mode(options);
                 if (!options) {
                     this.$modes[path] = m;
                     m.$id = path;
                 }
                 this.$onChangeMode(m);
-                cb && cb();
             }
+            cb && cb();
         }.bind(this));
         if (!this.$mode)
             this.$onChangeMode(this.$modes["ace/mode/text"], true);
@@ -8739,10 +8862,7 @@ var EditSession = function(text, mode) {
         try {
             this.$worker = this.$mode.createWorker(this);
         } catch (e) {
-            if (typeof console == "object") {
-                console.log("Could not load worker");
-                console.log(e);
-            }    
+            config.warn("Could not load worker", e);
             this.$worker = null;
         }
     };
@@ -8841,6 +8961,9 @@ var EditSession = function(text, mode) {
     this.remove = function(range) {
         return this.doc.remove(range);
     };
+    this.removeFullLines = function(firstRow, lastRow){
+        return this.doc.removeFullLines(firstRow, lastRow);
+    };
     this.undoChanges = function(deltas, dontSelect) {
         if (!deltas.length)
             return;
@@ -8893,39 +9016,36 @@ var EditSession = function(text, mode) {
 
     this.$getUndoSelection = function(deltas, isUndo, lastUndoRange) {
         function isInsert(delta) {
-            var insert =
-                delta.action === "insertText" || delta.action === "insertLines";
-            return isUndo ? !insert : insert;
+            return isUndo ? delta.action !== "insert" : delta.action === "insert";
         }
 
         var delta = deltas[0];
         var range, point;
         var lastDeltaIsInsert = false;
         if (isInsert(delta)) {
-            range = Range.fromPoints(delta.range.start, delta.range.end);
+            range = Range.fromPoints(delta.start, delta.end);
             lastDeltaIsInsert = true;
         } else {
-            range = Range.fromPoints(delta.range.start, delta.range.start);
+            range = Range.fromPoints(delta.start, delta.start);
             lastDeltaIsInsert = false;
         }
 
         for (var i = 1; i < deltas.length; i++) {
             delta = deltas[i];
             if (isInsert(delta)) {
-                point = delta.range.start;
+                point = delta.start;
                 if (range.compare(point.row, point.column) == -1) {
-                    range.setStart(delta.range.start);
+                    range.setStart(point);
                 }
-                point = delta.range.end;
+                point = delta.end;
                 if (range.compare(point.row, point.column) == 1) {
-                    range.setEnd(delta.range.end);
+                    range.setEnd(point);
                 }
                 lastDeltaIsInsert = true;
             } else {
-                point = delta.range.start;
+                point = delta.start;
                 if (range.compare(point.row, point.column) == -1) {
-                    range =
-                        Range.fromPoints(delta.range.start, delta.range.start);
+                    range = Range.fromPoints(delta.start, delta.start);
                 }
                 lastDeltaIsInsert = false;
             }
@@ -8993,7 +9113,7 @@ var EditSession = function(text, mode) {
     this.indentRows = function(startRow, endRow, indentString) {
         indentString = indentString.replace(/\t/g, this.getTabString());
         for (var row=startRow; row<=endRow; row++)
-            this.insert({row: row, column:0}, indentString);
+            this.doc.insertInLine({row: row, column: 0}, indentString);
     };
     this.outdentRows = function (range) {
         var rowRange = range.collapseRows();
@@ -9043,11 +9163,11 @@ var EditSession = function(text, mode) {
             x.end.row += diff;
             return x;
         });
-
+        
         var lines = dir == 0
             ? this.doc.getLines(firstRow, lastRow)
-            : this.doc.removeLines(firstRow, lastRow);
-        this.doc.insertLines(firstRow+diff, lines);
+            : this.doc.removeFullLines(firstRow, lastRow);
+        this.doc.insertFullLines(firstRow+diff, lines);
         folds.length && this.addFolds(folds);
         return diff;
     };
@@ -9143,12 +9263,10 @@ var EditSession = function(text, mode) {
     };
     this.setWrapLimitRange = function(min, max) {
         if (this.$wrapLimitRange.min !== min || this.$wrapLimitRange.max !== max) {
-            this.$wrapLimitRange = {
-                min: min,
-                max: max
-            };
+            this.$wrapLimitRange = { min: min, max: max };
             this.$modified = true;
-            this._signal("changeWrapMode");
+            if (this.$useWrapMode)
+                this._signal("changeWrapMode");
         }
     };
     this.adjustWrapLimit = function(desiredLimit, $printMargin) {
@@ -9191,34 +9309,23 @@ var EditSession = function(text, mode) {
         };
     };
 
-    this.$updateInternalDataOnChange = function(e) {
+    this.$updateInternalDataOnChange = function(delta) {
         var useWrapMode = this.$useWrapMode;
-        var len;
-        var action = e.data.action;
-        var firstRow = e.data.range.start.row;
-        var lastRow = e.data.range.end.row;
-        var start = e.data.range.start;
-        var end = e.data.range.end;
+        var action = delta.action;
+        var start = delta.start;
+        var end = delta.end;
+        var firstRow = start.row;
+        var lastRow = end.row;
+        var len = lastRow - firstRow;
         var removedFolds = null;
-
-        if (action.indexOf("Lines") != -1) {
-            if (action == "insertLines") {
-                lastRow = firstRow + (e.data.lines.length);
-            } else {
-                lastRow = firstRow;
-            }
-            len = e.data.lines ? e.data.lines.length : lastRow - firstRow;
-        } else {
-            len = lastRow - firstRow;
-        }
-
+        
         this.$updating = true;
         if (len != 0) {
-            if (action.indexOf("remove") != -1) {
+            if (action === "remove") {
                 this[useWrapMode ? "$wrapData" : "$rowLengthCache"].splice(firstRow, len);
 
                 var foldLines = this.$foldData;
-                removedFolds = this.getFoldsInRange(e.data.range);
+                removedFolds = this.getFoldsInRange(delta);
                 this.removeFolds(removedFolds);
 
                 var foldLine = this.getFoldLine(end.row);
@@ -9275,9 +9382,9 @@ var EditSession = function(text, mode) {
                 }
             }
         } else {
-            len = Math.abs(e.data.range.start.column - e.data.range.end.column);
-            if (action.indexOf("remove") != -1) {
-                removedFolds = this.getFoldsInRange(e.data.range);
+            len = Math.abs(delta.start.column - delta.end.column);
+            if (action === "remove") {
+                removedFolds = this.getFoldsInRange(delta);
                 this.removeFolds(removedFolds);
 
                 len = -len;
@@ -9359,7 +9466,7 @@ var EditSession = function(text, mode) {
         TAB_SPACE = 12;
 
 
-    this.$computeWrapSplits = function(tokens, wrapLimit) {
+    this.$computeWrapSplits = function(tokens, wrapLimit, tabSize) {
         if (tokens.length == 0) {
             return [];
         }
@@ -9370,6 +9477,31 @@ var EditSession = function(text, mode) {
 
         var isCode = this.$wrapAsCode;
 
+        var indentedSoftWrap = this.$indentedSoftWrap;
+        var maxIndent = wrapLimit <= Math.max(2 * tabSize, 8)
+            || indentedSoftWrap === false ? 0 : Math.floor(wrapLimit / 2);
+
+        function getWrapIndent() {
+            var indentation = 0;
+            if (maxIndent === 0)
+                return indentation;
+            if (indentedSoftWrap) {
+                for (var i = 0; i < tokens.length; i++) {
+                    var token = tokens[i];
+                    if (token == SPACE)
+                        indentation += 1;
+                    else if (token == TAB)
+                        indentation += tabSize;
+                    else if (token == TAB_SPACE)
+                        continue;
+                    else
+                        break;
+                }
+            }
+            if (isCode && indentedSoftWrap !== false)
+                indentation += tabSize;
+            return Math.min(indentation, maxIndent);
+        }
         function addSplit(screenPos) {
             var displayed = tokens.slice(lastSplit, screenPos);
             var len = displayed.length;
@@ -9381,13 +9513,17 @@ var EditSession = function(text, mode) {
                     len -= 1;
                 });
 
+            if (!splits.length) {
+                indent = getWrapIndent();
+                splits.indent = indent;
+            }
             lastDocSplit += len;
             splits.push(lastDocSplit);
             lastSplit = screenPos;
         }
-
-        while (displayLength - lastSplit > wrapLimit) {
-            var split = lastSplit + wrapLimit;
+        var indent = 0;
+        while (displayLength - lastSplit > wrapLimit - indent) {
+            var split = lastSplit + wrapLimit - indent;
             if (tokens[split - 1] >= SPACE && tokens[split] >= SPACE) {
                 addSplit(split);
                 continue;
@@ -9414,7 +9550,7 @@ var EditSession = function(text, mode) {
                 addSplit(split);
                 continue;
             }
-            var minSplit = Math.max(split - (isCode ? 10 : wrapLimit-(wrapLimit>>2)), lastSplit - 1);
+            var minSplit = Math.max(split - (wrapLimit -(wrapLimit>>2)), lastSplit - 1);
             while (split > minSplit && tokens[split] < PLACEHOLDER_START) {
                 split --;
             }
@@ -9437,7 +9573,7 @@ var EditSession = function(text, mode) {
             split = lastSplit + wrapLimit;
             if (tokens[split] == CHAR_EXT)
                 split--;
-            addSplit(split);
+            addSplit(split - indent);
         }
         return splits;
     };
@@ -9513,6 +9649,16 @@ var EditSession = function(text, mode) {
             return this.$wrapData[row].length + 1;
         }
     };
+
+    this.getRowWrapIndent = function(screenRow) {
+        if (this.$useWrapMode) {
+            var pos = this.screenToDocumentPosition(screenRow, Number.MAX_VALUE);
+            var splits = this.$wrapData[pos.row];
+            return splits.length && splits[0] < pos.column ? splits.indent : 0;
+        } else {
+            return 0;
+        }
+    }
     this.getScreenLastRowColumn = function(screenRow) {
         var pos = this.screenToDocumentPosition(screenRow, Number.MAX_VALUE);
         return this.documentToScreenColumn(pos.row, pos.column);
@@ -9603,20 +9749,21 @@ var EditSession = function(text, mode) {
             line = this.getLine(docRow);
             foldLine = null;
         }
-
+        var wrapIndent = 0;
         if (this.$useWrapMode) {
             var splits = this.$wrapData[docRow];
             if (splits) {
                 var splitIndex = Math.floor(screenRow - row);
                 column = splits[splitIndex];
                 if(splitIndex > 0 && splits.length) {
+                    wrapIndent = splits.indent;
                     docColumn = splits[splitIndex - 1] || splits[splits.length - 1];
                     line = line.substring(docColumn);
                 }
             }
         }
 
-        docColumn += this.$getStringScreenWidth(line, screenColumn)[1];
+        docColumn += this.$getStringScreenWidth(line, screenColumn - wrapIndent)[1];
         if (this.$useWrapMode && docColumn >= column)
             docColumn = column - 1;
 
@@ -9688,6 +9835,7 @@ var EditSession = function(text, mode) {
             textLine = this.getLine(docRow).substring(0, docColumn);
             foldStartRow = docRow;
         }
+        var wrapIndent = 0;
         if (this.$useWrapMode) {
             var wrapRow = this.$wrapData[foldStartRow];
             if (wrapRow) {
@@ -9699,12 +9847,13 @@ var EditSession = function(text, mode) {
                 textLine = textLine.substring(
                     wrapRow[screenRowOffset - 1] || 0, textLine.length
                 );
+                wrapIndent = screenRowOffset > 0 ? wrapRow.indent : 0;
             }
         }
 
         return {
             row: screenRow,
-            column: this.$getStringScreenWidth(textLine)[0]
+            column: wrapIndent + this.$getStringScreenWidth(textLine)[0]
         };
     };
     this.documentToScreenColumn = function(row, docColumn) {
@@ -9812,6 +9961,7 @@ config.defineOptions(EditSession.prototype, "session", {
 
             if (this.$wrap == value)
                 return;
+            this.$wrap = value;
             if (!value) {
                 this.setUseWrapMode(false);
             } else {
@@ -9819,7 +9969,6 @@ config.defineOptions(EditSession.prototype, "session", {
                 this.setWrapLimitRange(col, col);
                 this.setUseWrapMode(true);
             }
-            this.$wrap = value;
         },
         get: function() {
             if (this.getUseWrapMode()) {
@@ -9849,6 +9998,7 @@ config.defineOptions(EditSession.prototype, "session", {
         },
         initialValue: "auto"
     },
+    indentedSoftWrap: { initialValue: true },
     firstLineNumber: {
         set: function() {this._signal("changeBreakpoint");},
         initialValue: 1
@@ -9917,8 +10067,8 @@ var Search = function() {
         this.$options = options;
     };
     this.find = function(session) {
-        var iterator = this.$matchIterator(session, this.$options);
-
+        var options = this.$options;
+        var iterator = this.$matchIterator(session, options);
         if (!iterator)
             return false;
 
@@ -9926,7 +10076,13 @@ var Search = function() {
         iterator.forEach(function(range, row, offset) {
             if (!range.start) {
                 var column = range.offset + (offset || 0);
-                firstRange = new Range(row, column, row, column+range.length);
+                firstRange = new Range(row, column, row, column + range.length);
+                if (!range.length && options.start && options.start.start
+                    && options.skipCurrent != false && firstRange.isEqual(options.start)
+                ) {
+                    firstRange = null;
+                    return false;
+                }
             } else
                 firstRange = range;
             return true;
@@ -10036,8 +10192,7 @@ var Search = function() {
         if (!re)
             return false;
 
-        var self = this, callback, backwards = options.backwards;
-
+        var callback;
         if (options.$isMultiLine) {
             var len = re.length;
             var matchIterator = function(line, row, offset) {
@@ -10062,7 +10217,7 @@ var Search = function() {
                 if (callback(range))
                     return true;
             };
-        } else if (backwards) {
+        } else if (options.backwards) {
             var matchIterator = function(line, row, startIndex) {
                 var matches = lang.getMatchOffsets(line, re);
                 for (var i = matches.length-1; i >= 0; i--)
@@ -10077,11 +10232,13 @@ var Search = function() {
                         return true;
             };
         }
+        
+        var lineIterator = this.$lineIterator(session, options);
 
         return {
             forEach: function(_callback) {
                 callback = _callback;
-                self.$lineIterator(session, options).forEach(matchIterator);
+                lineIterator.forEach(matchIterator);
             }
         };
     };
@@ -10247,9 +10404,12 @@ MultiHashHandler.prototype = HashHandler.prototype;
         }
     };
 
-    this.bindKey = function(key, command, asDefault) {
-        if (typeof key == "object")
+    this.bindKey = function(key, command, position) {
+        if (typeof key == "object") {
+            if (position == undefined)
+                position = key.position;
             key = key[this.platform];
+        }
         if (!key)
             return;
         if (typeof command == "function")
@@ -10270,11 +10430,15 @@ MultiHashHandler.prototype = HashHandler.prototype;
             }
             var binding = this.parseKeys(keyPart);
             var id = KEY_MODS[binding.hashId] + binding.key;
-            this._addCommandToBinding(chain + id, command, asDefault);
+            this._addCommandToBinding(chain + id, command, position);
         }, this);
     };
     
-    this._addCommandToBinding = function(keyId, command, asDefault) {
+    function getPosition(command) {
+        return typeof command == "object" && command.bindKey
+            && command.bindKey.position || 0;
+    }
+    this._addCommandToBinding = function(keyId, command, position) {
         var ckb = this.commandKeyBinding, i;
         if (!command) {
             delete ckb[keyId];
@@ -10286,11 +10450,21 @@ MultiHashHandler.prototype = HashHandler.prototype;
             } else if ((i = ckb[keyId].indexOf(command)) != -1) {
                 ckb[keyId].splice(i, 1);
             }
-            
-            if (asDefault || command.isDefault)
-                ckb[keyId].unshift(command);
-            else
-                ckb[keyId].push(command);
+
+            if (typeof position != "number") {
+                if (position || command.isDefault)
+                    position = -100;
+                else
+                   position = getPosition(command);
+            }
+            var commands = ckb[keyId];
+            for (i = 0; i < commands.length; i++) {
+                var other = commands[i];
+                var otherPos = getPosition(other);
+                if (otherPos > position)
+                    break;
+            }
+            commands.splice(i, 0, command);
         }
     };
 
@@ -10376,9 +10550,17 @@ MultiHashHandler.prototype = HashHandler.prototype;
             }
         }
         
-        if (data.$keyChain && keyCode > 0)
-            data.$keyChain = "";
+        if (data.$keyChain) {
+            if ((!hashId || hashId == 4) && keyString.length == 1)
+                data.$keyChain = data.$keyChain.slice(0, -key.length - 1); // wait for input
+            else if (hashId == -1 || keyCode > 0)
+                data.$keyChain = ""; // reset keyChain
+        }
         return {command: command};
+    };
+    
+    this.getStatusText = function(editor, data) {
+        return data.$keyChain || "";
     };
 
 }).call(HashHandler.prototype);
@@ -10558,29 +10740,33 @@ exports.commands = [{
     name: "fold",
     bindKey: bindKey("Alt-L|Ctrl-F1", "Command-Alt-L|Command-F1"),
     exec: function(editor) { editor.session.toggleFold(false); },
+    multiSelectAction: "forEach",
     scrollIntoView: "center",
     readOnly: true
 }, {
     name: "unfold",
     bindKey: bindKey("Alt-Shift-L|Ctrl-Shift-F1", "Command-Alt-Shift-L|Command-Shift-F1"),
     exec: function(editor) { editor.session.toggleFold(true); },
+    multiSelectAction: "forEach",
     scrollIntoView: "center",
     readOnly: true
 }, {
     name: "toggleFoldWidget",
     bindKey: bindKey("F2", "F2"),
     exec: function(editor) { editor.session.toggleFoldWidget(); },
+    multiSelectAction: "forEach",
     scrollIntoView: "center",
     readOnly: true
 }, {
     name: "toggleParentFoldWidget",
     bindKey: bindKey("Alt-F2", "Alt-F2"),
     exec: function(editor) { editor.session.toggleFoldWidget(true); },
+    multiSelectAction: "forEach",
     scrollIntoView: "center",
     readOnly: true
 }, {
     name: "foldall",
-    bindKey: bindKey("Ctrl-Alt-0", "Ctrl-Command-Option-0"),
+    bindKey: bindKey(null, "Ctrl-Command-Option-0"),
     exec: function(editor) { editor.session.foldAll(); },
     scrollIntoView: "center",
     readOnly: true
@@ -10666,12 +10852,14 @@ exports.commands = [{
     bindKey: bindKey("Shift-Up", "Shift-Up"),
     exec: function(editor) { editor.getSelection().selectUp(); },
     multiSelectAction: "forEach",
+    scrollIntoView: "cursor",
     readOnly: true
 }, {
     name: "golineup",
     bindKey: bindKey("Up", "Up|Ctrl-P"),
     exec: function(editor, args) { editor.navigateUp(args.times); },
     multiSelectAction: "forEach",
+    scrollIntoView: "cursor",
     readOnly: true
 }, {
     name: "selecttoend",
@@ -10856,18 +11044,32 @@ exports.commands = [{
     bindKey: bindKey("Ctrl-P", "Ctrl-P"),
     exec: function(editor) { editor.jumpToMatching(); },
     multiSelectAction: "forEach",
+    scrollIntoView: "animate",
     readOnly: true
 }, {
     name: "selecttomatching",
     bindKey: bindKey("Ctrl-Shift-P", "Ctrl-Shift-P"),
     exec: function(editor) { editor.jumpToMatching(true); },
     multiSelectAction: "forEach",
+    scrollIntoView: "animate",
+    readOnly: true
+}, {
+    name: "expandToMatching",
+    bindKey: bindKey("Ctrl-Shift-M", "Ctrl-Shift-M"),
+    exec: function(editor) { editor.jumpToMatching(true, true); },
+    multiSelectAction: "forEach",
+    scrollIntoView: "animate",
     readOnly: true
 }, {
     name: "passKeysToBrowser",
-    bindKey: bindKey("null", "null"),
+    bindKey: bindKey(null, null),
     exec: function() {},
     passEvent: true,
+    readOnly: true
+}, {
+    name: "copy",
+    exec: function(editor) {
+    },
     readOnly: true
 },
 {
@@ -10883,6 +11085,12 @@ exports.commands = [{
     },
     scrollIntoView: "cursor",
     multiSelectAction: "forEach"
+}, {
+    name: "paste",
+    exec: function(editor, args) {
+        editor.$handlePaste(args);
+    },
+    scrollIntoView: "cursor"
 }, {
     name: "removeline",
     bindKey: bindKey("Ctrl-D", "Command-D"),
@@ -10917,11 +11125,13 @@ exports.commands = [{
     name: "modifyNumberUp",
     bindKey: bindKey("Ctrl-Shift-Up", "Alt-Shift-Up"),
     exec: function(editor) { editor.modifyNumber(1); },
+    scrollIntoView: "cursor",
     multiSelectAction: "forEach"
 }, {
     name: "modifyNumberDown",
     bindKey: bindKey("Ctrl-Shift-Down", "Alt-Shift-Down"),
     exec: function(editor) { editor.modifyNumber(-1); },
+    scrollIntoView: "cursor",
     multiSelectAction: "forEach"
 }, {
     name: "replace",
@@ -11088,7 +11298,7 @@ exports.commands = [{
         var isBackwards = editor.selection.isBackwards();
         var selectionStart = isBackwards ? editor.selection.getSelectionLead() : editor.selection.getSelectionAnchor();
         var selectionEnd = isBackwards ? editor.selection.getSelectionAnchor() : editor.selection.getSelectionLead();
-        var firstLineEndCol = editor.session.doc.getLine(selectionStart.row).length
+        var firstLineEndCol = editor.session.doc.getLine(selectionStart.row).length;
         var selectedText = editor.session.doc.getTextRange(editor.selection.getRange());
         var selectedCount = selectedText.replace(/\n\s*/, " ").length;
         var insertLine = editor.session.doc.getLine(selectionStart.row);
@@ -11099,7 +11309,7 @@ exports.commands = [{
                 curLine = " " + curLine;
             }
             insertLine += curLine;
-        };
+        }
 
         if (selectionEnd.row + 1 < (editor.session.doc.getLength() - 1)) {
             insertLine += editor.session.doc.getNewLineCharacter();
@@ -11260,16 +11470,23 @@ var Editor = function(renderer, session) {
             args: commadEvent.args,
             scrollTop: this.renderer.scrollTop
         };
+        if (this.curOp.command.name && this.curOp.command.scrollIntoView !== undefined)
+            this.$blockScrolling++;
     };
 
     this.endOperation = function(e) {
         if (this.curOp) {
             if (e && e.returnValue === false)
                 return this.curOp = null;
-                
+            this._signal("beforeEndOperation");
             var command = this.curOp.command;
-            if (command && command.scrollIntoView) {
-                switch (command.scrollIntoView) {
+            if (command.name && this.$blockScrolling > 0)
+                this.$blockScrolling--;
+            var scrollIntoView = command && command.scrollIntoView;
+            if (scrollIntoView) {
+                switch (scrollIntoView) {
+                    case "center-animate":
+                        scrollIntoView = "animate";
                     case "center":
                         this.renderer.scrollCursorIntoView(null, 0.5);
                         break;
@@ -11287,7 +11504,7 @@ var Editor = function(renderer, session) {
                     default:
                         break;
                 }
-                if (command.scrollIntoView == "animate")
+                if (scrollIntoView == "animate")
                     this.renderer.animateScrolling(this.curOp.scrollTop);
             }
             
@@ -11351,6 +11568,8 @@ var Editor = function(renderer, session) {
     this.setSession = function(session) {
         if (this.session == session)
             return;
+        if (this.curOp) this.endOperation();
+        this.curOp = {};
 
         var oldSession = this.session;
         if (oldSession) {
@@ -11450,6 +11669,8 @@ var Editor = function(renderer, session) {
             oldSession: oldSession
         });
         
+        this.curOp = null;
+        
         oldSession && oldSession._signal("changeEditor", {oldEditor: this});
         session && session._signal("changeEditor", {editor: this});
     };
@@ -11537,12 +11758,18 @@ var Editor = function(renderer, session) {
             var iterator = new TokenIterator(self.session, pos.row, pos.column);
             var token = iterator.getCurrentToken();
             
-            if (!token || token.type.indexOf('tag-name') === -1) {
+            if (!token || !/\b(?:tag-open|tag-name)/.test(token.type)) {
                 session.removeMarker(session.$tagHighlight);
                 session.$tagHighlight = null;
                 return;
             }
-
+            
+            if (token.type.indexOf("tag-open") != -1) {
+                token = iterator.stepForward();
+                if (!token)
+                    return;
+            }
+            
             var tag = token.value;
             var depth = 0;
             var prevToken = iterator.stepBackward();
@@ -11628,18 +11855,12 @@ var Editor = function(renderer, session) {
     this.$cursorChange = function() {
         this.renderer.updateCursor();
     };
-    this.onDocumentChange = function(e) {
-        var delta = e.data;
-        var range = delta.range;
-        var lastRow;
+    this.onDocumentChange = function(delta) {
+        var wrap = this.session.$useWrapMode;
+        var lastRow = (delta.start.row == delta.end.row ? delta.end.row : Infinity);
+        this.renderer.updateLines(delta.start.row, lastRow, wrap);
 
-        if (range.start.row == range.end.row && delta.action != "insertLines" && delta.action != "removeLines")
-            lastRow = range.end.row;
-        else
-            lastRow = Infinity;
-        this.renderer.updateLines(range.start.row, lastRow, this.session.$useWrapMode);
-
-        this._signal("change", e);
+        this._signal("change", delta);
         this.$cursorChange();
         this.$updateHighlightActiveLine();
     };
@@ -11661,6 +11882,10 @@ var Editor = function(renderer, session) {
         this.$cursorChange();
 
         if (!this.$blockScrolling) {
+            config.warn("Automatically scrolling cursor into view after selection change",
+                "this will be disabled in the next version",
+                "set editor.$blockScrolling = Infinity to disable this message"
+            );
             this.renderer.scrollCursorIntoView();
         }
 
@@ -11800,12 +12025,33 @@ var Editor = function(renderer, session) {
     this.onCut = function() {
         this.commands.exec("cut", this);
     };
-    this.onPaste = function(text) {
-        if (this.$readOnly)
-            return;
-        var e = {text: text};
+    this.onPaste = function(text, event) {
+        var e = {text: text, event: event};
+        this.commands.exec("paste", this, e);
+    };
+    
+    this.$handlePaste = function(e) {
+        if (typeof e == "string") 
+            e = {text: e};
         this._signal("paste", e);
-        this.insert(e.text, true);
+        var text = e.text;
+        if (!this.inMultiSelectMode || this.inVirtualSelectionMode) {
+            this.insert(text);
+        } else {
+            var lines = text.split(/\r\n|\r|\n/);
+            var ranges = this.selection.rangeList.ranges;
+    
+            if (lines.length > ranges.length || lines.length < 2 || !lines[1])
+                return this.commands.exec("insertstring", this, text);
+    
+            for (var i = ranges.length; i--;) {
+                var range = ranges[i];
+                if (!range.isEmpty())
+                    this.session.remove(range);
+    
+                this.session.insert(range.start, lines[i]);
+            }
+        }
     };
 
     this.execCommand = function(command, args) {
@@ -12248,15 +12494,7 @@ var Editor = function(renderer, session) {
     };
     this.removeLines = function() {
         var rows = this.$getSelectedRows();
-        var range;
-        if (rows.first === 0 || rows.last+1 < this.session.getLength())
-            range = new Range(rows.first, 0, rows.last+1, 0);
-        else
-            range = new Range(
-                rows.first-1, this.session.getLine(rows.first-1).length,
-                rows.last, this.session.getLine(rows.last).length
-            );
-        this.session.remove(range);
+        this.session.removeFullLines(rows.first, rows.last);
         this.clearSelection();
     };
 
@@ -12278,67 +12516,71 @@ var Editor = function(renderer, session) {
         }
     };
     this.moveLinesDown = function() {
-        this.$moveLines(function(firstRow, lastRow) {
-            return this.session.moveLinesDown(firstRow, lastRow);
-        });
+        this.$moveLines(1, false);
     };
     this.moveLinesUp = function() {
-        this.$moveLines(function(firstRow, lastRow) {
-            return this.session.moveLinesUp(firstRow, lastRow);
-        });
+        this.$moveLines(-1, false);
     };
     this.moveText = function(range, toPosition, copy) {
         return this.session.moveText(range, toPosition, copy);
     };
     this.copyLinesUp = function() {
-        this.$moveLines(function(firstRow, lastRow) {
-            this.session.duplicateLines(firstRow, lastRow);
-            return 0;
-        });
+        this.$moveLines(-1, true);
     };
     this.copyLinesDown = function() {
-        this.$moveLines(function(firstRow, lastRow) {
-            return this.session.duplicateLines(firstRow, lastRow);
-        });
+        this.$moveLines(1, true);
     };
-    this.$moveLines = function(mover) {
+    this.$moveLines = function(dir, copy) {
+        var rows, moved;
         var selection = this.selection;
         if (!selection.inMultiSelectMode || this.inVirtualSelectionMode) {
             var range = selection.toOrientedRange();
-            var rows = this.$getSelectedRows(range);
-            var linesMoved = mover.call(this, rows.first, rows.last);
-            range.moveBy(linesMoved, 0);
+            rows = this.$getSelectedRows(range);
+            moved = this.session.$moveLines(rows.first, rows.last, copy ? 0 : dir);
+            if (copy && dir == -1) moved = 0;
+            range.moveBy(moved, 0);
             selection.fromOrientedRange(range);
         } else {
             var ranges = selection.rangeList.ranges;
             selection.rangeList.detach(this.session);
-
-            for (var i = ranges.length; i--; ) {
+            this.inVirtualSelectionMode = true;
+            
+            var diff = 0;
+            var totalDiff = 0;
+            var l = ranges.length;
+            for (var i = 0; i < l; i++) {
                 var rangeIndex = i;
-                var rows = ranges[i].collapseRows();
-                var last = rows.end.row;
-                var first = rows.start.row;
-                while (i--) {
-                    rows = ranges[i].collapseRows();
-                    if (first - rows.end.row <= 1)
-                        first = rows.end.row;
-                    else
+                ranges[i].moveBy(diff, 0);
+                rows = this.$getSelectedRows(ranges[i]);
+                var first = rows.first;
+                var last = rows.last;
+                while (++i < l) {
+                    if (totalDiff) ranges[i].moveBy(totalDiff, 0);
+                    var subRows = this.$getSelectedRows(ranges[i]);
+                    if (copy && subRows.first != last)
                         break;
+                    else if (!copy && subRows.first > last + 1)
+                        break;
+                    last = subRows.last;
                 }
-                i++;
-
-                var linesMoved = mover.call(this, first, last);
-                while (rangeIndex >= i) {
-                    ranges[rangeIndex].moveBy(linesMoved, 0);
-                    rangeIndex--;
+                i--;
+                diff = this.session.$moveLines(first, last, copy ? 0 : dir);
+                if (copy && dir == -1) rangeIndex = i + 1;
+                while (rangeIndex <= i) {
+                    ranges[rangeIndex].moveBy(diff, 0);
+                    rangeIndex++;
                 }
+                if (!copy) diff = 0;
+                totalDiff += diff;
             }
+            
             selection.fromOrientedRange(selection.ranges[0]);
             selection.rangeList.attach(this.session);
+            this.inVirtualSelectionMode = false;
         }
     };
-    this.$getSelectedRows = function() {
-        var range = this.getSelectionRange().collapseRows();
+    this.$getSelectedRows = function(range) {
+        range = (range || this.getSelectionRange()).collapseRows();
 
         return {
             first: this.session.getRowFoldStart(range.start.row),
@@ -12959,6 +13201,7 @@ config.defineOptions(Editor.prototype, "editor", {
     useSoftTabs: "session",
     tabSize: "session",
     wrap: "session",
+    indentedSoftWrap: "session",
     foldStyle: "session",
     mode: "session"
 });
@@ -12974,42 +13217,39 @@ var UndoManager = function() {
 
 (function() {
     this.execute = function(options) {
-        var deltas = options.args[0];
+        var deltaSets = options.args[0];
         this.$doc  = options.args[1];
         if (options.merge && this.hasUndo()){
             this.dirtyCounter--;
-            deltas = this.$undoStack.pop().concat(deltas);
+            deltaSets = this.$undoStack.pop().concat(deltaSets);
         }
-        this.$undoStack.push(deltas);
+        this.$undoStack.push(deltaSets);
         this.$redoStack = [];
-
         if (this.dirtyCounter < 0) {
             this.dirtyCounter = NaN;
         }
         this.dirtyCounter++;
     };
     this.undo = function(dontSelect) {
-        var deltas = this.$undoStack.pop();
+        var deltaSets = this.$undoStack.pop();
         var undoSelectionRange = null;
-        if (deltas) {
-            undoSelectionRange =
-                this.$doc.undoChanges(deltas, dontSelect);
-            this.$redoStack.push(deltas);
+        if (deltaSets) {
+            undoSelectionRange = this.$doc.undoChanges(this.$deserializeDeltas(deltaSets), dontSelect);
+            this.$redoStack.push(deltaSets);
             this.dirtyCounter--;
         }
 
         return undoSelectionRange;
     };
     this.redo = function(dontSelect) {
-        var deltas = this.$redoStack.pop();
+        var deltaSets = this.$redoStack.pop();
         var redoSelectionRange = null;
-        if (deltas) {
+        if (deltaSets) {
             redoSelectionRange =
-                this.$doc.redoChanges(deltas, dontSelect);
-            this.$undoStack.push(deltas);
+                this.$doc.redoChanges(this.$deserializeDeltas(deltaSets), dontSelect);
+            this.$undoStack.push(deltaSets);
             this.dirtyCounter++;
         }
-
         return redoSelectionRange;
     };
     this.reset = function() {
@@ -13029,7 +13269,48 @@ var UndoManager = function() {
     this.isClean = function() {
         return this.dirtyCounter === 0;
     };
-
+    this.$serializeDeltas = function(deltaSets) {
+        return cloneDeltaSetsObj(deltaSets, $serializeDelta);
+    };
+    this.$deserializeDeltas = function(deltaSets) {
+        return cloneDeltaSetsObj(deltaSets, $deserializeDelta);
+    };
+    
+    function $serializeDelta(delta){
+        return {
+            action: delta.action,
+            start: delta.start,
+            end: delta.end,
+            lines: delta.lines.length == 1 ? null : delta.lines,
+            text: delta.lines.length == 1 ? delta.lines[0] : null,
+        };
+    }
+        
+    function $deserializeDelta(delta) {
+        return {
+            action: delta.action,
+            start: delta.start,
+            end: delta.end,
+            lines: delta.lines || [delta.text]
+        };
+    }
+    
+    function cloneDeltaSetsObj(deltaSets_old, fnGetModifiedDelta) {
+        var deltaSets_new = new Array(deltaSets_old.length);
+        for (var i = 0; i < deltaSets_old.length; i++) {
+            var deltaSet_old = deltaSets_old[i];
+            var deltaSet_new = { group: deltaSet_old.group, deltas: new Array(deltaSet_old.length)};
+            
+            for (var j = 0; j < deltaSet_old.deltas.length; j++) {
+                var delta_old = deltaSet_old.deltas[j];
+                deltaSet_new.deltas[j] = fnGetModifiedDelta(delta_old);
+            }
+            
+            deltaSets_new[i] = deltaSet_new;
+        }
+        return deltaSets_new;
+    }
+    
 }).call(UndoManager.prototype);
 
 exports.UndoManager = UndoManager;
@@ -13106,15 +13387,13 @@ var Gutter = function(parentEl) {
         }
     };
 
-    this.$updateAnnotations = function (e) {
+    this.$updateAnnotations = function (delta) {
         if (!this.$annotations.length)
             return;
-        var delta = e.data;
-        var range = delta.range;
-        var firstRow = range.start.row;
-        var len = range.end.row - firstRow;
+        var firstRow = delta.start.row;
+        var len = delta.end.row - firstRow;
         if (len === 0) {
-        } else if (delta.action == "removeText" || delta.action == "removeLines") {
+        } else if (delta.action == 'remove') {
             this.$annotations.splice(firstRow, len + 1, null);
         } else {
             var args = new Array(len + 1);
@@ -13352,7 +13631,7 @@ var Marker = function(parentEl) {
                 else
                     this.drawMultiLineMarker(html, range, marker.clazz, config);
             } else {
-                this.drawSingleLineMarker(html, range, marker.clazz + " ace_start", config);
+                this.drawSingleLineMarker(html, range, marker.clazz + " ace_start" + " ace_br15", config);
             }
         }
         this.element.innerHTML = html.join("");
@@ -13361,23 +13640,30 @@ var Marker = function(parentEl) {
     this.$getTop = function(row, layerConfig) {
         return (row - layerConfig.firstRowScreen) * layerConfig.lineHeight;
     };
+
+    function getBorderClass(tl, tr, br, bl) {
+        return (tl ? 1 : 0) | (tr ? 2 : 0) | (br ? 4 : 0) | (bl ? 8 : 0);
+    }
     this.drawTextMarker = function(stringBuilder, range, clazz, layerConfig, extraStyle) {
-        var row = range.start.row;
-
-        var lineRange = new Range(
-            row, range.start.column,
-            row, this.session.getScreenLastRowColumn(row)
-        );
-        this.drawSingleLineMarker(stringBuilder, lineRange, clazz + " ace_start", layerConfig, 1, extraStyle);
-        row = range.end.row;
-        lineRange = new Range(row, 0, row, range.end.column);
-        this.drawSingleLineMarker(stringBuilder, lineRange, clazz, layerConfig, 0, extraStyle);
-
-        for (row = range.start.row + 1; row < range.end.row; row++) {
-            lineRange.start.row = row;
-            lineRange.end.row = row;
-            lineRange.end.column = this.session.getScreenLastRowColumn(row);
-            this.drawSingleLineMarker(stringBuilder, lineRange, clazz, layerConfig, 1, extraStyle);
+        var session = this.session;
+        var start = range.start.row;
+        var end = range.end.row;
+        var row = start;
+        var prev = 0; 
+        var curr = 0;
+        var next = session.getScreenLastRowColumn(row);
+        var lineRange = new Range(row, range.start.column, row, curr);
+        for (; row <= end; row++) {
+            lineRange.start.row = lineRange.end.row = row;
+            lineRange.start.column = row == start ? range.start.column : session.getRowWrapIndent(row);
+            lineRange.end.column = next;
+            prev = curr;
+            curr = next;
+            next = row + 1 < end ? session.getScreenLastRowColumn(row + 1) : row == end ? 0 : range.end.column;
+            this.drawSingleLineMarker(stringBuilder, lineRange, 
+                clazz + (row == start  ? " ace_start" : "") + " ace_br"
+                    + getBorderClass(row == start || row == start + 1 && range.start.column, prev < curr, curr > next, row == end),
+                layerConfig, row == end ? 0 : 1, extraStyle);
         }
     };
     this.drawMultiLineMarker = function(stringBuilder, range, clazz, config, extraStyle) {
@@ -13388,7 +13674,7 @@ var Marker = function(parentEl) {
         extraStyle = extraStyle || "";
 
         stringBuilder.push(
-            "<div class='", clazz, " ace_start' style='",
+            "<div class='", clazz, " ace_br1 ace_start' style='",
             "height:", height, "px;",
             "right:0;",
             "top:", top, "px;",
@@ -13398,19 +13684,21 @@ var Marker = function(parentEl) {
         var width = range.end.column * config.characterWidth;
 
         stringBuilder.push(
-            "<div class='", clazz, "' style='",
+            "<div class='", clazz, " ace_br12' style='",
             "height:", height, "px;",
             "width:", width, "px;",
             "top:", top, "px;",
             "left:", padding, "px;", extraStyle, "'></div>"
         );
         height = (range.end.row - range.start.row - 1) * config.lineHeight;
-        if (height < 0)
+        if (height <= 0)
             return;
         top = this.$getTop(range.start.row + 1, config);
+        
+        var radiusClass = (range.start.column ? 1 : 0) | (range.end.column ? 0 : 8);
 
         stringBuilder.push(
-            "<div class='", clazz, "' style='",
+            "<div class='", clazz, (radiusClass ? " ace_br" + radiusClass : ""), "' style='",
             "height:", height, "px;",
             "right:0;",
             "top:", top, "px;",
@@ -13489,7 +13777,7 @@ var Text = function(parentEl) {
     this.EOL_CHAR_LF = "\xAC";
     this.EOL_CHAR_CRLF = "\xa4";
     this.EOL_CHAR = this.EOL_CHAR_LF;
-    this.TAB_CHAR = "\u2192"; //"\u21E5";
+    this.TAB_CHAR = "\u2014"; //"\u21E5";
     this.SPACE_CHAR = "\xB7";
     this.$padding = 0;
 
@@ -13565,11 +13853,10 @@ var Text = function(parentEl) {
         for (var i = 1; i < tabSize + 1; i++) {
             if (this.showInvisibles) {
                 tabStr.push("<span class='ace_invisible ace_invisible_tab'>"
-                    + this.TAB_CHAR
-                    + lang.stringRepeat("\xa0", i - 1)
+                    + lang.stringRepeat(this.TAB_CHAR, i)
                     + "</span>");
             } else {
-                tabStr.push(lang.stringRepeat("\xa0", i));
+                tabStr.push(lang.stringRepeat(" ", i));
             }
         }
         if (this.displayIndentGuides) {
@@ -13582,9 +13869,9 @@ var Text = function(parentEl) {
                 spaceClass = " ace_invisible_space";
                 tabClass = " ace_invisible_tab";
                 var spaceContent = lang.stringRepeat(this.SPACE_CHAR, this.tabSize);
-                var tabContent = this.TAB_CHAR + lang.stringRepeat("\xa0", this.tabSize - 1);
+                var tabContent = lang.stringRepeat(this.TAB_CHAR, this.tabSize);
             } else{
-                var spaceContent = lang.stringRepeat("\xa0", this.tabSize);
+                var spaceContent = lang.stringRepeat(" ", this.tabSize);
                 var tabContent = spaceContent;
             }
 
@@ -13753,16 +14040,18 @@ var Text = function(parentEl) {
 
     this.$renderToken = function(stringBuilder, screenColumn, token, value) {
         var self = this;
-        var replaceReg = /\t|&|<|( +)|([\x00-\x1f\x80-\xa0\xad\u1680\u180E\u2000-\u200f\u2028\u2029\u202F\u205F\u3000\uFEFF])|[\u1100-\u115F\u11A3-\u11A7\u11FA-\u11FF\u2329-\u232A\u2E80-\u2E99\u2E9B-\u2EF3\u2F00-\u2FD5\u2FF0-\u2FFB\u3000-\u303E\u3041-\u3096\u3099-\u30FF\u3105-\u312D\u3131-\u318E\u3190-\u31BA\u31C0-\u31E3\u31F0-\u321E\u3220-\u3247\u3250-\u32FE\u3300-\u4DBF\u4E00-\uA48C\uA490-\uA4C6\uA960-\uA97C\uAC00-\uD7A3\uD7B0-\uD7C6\uD7CB-\uD7FB\uF900-\uFAFF\uFE10-\uFE19\uFE30-\uFE52\uFE54-\uFE66\uFE68-\uFE6B\uFF01-\uFF60\uFFE0-\uFFE6]/g;
+        var replaceReg = /\t|&|<|>|( +)|([\x00-\x1f\x80-\xa0\xad\u1680\u180E\u2000-\u200f\u2028\u2029\u202F\u205F\u3000\uFEFF\uFFF9-\uFFFC])|[\u1100-\u115F\u11A3-\u11A7\u11FA-\u11FF\u2329-\u232A\u2E80-\u2E99\u2E9B-\u2EF3\u2F00-\u2FD5\u2FF0-\u2FFB\u3000-\u303E\u3041-\u3096\u3099-\u30FF\u3105-\u312D\u3131-\u318E\u3190-\u31BA\u31C0-\u31E3\u31F0-\u321E\u3220-\u3247\u3250-\u32FE\u3300-\u4DBF\u4E00-\uA48C\uA490-\uA4C6\uA960-\uA97C\uAC00-\uD7A3\uD7B0-\uD7C6\uD7CB-\uD7FB\uF900-\uFAFF\uFE10-\uFE19\uFE30-\uFE52\uFE54-\uFE66\uFE68-\uFE6B\uFF01-\uFF60\uFFE0-\uFFE6]/g;
         var replaceFunc = function(c, a, b, tabIdx, idx4) {
             if (a) {
-                return self.showInvisibles ?
-                    "<span class='ace_invisible ace_invisible_space'>" + lang.stringRepeat(self.SPACE_CHAR, c.length) + "</span>" :
-                    lang.stringRepeat("\xa0", c.length);
+                return self.showInvisibles
+                    ? "<span class='ace_invisible ace_invisible_space'>" + lang.stringRepeat(self.SPACE_CHAR, c.length) + "</span>"
+                    : c;
             } else if (c == "&") {
                 return "&#38;";
             } else if (c == "<") {
                 return "&#60;";
+            } else if (c == ">") {
+                return "&#62;";
             } else if (c == "\t") {
                 var tabSize = self.session.getScreenTabSize(screenColumn + tabIdx);
                 screenColumn += tabSize - 1;
@@ -13849,6 +14138,8 @@ var Text = function(parentEl) {
                             this.config.lineHeight, "px'>"
                         );
                     }
+
+                    stringBuilder.push(lang.stringRepeat("\xa0", splits.indent));
 
                     split ++;
                     screenColumn = 0;
@@ -14000,15 +14291,15 @@ ace.define("ace/layer/cursor",["require","exports","module","ace/lib/dom"], func
 "use strict";
 
 var dom = require("../lib/dom");
-var IE8;
+var isIE8;
 
 var Cursor = function(parentEl) {
     this.element = dom.createElement("div");
     this.element.className = "ace_layer ace_cursor-layer";
     parentEl.appendChild(this.element);
     
-    if (IE8 === undefined)
-        IE8 = "opacity" in this.element;
+    if (isIE8 === undefined)
+        isIE8 = !("opacity" in this.element.style);
 
     this.isVisible = false;
     this.isBlinking = true;
@@ -14018,7 +14309,9 @@ var Cursor = function(parentEl) {
     this.cursors = [];
     this.cursor = this.addCursor();
     dom.addCssClass(this.element, "ace_hidden-cursors");
-    this.$updateCursors = this.$updateVisibility.bind(this);
+    this.$updateCursors = (isIE8
+        ? this.$updateVisibility
+        : this.$updateOpacity).bind(this);
 };
 
 (function() {
@@ -14059,13 +14352,11 @@ var Cursor = function(parentEl) {
     };
 
     this.setSmoothBlinking = function(smoothBlinking) {
-        if (smoothBlinking != this.smoothBlinking && !IE8) {
+        if (smoothBlinking != this.smoothBlinking && !isIE8) {
             this.smoothBlinking = smoothBlinking;
             dom.setCssClass(this.element, "ace_smooth-blinking", smoothBlinking);
             this.$updateCursors(true);
-            this.$updateCursors = (smoothBlinking 
-                ? this.$updateOpacity
-                : this.$updateVisibility).bind(this);
+            this.$updateCursors = (this.$updateOpacity).bind(this);
             this.restartTimer();
         }
     };
@@ -14163,11 +14454,15 @@ var Cursor = function(parentEl) {
             }
 
             var style = (this.cursors[cursorIndex++] || this.addCursor()).style;
-
-            style.left = pixelPos.left + "px";
-            style.top = pixelPos.top + "px";
-            style.width = config.characterWidth + "px";
-            style.height = config.lineHeight + "px";
+            
+            if (!this.drawCursor) {
+                style.left = pixelPos.left + "px";
+                style.top = pixelPos.top + "px";
+                style.width = config.characterWidth + "px";
+                style.height = config.lineHeight + "px";
+            } else {
+                this.drawCursor(style, pixelPos, config, selections[i], this.session);
+            }
         }
         while (this.cursors.length > cursorIndex)
             this.removeCursor();
@@ -14177,6 +14472,8 @@ var Cursor = function(parentEl) {
         this.$pixelPos = pixelPos;
         this.restartTimer();
     };
+    
+    this.drawCursor = null;
 
     this.$setOverwrite = function(overwrite) {
         if (overwrite != this.overwrite) {
@@ -14359,14 +14656,13 @@ var RenderLoop = function(onRender, win) {
 exports.RenderLoop = RenderLoop;
 });
 
-ace.define("ace/layer/font_metrics",["require","exports","module","ace/lib/oop","ace/lib/dom","ace/lib/lang","ace/lib/useragent","ace/lib/event_emitter","ace/lib/useragent"], function(require, exports, module) {
+ace.define("ace/layer/font_metrics",["require","exports","module","ace/lib/oop","ace/lib/dom","ace/lib/lang","ace/lib/useragent","ace/lib/event_emitter"], function(require, exports, module) {
 
 var oop = require("../lib/oop");
 var dom = require("../lib/dom");
 var lang = require("../lib/lang");
 var useragent = require("../lib/useragent");
 var EventEmitter = require("../lib/event_emitter").EventEmitter;
-var useragent = require("../lib/useragent");
 
 var CHAR_COUNT = 0;
 
@@ -14414,9 +14710,9 @@ var FontMetrics = exports.FontMetrics = function(parentEl, interval) {
     
     this.$setMeasureNodeStyles = function(style, isRoot) {
         style.width = style.height = "auto";
-        style.left = style.top = "-100px";
+        style.left = style.top = "0px";
         style.visibility = "hidden";
-        style.position = "fixed";
+        style.position = "absolute";
         style.whiteSpace = "pre";
 
         if (useragent.isIE < 8) {
@@ -14448,35 +14744,20 @@ var FontMetrics = exports.FontMetrics = function(parentEl, interval) {
             self.checkForSizeChanges();
         }, 500);
     };
-
+    
     this.setPolling = function(val) {
         if (val) {
             this.$pollSizeChanges();
-        } else {
-            if (this.$pollSizeChangesTimer)
-                this.$pollSizeChangesTimer;
+        } else if (this.$pollSizeChangesTimer) {
+            clearInterval(this.$pollSizeChangesTimer);
+            this.$pollSizeChangesTimer = 0;
         }
-    };
-
-    this.$invertTransforms = function(el) {
-        if (!useragent.isWebKit) return;
-        var node = el.parentNode,
-            tfm = new WebKitCSSMatrix();
-
-        while (node) {
-            if (node.style && node.style.webkitTransform) {
-                tfm = tfm.multiply(new WebKitCSSMatrix(node.style.webkitTransform));
-            }
-            node = node.parentNode;
-        }
-        el.style.webkitTransform = tfm.inverse();
     };
 
     this.$measureSizes = function() {
         if (CHAR_COUNT === 50) {
             var rect = null;
-            try {
-               this.$invertTransforms(this.$measureNode);
+            try { 
                rect = this.$measureNode.getBoundingClientRect();
             } catch(e) {
                rect = {width: 0, height:0 };
@@ -14491,7 +14772,9 @@ var FontMetrics = exports.FontMetrics = function(parentEl, interval) {
                 width: this.$measureNode.clientWidth / CHAR_COUNT
             };
         }
-        return size.width === 0 || size.height === 0 ?  null : size;
+        if (size.width === 0 || size.height === 0)
+            return null;
+        return size;
     };
 
     this.$measureCharWidth = function(ch) {
@@ -14499,7 +14782,7 @@ var FontMetrics = exports.FontMetrics = function(parentEl, interval) {
         var rect = this.$main.getBoundingClientRect();
         return rect.width / CHAR_COUNT;
     };
-
+    
     this.getCharacterWidth = function(ch) {
         var w = this.charSizes[ch];
         if (w === undefined) {
@@ -14665,6 +14948,7 @@ text-indent: -1em;\
 -moz-user-select: text;\
 -webkit-user-select: text;\
 user-select: text;\
+white-space: pre!important;\
 }\
 .ace_text-input.ace_composition {\
 background: inherit;\
@@ -14677,6 +14961,7 @@ text-indent: 0;\
 z-index: 1;\
 position: absolute;\
 overflow: hidden;\
+word-wrap: normal;\
 white-space: pre;\
 height: 100%;\
 width: 100%;\
@@ -14707,7 +14992,8 @@ position: absolute;\
 -moz-box-sizing: border-box;\
 -webkit-box-sizing: border-box;\
 box-sizing: border-box;\
-border-left: 2px solid\
+border-left: 2px solid;\
+transform: translatez(0);\
 }\
 .ace_slim-cursors .ace_cursor {\
 border-left-width: 1px;\
@@ -14888,9 +15174,24 @@ background-color: rgba(255, 255, 0,0.2);\
 position: absolute;\
 z-index: 8;\
 }\
+.ace_br1 {border-top-left-radius    : 3px;}\
+.ace_br2 {border-top-right-radius   : 3px;}\
+.ace_br3 {border-top-left-radius    : 3px; border-top-right-radius:    3px;}\
+.ace_br4 {border-bottom-right-radius: 3px;}\
+.ace_br5 {border-top-left-radius    : 3px; border-bottom-right-radius: 3px;}\
+.ace_br6 {border-top-right-radius   : 3px; border-bottom-right-radius: 3px;}\
+.ace_br7 {border-top-left-radius    : 3px; border-top-right-radius:    3px; border-bottom-right-radius: 3px;}\
+.ace_br8 {border-bottom-left-radius : 3px;}\
+.ace_br9 {border-top-left-radius    : 3px; border-bottom-left-radius:  3px;}\
+.ace_br10{border-top-right-radius   : 3px; border-bottom-left-radius:  3px;}\
+.ace_br11{border-top-left-radius    : 3px; border-top-right-radius:    3px; border-bottom-left-radius:  3px;}\
+.ace_br12{border-bottom-right-radius: 3px; border-bottom-left-radius:  3px;}\
+.ace_br13{border-top-left-radius    : 3px; border-bottom-right-radius: 3px; border-bottom-left-radius:  3px;}\
+.ace_br14{border-top-right-radius   : 3px; border-bottom-right-radius: 3px; border-bottom-left-radius:  3px;}\
+.ace_br15{border-top-left-radius    : 3px; border-top-right-radius:    3px; border-bottom-right-radius: 3px; border-bottom-left-radius: 3px;}\
 ";
 
-dom.importCssString(editorCss, "ace_editor");
+dom.importCssString(editorCss, "ace_editor.css");
 
 var VirtualRenderer = function(container, theme) {
     var _self = this;
@@ -15136,6 +15437,7 @@ var VirtualRenderer = function(container, theme) {
 
         if (this.resizing)
             this.resizing = 0;
+        this.scrollBarV.scrollLeft = this.scrollBarV.scrollTop = null;
     };
     
     this.$updateCachedSize = function(force, gutterWidth, width, height) {
@@ -15299,7 +15601,7 @@ var VirtualRenderer = function(container, theme) {
         return this.container;
     };
     this.getMouseEventTarget = function() {
-        return this.content;
+        return this.scroller;
     };
     this.getTextAreaContainer = function() {
         return this.container;
@@ -15312,9 +15614,12 @@ var VirtualRenderer = function(container, theme) {
         var posLeft = this.$cursorLayer.$pixelPos.left;
         posTop -= config.offset;
 
+        var style = this.textarea.style;
         var h = this.lineHeight;
-        if (posTop < 0 || posTop > config.height - h)
+        if (posTop < 0 || posTop > config.height - h) {
+            style.top = style.left = "0";
             return;
+        }
 
         var w = this.characterWidth;
         if (this.$composition) {
@@ -15327,11 +15632,10 @@ var VirtualRenderer = function(container, theme) {
             posLeft = this.$size.scrollerWidth - w;
 
         posLeft += this.gutterWidth;
-
-        this.textarea.style.height = h + "px";
-        this.textarea.style.width = w + "px";
-        this.textarea.style.left = Math.min(posLeft, this.$size.scrollerWidth - w) + "px";
-        this.textarea.style.top = Math.min(posTop, this.$size.height - h) + "px";
+        style.height = h + "px";
+        style.width = w + "px";
+        style.left = Math.min(posLeft, this.$size.scrollerWidth - w) + "px";
+        style.top = Math.min(posTop, this.$size.height - h) + "px";
     };
     this.getFirstVisibleRow = function() {
         return this.layerConfig.firstRow;
@@ -15377,7 +15681,7 @@ var VirtualRenderer = function(container, theme) {
         this.setOption("hScrollBarAlwaysVisible", alwaysVisible);
     };
     this.getVScrollBarAlwaysVisible = function() {
-        return this.$hScrollBarAlwaysVisible;
+        return this.$vScrollBarAlwaysVisible;
     };
     this.setVScrollBarAlwaysVisible = function(alwaysVisible) {
         this.setOption("vScrollBarAlwaysVisible", alwaysVisible);
@@ -15526,6 +15830,8 @@ var VirtualRenderer = function(container, theme) {
             (this.$minLines||1) * this.lineHeight,
             Math.min(maxHeight, height)
         ) + this.scrollMargin.v + (this.$extraHeight || 0);
+        if (this.$horizScroll)
+            desiredHeight += this.scrollBarH.getHeight();
         var vScroll = height > maxHeight;
         
         if (desiredHeight != this.desiredHeight ||
@@ -15545,18 +15851,12 @@ var VirtualRenderer = function(container, theme) {
     };
     
     this.$computeLayerConfig = function() {
-        if (this.$maxLines && this.lineHeight > 1)
-            this.$autosize();
-
         var session = this.session;
         var size = this.$size;
         
         var hideScrollbars = size.height <= 2 * this.lineHeight;
         var screenLines = this.session.getScreenLength();
         var maxHeight = screenLines * this.lineHeight;
-
-        var offset = this.scrollTop % this.lineHeight;
-        var minHeight = size.scrollerHeight + this.lineHeight;
 
         var longestLine = this.$getLongestLine();
         
@@ -15568,21 +15868,28 @@ var VirtualRenderer = function(container, theme) {
             this.$horizScroll = horizScroll;
             this.scrollBarH.setVisible(horizScroll);
         }
+        var vScrollBefore = this.$vScroll; // autosize can change vscroll value in which case we need to update longestLine
+        if (this.$maxLines && this.lineHeight > 1)
+            this.$autosize();
+
+        var offset = this.scrollTop % this.lineHeight;
+        var minHeight = size.scrollerHeight + this.lineHeight;
         
         var scrollPastEnd = !this.$maxLines && this.$scrollPastEnd
             ? (size.scrollerHeight - this.lineHeight) * this.$scrollPastEnd
             : 0;
         maxHeight += scrollPastEnd;
         
-        this.session.setScrollTop(Math.max(-this.scrollMargin.top,
-            Math.min(this.scrollTop, maxHeight - size.scrollerHeight + this.scrollMargin.bottom)));
+        var sm = this.scrollMargin;
+        this.session.setScrollTop(Math.max(-sm.top,
+            Math.min(this.scrollTop, maxHeight - size.scrollerHeight + sm.bottom)));
 
-        this.session.setScrollLeft(Math.max(-this.scrollMargin.left, Math.min(this.scrollLeft, 
-            longestLine + 2 * this.$padding - size.scrollerWidth + this.scrollMargin.right)));
+        this.session.setScrollLeft(Math.max(-sm.left, Math.min(this.scrollLeft, 
+            longestLine + 2 * this.$padding - size.scrollerWidth + sm.right)));
         
         var vScroll = !hideScrollbars && (this.$vScrollBarAlwaysVisible ||
-            size.scrollerHeight - maxHeight + scrollPastEnd < 0 || this.scrollTop);
-        var vScrollChanged = this.$vScroll !== vScroll;
+            size.scrollerHeight - maxHeight + scrollPastEnd < 0 || this.scrollTop > sm.top);
+        var vScrollChanged = vScrollBefore !== vScroll;
         if (vScrollChanged) {
             this.$vScroll = vScroll;
             this.scrollBarV.setVisible(vScroll);
@@ -16137,6 +16444,406 @@ config.defineOptions(VirtualRenderer.prototype, "renderer", {
 exports.VirtualRenderer = VirtualRenderer;
 });
 
+ace.define("ace/worker/worker_client",["require","exports","module","ace/lib/oop","ace/lib/net","ace/lib/event_emitter","ace/config"], function(require, exports, module) {
+"use strict";
+
+var oop = require("../lib/oop");
+var net = require("../lib/net");
+var EventEmitter = require("../lib/event_emitter").EventEmitter;
+var config = require("../config");
+
+var WorkerClient = function(topLevelNamespaces, mod, classname, workerUrl) {
+    this.$sendDeltaQueue = this.$sendDeltaQueue.bind(this);
+    this.changeListener = this.changeListener.bind(this);
+    this.onMessage = this.onMessage.bind(this);
+    if (require.nameToUrl && !require.toUrl)
+        require.toUrl = require.nameToUrl;
+    
+    if (config.get("packaged") || !require.toUrl) {
+        workerUrl = workerUrl || config.moduleUrl(mod, "worker");
+    } else {
+        var normalizePath = this.$normalizePath;
+        workerUrl = workerUrl || normalizePath(require.toUrl("ace/worker/worker.js", null, "_"));
+
+        var tlns = {};
+        topLevelNamespaces.forEach(function(ns) {
+            tlns[ns] = normalizePath(require.toUrl(ns, null, "_").replace(/(\.js)?(\?.*)?$/, ""));
+        });
+    }
+
+    try {
+        this.$worker = new Worker(workerUrl);
+    } catch(e) {
+        if (e instanceof window.DOMException) {
+            var blob = this.$workerBlob(workerUrl);
+            var URL = window.URL || window.webkitURL;
+            var blobURL = URL.createObjectURL(blob);
+
+            this.$worker = new Worker(blobURL);
+            URL.revokeObjectURL(blobURL);
+        } else {
+            throw e;
+        }
+    }
+    this.$worker.postMessage({
+        init : true,
+        tlns : tlns,
+        module : mod,
+        classname : classname
+    });
+
+    this.callbackId = 1;
+    this.callbacks = {};
+
+    this.$worker.onmessage = this.onMessage;
+};
+
+(function(){
+
+    oop.implement(this, EventEmitter);
+
+    this.onMessage = function(e) {
+        var msg = e.data;
+        switch(msg.type) {
+            case "event":
+                this._signal(msg.name, {data: msg.data});
+                break;
+            case "call":
+                var callback = this.callbacks[msg.id];
+                if (callback) {
+                    callback(msg.data);
+                    delete this.callbacks[msg.id];
+                }
+                break;
+            case "error":
+                this.reportError(msg.data);
+                break;
+            case "log":
+                window.console && console.log && console.log.apply(console, msg.data);
+                break;
+        }
+    };
+    
+    this.reportError = function(err) {
+        window.console && console.error && console.error(err);
+    };
+
+    this.$normalizePath = function(path) {
+        return net.qualifyURL(path);
+    };
+
+    this.terminate = function() {
+        this._signal("terminate", {});
+        this.deltaQueue = null;
+        this.$worker.terminate();
+        this.$worker = null;
+        if (this.$doc)
+            this.$doc.off("change", this.changeListener);
+        this.$doc = null;
+    };
+
+    this.send = function(cmd, args) {
+        this.$worker.postMessage({command: cmd, args: args});
+    };
+
+    this.call = function(cmd, args, callback) {
+        if (callback) {
+            var id = this.callbackId++;
+            this.callbacks[id] = callback;
+            args.push(id);
+        }
+        this.send(cmd, args);
+    };
+
+    this.emit = function(event, data) {
+        try {
+            this.$worker.postMessage({event: event, data: {data: data.data}});
+        }
+        catch(ex) {
+            console.error(ex.stack);
+        }
+    };
+
+    this.attachToDocument = function(doc) {
+        if(this.$doc)
+            this.terminate();
+
+        this.$doc = doc;
+        this.call("setValue", [doc.getValue()]);
+        doc.on("change", this.changeListener);
+    };
+
+    this.changeListener = function(delta) {
+        if (!this.deltaQueue) {
+            this.deltaQueue = [];
+            setTimeout(this.$sendDeltaQueue, 0);
+        }
+        if (delta.action == "insert")
+            this.deltaQueue.push(delta.start, delta.lines);
+        else
+            this.deltaQueue.push(delta.start, delta.end);
+    };
+
+    this.$sendDeltaQueue = function() {
+        var q = this.deltaQueue;
+        if (!q) return;
+        this.deltaQueue = null;
+        if (q.length > 50 && q.length > this.$doc.getLength() >> 1) {
+            this.call("setValue", [this.$doc.getValue()]);
+        } else
+            this.emit("change", {data: q});
+    };
+
+    this.$workerBlob = function(workerUrl) {
+        var script = "importScripts('" + net.qualifyURL(workerUrl) + "');";
+        try {
+            return new Blob([script], {"type": "application/javascript"});
+        } catch (e) { // Backwards-compatibility
+            var BlobBuilder = window.BlobBuilder || window.WebKitBlobBuilder || window.MozBlobBuilder;
+            var blobBuilder = new BlobBuilder();
+            blobBuilder.append(script);
+            return blobBuilder.getBlob("application/javascript");
+        }
+    };
+
+}).call(WorkerClient.prototype);
+
+
+var UIWorkerClient = function(topLevelNamespaces, mod, classname) {
+    this.$sendDeltaQueue = this.$sendDeltaQueue.bind(this);
+    this.changeListener = this.changeListener.bind(this);
+    this.callbackId = 1;
+    this.callbacks = {};
+    this.messageBuffer = [];
+
+    var main = null;
+    var emitSync = false;
+    var sender = Object.create(EventEmitter);
+    var _self = this;
+
+    this.$worker = {};
+    this.$worker.terminate = function() {};
+    this.$worker.postMessage = function(e) {
+        _self.messageBuffer.push(e);
+        if (main) {
+            if (emitSync)
+                setTimeout(processNext);
+            else
+                processNext();
+        }
+    };
+    this.setEmitSync = function(val) { emitSync = val };
+
+    var processNext = function() {
+        var msg = _self.messageBuffer.shift();
+        if (msg.command)
+            main[msg.command].apply(main, msg.args);
+        else if (msg.event)
+            sender._signal(msg.event, msg.data);
+    };
+
+    sender.postMessage = function(msg) {
+        _self.onMessage({data: msg});
+    };
+    sender.callback = function(data, callbackId) {
+        this.postMessage({type: "call", id: callbackId, data: data});
+    };
+    sender.emit = function(name, data) {
+        this.postMessage({type: "event", name: name, data: data});
+    };
+
+    config.loadModule(["worker", mod], function(Main) {
+        main = new Main[classname](sender);
+        while (_self.messageBuffer.length)
+            processNext();
+    });
+};
+
+UIWorkerClient.prototype = WorkerClient.prototype;
+
+exports.UIWorkerClient = UIWorkerClient;
+exports.WorkerClient = WorkerClient;
+
+});
+
+ace.define("ace/placeholder",["require","exports","module","ace/range","ace/lib/event_emitter","ace/lib/oop"], function(require, exports, module) {
+"use strict";
+
+var Range = require("./range").Range;
+var EventEmitter = require("./lib/event_emitter").EventEmitter;
+var oop = require("./lib/oop");
+
+var PlaceHolder = function(session, length, pos, others, mainClass, othersClass) {
+    var _self = this;
+    this.length = length;
+    this.session = session;
+    this.doc = session.getDocument();
+    this.mainClass = mainClass;
+    this.othersClass = othersClass;
+    this.$onUpdate = this.onUpdate.bind(this);
+    this.doc.on("change", this.$onUpdate);
+    this.$others = others;
+    
+    this.$onCursorChange = function() {
+        setTimeout(function() {
+            _self.onCursorChange();
+        });
+    };
+    
+    this.$pos = pos;
+    var undoStack = session.getUndoManager().$undoStack || session.getUndoManager().$undostack || {length: -1};
+    this.$undoStackDepth =  undoStack.length;
+    this.setup();
+
+    session.selection.on("changeCursor", this.$onCursorChange);
+};
+
+(function() {
+
+    oop.implement(this, EventEmitter);
+    this.setup = function() {
+        var _self = this;
+        var doc = this.doc;
+        var session = this.session;
+        var pos = this.$pos;
+        
+        this.selectionBefore = session.selection.toJSON();
+        if (session.selection.inMultiSelectMode)
+            session.selection.toSingleRange();
+
+        this.pos = doc.createAnchor(pos.row, pos.column);
+        this.markerId = session.addMarker(new Range(pos.row, pos.column, pos.row, pos.column + this.length), this.mainClass, null, false);
+        this.pos.on("change", function(event) {
+            session.removeMarker(_self.markerId);
+            _self.markerId = session.addMarker(new Range(event.value.row, event.value.column, event.value.row, event.value.column+_self.length), _self.mainClass, null, false);
+        });
+        this.others = [];
+        this.$others.forEach(function(other) {
+            var anchor = doc.createAnchor(other.row, other.column);
+            _self.others.push(anchor);
+        });
+        session.setUndoSelect(false);
+    };
+    this.showOtherMarkers = function() {
+        if(this.othersActive) return;
+        var session = this.session;
+        var _self = this;
+        this.othersActive = true;
+        this.others.forEach(function(anchor) {
+            anchor.markerId = session.addMarker(new Range(anchor.row, anchor.column, anchor.row, anchor.column+_self.length), _self.othersClass, null, false);
+            anchor.on("change", function(event) {
+                session.removeMarker(anchor.markerId);
+                anchor.markerId = session.addMarker(new Range(event.value.row, event.value.column, event.value.row, event.value.column+_self.length), _self.othersClass, null, false);
+            });
+        });
+    };
+    this.hideOtherMarkers = function() {
+        if(!this.othersActive) return;
+        this.othersActive = false;
+        for (var i = 0; i < this.others.length; i++) {
+            this.session.removeMarker(this.others[i].markerId);
+        }
+    };
+    this.onUpdate = function(delta) {
+        var range = delta;
+        if(range.start.row !== range.end.row) return;
+        if(range.start.row !== this.pos.row) return;
+        if (this.$updating) return;
+        this.$updating = true;
+        var lengthDiff = delta.action === "insert" ? range.end.column - range.start.column : range.start.column - range.end.column;
+        
+        if(range.start.column >= this.pos.column && range.start.column <= this.pos.column + this.length + 1) {
+            var distanceFromStart = range.start.column - this.pos.column;
+            this.length += lengthDiff;
+            if(!this.session.$fromUndo) {
+                if(delta.action === 'insert') {
+                    for (var i = this.others.length - 1; i >= 0; i--) {
+                        var otherPos = this.others[i];
+                        var newPos = {row: otherPos.row, column: otherPos.column + distanceFromStart};
+                        if(otherPos.row === range.start.row && range.start.column < otherPos.column)
+                            newPos.column += lengthDiff;
+                        this.doc.insertMergedLines(newPos, delta.lines);
+                    }
+                } else if(delta.action === 'remove') {
+                    for (var i = this.others.length - 1; i >= 0; i--) {
+                        var otherPos = this.others[i];
+                        var newPos = {row: otherPos.row, column: otherPos.column + distanceFromStart};
+                        if(otherPos.row === range.start.row && range.start.column < otherPos.column)
+                            newPos.column += lengthDiff;
+                        this.doc.remove(new Range(newPos.row, newPos.column, newPos.row, newPos.column - lengthDiff));
+                    }
+                }
+                if(range.start.column === this.pos.column && delta.action === 'insert') {
+                    setTimeout(function() {
+                        this.pos.setPosition(this.pos.row, this.pos.column - lengthDiff);
+                        for (var i = 0; i < this.others.length; i++) {
+                            var other = this.others[i];
+                            var newPos = {row: other.row, column: other.column - lengthDiff};
+                            if(other.row === range.start.row && range.start.column < other.column)
+                                newPos.column += lengthDiff;
+                            other.setPosition(newPos.row, newPos.column);
+                        }
+                    }.bind(this), 0);
+                }
+                else if(range.start.column === this.pos.column && delta.action === 'remove') {
+                    setTimeout(function() {
+                        for (var i = 0; i < this.others.length; i++) {
+                            var other = this.others[i];
+                            if(other.row === range.start.row && range.start.column < other.column) {
+                                other.setPosition(other.row, other.column - lengthDiff);
+                            }
+                        }
+                    }.bind(this), 0);
+                }
+            }
+            this.pos._emit("change", {value: this.pos});
+            for (var i = 0; i < this.others.length; i++) {
+                this.others[i]._emit("change", {value: this.others[i]});
+            }
+        }
+        this.$updating = false;
+    };
+
+    this.onCursorChange = function(event) {
+        if (this.$updating || !this.session) return;
+        var pos = this.session.selection.getCursor();
+        if (pos.row === this.pos.row && pos.column >= this.pos.column && pos.column <= this.pos.column + this.length) {
+            this.showOtherMarkers();
+            this._emit("cursorEnter", event);
+        } else {
+            this.hideOtherMarkers();
+            this._emit("cursorLeave", event);
+        }
+    };    
+    this.detach = function() {
+        this.session.removeMarker(this.markerId);
+        this.hideOtherMarkers();
+        this.doc.removeEventListener("change", this.$onUpdate);
+        this.session.selection.removeEventListener("changeCursor", this.$onCursorChange);
+        this.pos.detach();
+        for (var i = 0; i < this.others.length; i++) {
+            this.others[i].detach();
+        }
+        this.session.setUndoSelect(true);
+        this.session = null;
+    };
+    this.cancel = function() {
+        if(this.$undoStackDepth === -1)
+            throw Error("Canceling placeholders only supported with undo manager attached to session.");
+        var undoManager = this.session.getUndoManager();
+        var undosRequired = (undoManager.$undoStack || undoManager.$undostack).length - this.$undoStackDepth;
+        for (var i = 0; i < undosRequired; i++) {
+            undoManager.undo(true);
+        }
+        if (this.selectionBefore)
+            this.session.selection.fromJSON(this.selectionBefore);
+    };
+}).call(PlaceHolder.prototype);
+
+
+exports.PlaceHolder = PlaceHolder;
+});
+
 ace.define("ace/mouse/multi_select_handler",["require","exports","module","ace/lib/event","ace/lib/useragent"], function(require, exports, module) {
 
 var event = require("../lib/event");
@@ -16190,15 +16897,15 @@ function onMouseDown(e) {
     var selectionMode;
     if (editor.$mouseHandler.$enableJumpToDef) {
         if (ctrl && alt || accel && alt)
-            selectionMode = "add";
-        else if (alt)
+            selectionMode = shift ? "block" : "add";
+        else if (alt && editor.$blockSelectEnabled)
             selectionMode = "block";
     } else {
         if (accel && !alt) {
             selectionMode = "add";
             if (!isMultiSelect && shift)
                 return;
-        } else if (alt) {
+        } else if (alt && editor.$blockSelectEnabled) {
             selectionMode = "block";
         }
     }
@@ -16224,7 +16931,7 @@ function onMouseDown(e) {
         
         if (shift) {
             oldRange = null;
-            range = selection.ranges[0];
+            range = selection.ranges[0] || range;
             editor.removeSelectionMarker(range);
         }
         editor.once("mouseup", function() {
@@ -16257,7 +16964,8 @@ function onMouseDown(e) {
             if (isSamePoint(screenCursor, newCursor) && isSamePoint(cursor, selection.lead))
                 return;
             screenCursor = newCursor;
-
+            
+            editor.$blockScrolling++;
             editor.selection.moveToPosition(cursor);
             editor.renderer.scrollCursorIntoView();
 
@@ -16267,8 +16975,9 @@ function onMouseDown(e) {
                 rectSel[0] = editor.$mouseHandler.$clickSelection.clone();
             rectSel.forEach(editor.addSelectionMarker, editor);
             editor.updateSelectionMarkers();
+            editor.$blockScrolling--;
         };
-        
+        editor.$blockScrolling++;
         if (isMultiSelect && !accel) {
             selection.toSingleRange();
         } else if (!isMultiSelect && accel) {
@@ -16280,6 +16989,7 @@ function onMouseDown(e) {
             screenAnchor = session.documentToScreenPosition(selection.lead);            
         else
             selection.moveToPosition(pos);
+        editor.$blockScrolling--;
         
         screenCursor = {row: -1, column: -1};
 
@@ -16319,62 +17029,73 @@ exports.defaultCommands = [{
     name: "addCursorAbove",
     exec: function(editor) { editor.selectMoreLines(-1); },
     bindKey: {win: "Ctrl-Alt-Up", mac: "Ctrl-Alt-Up"},
-    readonly: true
+    scrollIntoView: "cursor",
+    readOnly: true
 }, {
     name: "addCursorBelow",
     exec: function(editor) { editor.selectMoreLines(1); },
     bindKey: {win: "Ctrl-Alt-Down", mac: "Ctrl-Alt-Down"},
-    readonly: true
+    scrollIntoView: "cursor",
+    readOnly: true
 }, {
     name: "addCursorAboveSkipCurrent",
     exec: function(editor) { editor.selectMoreLines(-1, true); },
     bindKey: {win: "Ctrl-Alt-Shift-Up", mac: "Ctrl-Alt-Shift-Up"},
-    readonly: true
+    scrollIntoView: "cursor",
+    readOnly: true
 }, {
     name: "addCursorBelowSkipCurrent",
     exec: function(editor) { editor.selectMoreLines(1, true); },
     bindKey: {win: "Ctrl-Alt-Shift-Down", mac: "Ctrl-Alt-Shift-Down"},
-    readonly: true
+    scrollIntoView: "cursor",
+    readOnly: true
 }, {
     name: "selectMoreBefore",
     exec: function(editor) { editor.selectMore(-1); },
     bindKey: {win: "Ctrl-Alt-Left", mac: "Ctrl-Alt-Left"},
-    readonly: true
+    scrollIntoView: "cursor",
+    readOnly: true
 }, {
     name: "selectMoreAfter",
     exec: function(editor) { editor.selectMore(1); },
     bindKey: {win: "Ctrl-Alt-Right", mac: "Ctrl-Alt-Right"},
-    readonly: true
+    scrollIntoView: "cursor",
+    readOnly: true
 }, {
     name: "selectNextBefore",
     exec: function(editor) { editor.selectMore(-1, true); },
     bindKey: {win: "Ctrl-Alt-Shift-Left", mac: "Ctrl-Alt-Shift-Left"},
-    readonly: true
+    scrollIntoView: "cursor",
+    readOnly: true
 }, {
     name: "selectNextAfter",
     exec: function(editor) { editor.selectMore(1, true); },
     bindKey: {win: "Ctrl-Alt-Shift-Right", mac: "Ctrl-Alt-Shift-Right"},
-    readonly: true
+    scrollIntoView: "cursor",
+    readOnly: true
 }, {
     name: "splitIntoLines",
     exec: function(editor) { editor.multiSelect.splitIntoLines(); },
     bindKey: {win: "Ctrl-Alt-L", mac: "Ctrl-Alt-L"},
-    readonly: true
+    readOnly: true
 }, {
     name: "alignCursors",
     exec: function(editor) { editor.alignCursors(); },
-    bindKey: {win: "Ctrl-Alt-A", mac: "Ctrl-Alt-A"}
+    bindKey: {win: "Ctrl-Alt-A", mac: "Ctrl-Alt-A"},
+    scrollIntoView: "cursor"
 }, {
     name: "findAll",
     exec: function(editor) { editor.findAll(); },
     bindKey: {win: "Ctrl-Alt-K", mac: "Ctrl-Alt-G"},
-    readonly: true
+    scrollIntoView: "cursor",
+    readOnly: true
 }];
 exports.multiSelectCommands = [{
     name: "singleSelection",
     bindKey: "esc",
     exec: function(editor) { editor.exitMultiSelectMode(); },
-    readonly: true,
+    scrollIntoView: "cursor",
+    readOnly: true,
     isAvailable: function(editor) {return editor && editor.inMultiSelectMode}
 }];
 
@@ -16814,33 +17535,9 @@ var Editor = require("./editor").Editor;
             var pos = anchor == this.multiSelect.anchor
                 ? range.cursor == range.start ? range.end : range.start
                 : range.cursor;
-            if (!isSamePoint(pos, anchor))
+            if (pos.row != anchor.row 
+                || this.session.$clipPositionToDocument(pos.row, pos.column).column != anchor.column)
                 this.multiSelect.toSingleRange(this.multiSelect.toOrientedRange());
-        }
-    };
-    this.onPaste = function(text) {
-        if (this.$readOnly)
-            return;
-
-
-        var e = {text: text};
-        this._signal("paste", e);
-        text = e.text;
-        if (!this.inMultiSelectMode || this.inVirtualSelectionMode)
-            return this.insert(text);
-
-        var lines = text.split(/\r\n|\r|\n/);
-        var ranges = this.selection.rangeList.ranges;
-
-        if (lines.length > ranges.length || lines.length < 2 || !lines[1])
-            return this.commands.exec("insertstring", this, text);
-
-        for (var i = ranges.length; i--;) {
-            var range = ranges[i];
-            if (!range.isEmpty())
-                this.session.remove(range);
-
-            this.session.insert(range.start, lines[i]);
         }
     };
     this.findAll = function(needle, options, additive) {
@@ -17000,9 +17697,9 @@ var Editor = require("./editor").Editor;
                 if (fr < 0) fr = 0;
                 if (lr >= max) lr = max - 1;
             }
-            var lines = this.session.doc.removeLines(fr, lr);
+            var lines = this.session.removeFullLines(fr, lr);
             lines = this.$reAlignText(lines, guessRange);
-            this.session.doc.insert({row: fr, column: 0}, lines.join("\n") + "\n");
+            this.session.insert({row: fr, column: 0}, lines.join("\n") + "\n");
             if (!guessRange) {
                 range.start.column = 0;
                 range.end.column = lines[lines.length - 1].length;
@@ -17163,7 +17860,8 @@ function addAltCursorListeners(editor){
     var el = editor.textInput.getElement();
     var altCursor = false;
     event.addListener(el, "keydown", function(e) {
-        if (e.keyCode == 18 && !(e.ctrlKey || e.shiftKey || e.metaKey)) {
+        var altDown = e.keyCode == 18 && !(e.ctrlKey || e.shiftKey || e.metaKey);
+        if (editor.$blockSelectEnabled && altDown) {
             if (!altCursor) {
                 editor.renderer.setMouseCursor("crosshair");
                 altCursor = true;
@@ -17199,298 +17897,17 @@ require("./config").defineOptions(Editor.prototype, "editor", {
             }
         },
         value: true
+    },
+    enableBlockSelect: {
+        set: function(val) {
+            this.$blockSelectEnabled = val;
+        },
+        value: true
     }
 });
 
 
 
-});
-
-ace.define("ace/single_line_edit",["require","exports","module","ace/lib/oop","ace/undomanager","ace/virtual_renderer","ace/editor","ace/multi_select"], function(require, exports, module) {
-"use strict";
-
-var oop = require("./lib/oop");
-var UndoManager = require("ace/undomanager").UndoManager;
-var Renderer = require("ace/virtual_renderer").VirtualRenderer;
-var Editor = require("ace/editor").Editor;
-var MultiSelect = require("ace/multi_select").MultiSelect;
-
-function OneLineRenderer(el) {
-    Renderer.call(this, el);
-    el.style.overflow = "hidden";
-    this.scrollBar.element.style.top = "0";
-    this.scrollBar.element.style.display = "none";
-    this.scrollBar.orginalWidth = this.scrollBar.width;
-    this.scrollBar.width = 0;
-    this.content.style.height = "auto";
-    this.$maxLines = 4;
-    this.$computeLayerConfigWithScroll = this.$computeLayerConfig;
-    this.setStyle("ace_one-line");
-}
-
-oop.inherits(OneLineRenderer, Renderer);
-
-(function() {
-
-    this.screenToTextCoordinates = function(x, y) {
-        var pos = this.pixelToScreenCoordinates(x, y);
-        return this.session.screenToDocumentPosition(
-            Math.min(this.session.getScreenLength() - 1, Math.max(pos.row, 0)),
-            Math.max(pos.column, 0)
-        );
-    }
-
-    this.$computeLayerConfig = function() {
-        var config = this.layerConfig;
-        var height = this.session.getScreenLength() * this.lineHeight;
-        if (config.height != height) {
-            var vScroll = height > this.maxLines * this.lineHeight;
-
-            if (vScroll != this.$vScroll) {
-                if (vScroll) {
-                    this.scrollBar.element.style.display = "";
-                    this.scrollBar.width = this.scrollBar.orginalWidth;
-                    this.container.style.height = config.height + "px";
-                    height = config.height;
-                    this.scrollTop = height - this.maxLines * this.lineHeight;
-                } else {
-                    this.scrollBar.element.style.display = "none";
-                    this.scrollBar.width = 0;
-                }
-
-                this.onResize();
-                this.$vScroll = vScroll;
-            }
-
-            if (this.$vScroll)
-                return this.$computeLayerConfigWithScroll();
-
-            this.container.style.height = height + "px";
-            this.scroller.style.height = height + "px";
-            this.content.style.height = height + "px";
-            this._emit("resize");
-        }
-
-        var longestLine = this.$getLongestLine();
-        var firstRow = 0;
-        var lastRow = this.session.getLength();
-
-        this.scrollTop = 0;
-        config.width = longestLine;
-        config.padding = this.$padding;
-        config.firstRow = 0;
-        config.firstRowScreen = 0;
-        config.lastRow = lastRow;
-        config.lineHeight = this.lineHeight;
-        config.characterWidth = this.characterWidth;
-        config.minHeight = height;
-        config.maxHeight = height;
-        config.offset = 0;
-        config.height = height;
-
-        this.$gutterLayer.element.style.marginTop = 0 + "px";
-        this.content.style.marginTop = 0 + "px";
-        this.content.style.width = longestLine + 2 * this.$padding + "px";
-    }
-
-    this.isScrollableBy = function(){ return false };
-
-}).call(OneLineRenderer.prototype);
-
-
-function singleLineEdit(el) {
-    var editor = new Editor(new OneLineRenderer(el));
-    new MultiSelect(editor);
-    editor.session.setUndoManager(new UndoManager());
-    editor.setHighlightActiveLine(false);
-    editor.setShowPrintMargin(false);
-    editor.renderer.setShowGutter(false);
-    editor.renderer.setHighlightGutterLine(false);
-    editor.$mouseHandler.$focusWaitTimout = 0;
-    return editor;
-}
-
-exports.singleLineEdit = singleLineEdit;
-
-});
-
-ace.define("ace/placeholder",["require","exports","module","ace/range","ace/lib/event_emitter","ace/lib/oop"], function(require, exports, module) {
-"use strict";
-
-var Range = require("./range").Range;
-var EventEmitter = require("./lib/event_emitter").EventEmitter;
-var oop = require("./lib/oop");
-
-var PlaceHolder = function(session, length, pos, others, mainClass, othersClass) {
-    var _self = this;
-    this.length = length;
-    this.session = session;
-    this.doc = session.getDocument();
-    this.mainClass = mainClass;
-    this.othersClass = othersClass;
-    this.$onUpdate = this.onUpdate.bind(this);
-    this.doc.on("change", this.$onUpdate);
-    this.$others = others;
-    
-    this.$onCursorChange = function() {
-        setTimeout(function() {
-            _self.onCursorChange();
-        });
-    };
-    
-    this.$pos = pos;
-    var undoStack = session.getUndoManager().$undoStack || session.getUndoManager().$undostack || {length: -1};
-    this.$undoStackDepth =  undoStack.length;
-    this.setup();
-
-    session.selection.on("changeCursor", this.$onCursorChange);
-};
-
-(function() {
-
-    oop.implement(this, EventEmitter);
-    this.setup = function() {
-        var _self = this;
-        var doc = this.doc;
-        var session = this.session;
-        var pos = this.$pos;
-        
-        this.selectionBefore = session.selection.toJSON();
-        if (session.selection.inMultiSelectMode)
-            session.selection.toSingleRange();
-
-        this.pos = doc.createAnchor(pos.row, pos.column);
-        this.markerId = session.addMarker(new Range(pos.row, pos.column, pos.row, pos.column + this.length), this.mainClass, null, false);
-        this.pos.on("change", function(event) {
-            session.removeMarker(_self.markerId);
-            _self.markerId = session.addMarker(new Range(event.value.row, event.value.column, event.value.row, event.value.column+_self.length), _self.mainClass, null, false);
-        });
-        this.others = [];
-        this.$others.forEach(function(other) {
-            var anchor = doc.createAnchor(other.row, other.column);
-            _self.others.push(anchor);
-        });
-        session.setUndoSelect(false);
-    };
-    this.showOtherMarkers = function() {
-        if(this.othersActive) return;
-        var session = this.session;
-        var _self = this;
-        this.othersActive = true;
-        this.others.forEach(function(anchor) {
-            anchor.markerId = session.addMarker(new Range(anchor.row, anchor.column, anchor.row, anchor.column+_self.length), _self.othersClass, null, false);
-            anchor.on("change", function(event) {
-                session.removeMarker(anchor.markerId);
-                anchor.markerId = session.addMarker(new Range(event.value.row, event.value.column, event.value.row, event.value.column+_self.length), _self.othersClass, null, false);
-            });
-        });
-    };
-    this.hideOtherMarkers = function() {
-        if(!this.othersActive) return;
-        this.othersActive = false;
-        for (var i = 0; i < this.others.length; i++) {
-            this.session.removeMarker(this.others[i].markerId);
-        }
-    };
-    this.onUpdate = function(event) {
-        var delta = event.data;
-        var range = delta.range;
-        if(range.start.row !== range.end.row) return;
-        if(range.start.row !== this.pos.row) return;
-        if (this.$updating) return;
-        this.$updating = true;
-        var lengthDiff = delta.action === "insertText" ? range.end.column - range.start.column : range.start.column - range.end.column;
-        
-        if(range.start.column >= this.pos.column && range.start.column <= this.pos.column + this.length + 1) {
-            var distanceFromStart = range.start.column - this.pos.column;
-            this.length += lengthDiff;
-            if(!this.session.$fromUndo) {
-                if(delta.action === "insertText") {
-                    for (var i = this.others.length - 1; i >= 0; i--) {
-                        var otherPos = this.others[i];
-                        var newPos = {row: otherPos.row, column: otherPos.column + distanceFromStart};
-                        if(otherPos.row === range.start.row && range.start.column < otherPos.column)
-                            newPos.column += lengthDiff;
-                        this.doc.insert(newPos, delta.text);
-                    }
-                } else if(delta.action === "removeText") {
-                    for (var i = this.others.length - 1; i >= 0; i--) {
-                        var otherPos = this.others[i];
-                        var newPos = {row: otherPos.row, column: otherPos.column + distanceFromStart};
-                        if(otherPos.row === range.start.row && range.start.column < otherPos.column)
-                            newPos.column += lengthDiff;
-                        this.doc.remove(new Range(newPos.row, newPos.column, newPos.row, newPos.column - lengthDiff));
-                    }
-                }
-                if(range.start.column === this.pos.column && delta.action === "insertText") {
-                    setTimeout(function() {
-                        this.pos.setPosition(this.pos.row, this.pos.column - lengthDiff);
-                        for (var i = 0; i < this.others.length; i++) {
-                            var other = this.others[i];
-                            var newPos = {row: other.row, column: other.column - lengthDiff};
-                            if(other.row === range.start.row && range.start.column < other.column)
-                                newPos.column += lengthDiff;
-                            other.setPosition(newPos.row, newPos.column);
-                        }
-                    }.bind(this), 0);
-                }
-                else if(range.start.column === this.pos.column && delta.action === "removeText") {
-                    setTimeout(function() {
-                        for (var i = 0; i < this.others.length; i++) {
-                            var other = this.others[i];
-                            if(other.row === range.start.row && range.start.column < other.column) {
-                                other.setPosition(other.row, other.column - lengthDiff);
-                            }
-                        }
-                    }.bind(this), 0);
-                }
-            }
-            this.pos._emit("change", {value: this.pos});
-            for (var i = 0; i < this.others.length; i++) {
-                this.others[i]._emit("change", {value: this.others[i]});
-            }
-        }
-        this.$updating = false;
-    };
-
-    this.onCursorChange = function(event) {
-        if (this.$updating || !this.session) return;
-        var pos = this.session.selection.getCursor();
-        if (pos.row === this.pos.row && pos.column >= this.pos.column && pos.column <= this.pos.column + this.length) {
-            this.showOtherMarkers();
-            this._emit("cursorEnter", event);
-        } else {
-            this.hideOtherMarkers();
-            this._emit("cursorLeave", event);
-        }
-    };    
-    this.detach = function() {
-        this.session.removeMarker(this.markerId);
-        this.hideOtherMarkers();
-        this.doc.removeEventListener("change", this.$onUpdate);
-        this.session.selection.removeEventListener("changeCursor", this.$onCursorChange);
-        this.pos.detach();
-        for (var i = 0; i < this.others.length; i++) {
-            this.others[i].detach();
-        }
-        this.session.setUndoSelect(true);
-        this.session = null;
-    };
-    this.cancel = function() {
-        if(this.$undoStackDepth === -1)
-            throw Error("Canceling placeholders only supported with undo manager attached to session.");
-        var undoManager = this.session.getUndoManager();
-        var undosRequired = (undoManager.$undoStack || undoManager.$undostack).length - this.$undoStackDepth;
-        for (var i = 0; i < undosRequired; i++) {
-            undoManager.undo(true);
-        }
-        if (this.selectionBefore)
-            this.session.selection.fromJSON(this.selectionBefore);
-    };
-}).call(PlaceHolder.prototype);
-
-
-exports.PlaceHolder = PlaceHolder;
 });
 
 ace.define("ace/mode/folding/fold_mode",["require","exports","module","ace/range"], function(require, exports, module) {
@@ -17682,7 +18099,6 @@ background: rgb(181, 213, 255);\
 }\
 .ace-tm.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px white;\
-border-radius: 2px;\
 }\
 .ace-tm .ace_marker-layer .ace_step {\
 background: rgb(252, 255, 0);\
@@ -17713,7 +18129,531 @@ var dom = require("../lib/dom");
 dom.importCssString(exports.cssText, exports.cssClass);
 });
 
-ace.define("ace/snippets",["require","exports","module","ace/lib/oop","ace/lib/event_emitter","ace/lib/lang","ace/range","ace/anchor","ace/keyboard/hash_handler","ace/tokenizer","ace/lib/dom","ace/editor"], function(require, exports, module) {
+ace.define("ace/line_widgets",["require","exports","module","ace/lib/oop","ace/lib/dom","ace/range"], function(require, exports, module) {
+"use strict";
+
+var oop = require("./lib/oop");
+var dom = require("./lib/dom");
+var Range = require("./range").Range;
+
+
+function LineWidgets(session) {
+    this.session = session;
+    this.session.widgetManager = this;
+    this.session.getRowLength = this.getRowLength;
+    this.session.$getWidgetScreenLength = this.$getWidgetScreenLength;
+    this.updateOnChange = this.updateOnChange.bind(this);
+    this.renderWidgets = this.renderWidgets.bind(this);
+    this.measureWidgets = this.measureWidgets.bind(this);
+    this.session._changedWidgets = [];
+    this.$onChangeEditor = this.$onChangeEditor.bind(this);
+    
+    this.session.on("change", this.updateOnChange);
+    this.session.on("changeEditor", this.$onChangeEditor);
+}
+
+(function() {
+    this.getRowLength = function(row) {
+        var h;
+        if (this.lineWidgets)
+            h = this.lineWidgets[row] && this.lineWidgets[row].rowCount || 0;
+        else 
+            h = 0;
+        if (!this.$useWrapMode || !this.$wrapData[row]) {
+            return 1 + h;
+        } else {
+            return this.$wrapData[row].length + 1 + h;
+        }
+    };
+
+    this.$getWidgetScreenLength = function() {
+        var screenRows = 0;
+        this.lineWidgets.forEach(function(w){
+            if (w && w.rowCount)
+                screenRows +=w.rowCount;
+        });
+        return screenRows;
+    };    
+    
+    this.$onChangeEditor = function(e) {
+        this.attach(e.editor);
+    };
+    
+    this.attach = function(editor) {
+        if (editor  && editor.widgetManager && editor.widgetManager != this)
+            editor.widgetManager.detach();
+
+        if (this.editor == editor)
+            return;
+
+        this.detach();
+        this.editor = editor;
+        
+        if (editor) {
+            editor.widgetManager = this;
+            editor.renderer.on("beforeRender", this.measureWidgets);
+            editor.renderer.on("afterRender", this.renderWidgets);
+        }
+    };
+    this.detach = function(e) {
+        var editor = this.editor;
+        if (!editor)
+            return;
+        
+        this.editor = null;
+        editor.widgetManager = null;
+        
+        editor.renderer.off("beforeRender", this.measureWidgets);
+        editor.renderer.off("afterRender", this.renderWidgets);
+        var lineWidgets = this.session.lineWidgets;
+        lineWidgets && lineWidgets.forEach(function(w) {
+            if (w && w.el && w.el.parentNode) {
+                w._inDocument = false;
+                w.el.parentNode.removeChild(w.el);
+            }
+        });
+    };
+
+    this.updateOnChange = function(delta) {
+        var lineWidgets = this.session.lineWidgets;
+        if (!lineWidgets) return;
+        
+        var startRow = delta.start.row;
+        var len = delta.end.row - startRow;
+
+        if (len === 0) {
+        } else if (delta.action == 'remove') {
+            var removed = lineWidgets.splice(startRow + 1, len);
+            removed.forEach(function(w) {
+                w && this.removeLineWidget(w);
+            }, this);
+            this.$updateRows();
+        } else {
+            var args = new Array(len);
+            args.unshift(startRow, 0);
+            lineWidgets.splice.apply(lineWidgets, args);
+            this.$updateRows();
+        }
+    };
+    
+    this.$updateRows = function() {
+        var lineWidgets = this.session.lineWidgets;
+        if (!lineWidgets) return;
+        var noWidgets = true;
+        lineWidgets.forEach(function(w, i) {
+            if (w) {
+                noWidgets = false;
+                w.row = i;
+            }
+        });
+        if (noWidgets)
+            this.session.lineWidgets = null;
+    };
+
+    this.addLineWidget = function(w) {
+        if (!this.session.lineWidgets)
+            this.session.lineWidgets = new Array(this.session.getLength());
+        
+        this.session.lineWidgets[w.row] = w;
+        
+        var renderer = this.editor.renderer;
+        if (w.html && !w.el) {
+            w.el = dom.createElement("div");
+            w.el.innerHTML = w.html;
+        }
+        if (w.el) {
+            dom.addCssClass(w.el, "ace_lineWidgetContainer");
+            w.el.style.position = "absolute";
+            w.el.style.zIndex = 5;
+            renderer.container.appendChild(w.el);
+            w._inDocument = true;
+        }
+        
+        if (!w.coverGutter) {
+            w.el.style.zIndex = 3;
+        }
+        if (!w.pixelHeight) {
+            w.pixelHeight = w.el.offsetHeight;
+        }
+        if (w.rowCount == null)
+            w.rowCount = w.pixelHeight / renderer.layerConfig.lineHeight;
+        
+        this.session._emit("changeFold", {data:{start:{row: w.row}}});
+        
+        this.$updateRows();
+        this.renderWidgets(null, renderer);
+        return w;
+    };
+    
+    this.removeLineWidget = function(w) {
+        w._inDocument = false;
+        if (w.el && w.el.parentNode)
+            w.el.parentNode.removeChild(w.el);
+        if (w.editor && w.editor.destroy) try {
+            w.editor.destroy();
+        } catch(e){}
+        if (this.session.lineWidgets)
+            this.session.lineWidgets[w.row] = undefined;
+        this.session._emit("changeFold", {data:{start:{row: w.row}}});
+        this.$updateRows();
+    };
+    
+    this.onWidgetChanged = function(w) {
+        this.session._changedWidgets.push(w);
+        this.editor && this.editor.renderer.updateFull();
+    };
+    
+    this.measureWidgets = function(e, renderer) {
+        var changedWidgets = this.session._changedWidgets;
+        var config = renderer.layerConfig;
+        
+        if (!changedWidgets || !changedWidgets.length) return;
+        var min = Infinity;
+        for (var i = 0; i < changedWidgets.length; i++) {
+            var w = changedWidgets[i];
+            if (!w._inDocument) {
+                w._inDocument = true;
+                renderer.container.appendChild(w.el);
+            }
+            
+            w.h = w.el.offsetHeight;
+            
+            if (!w.fixedWidth) {
+                w.w = w.el.offsetWidth;
+                w.screenWidth = Math.ceil(w.w / config.characterWidth);
+            }
+            
+            var rowCount = w.h / config.lineHeight;
+            if (w.coverLine) {
+                rowCount -= this.session.getRowLineCount(w.row);
+                if (rowCount < 0)
+                    rowCount = 0;
+            }
+            if (w.rowCount != rowCount) {
+                w.rowCount = rowCount;
+                if (w.row < min)
+                    min = w.row;
+            }
+        }
+        if (min != Infinity) {
+            this.session._emit("changeFold", {data:{start:{row: min}}});
+            this.session.lineWidgetWidth = null;
+        }
+        this.session._changedWidgets = [];
+    };
+    
+    this.renderWidgets = function(e, renderer) {
+        var config = renderer.layerConfig;
+        var lineWidgets = this.session.lineWidgets;
+        if (!lineWidgets)
+            return;
+        var first = Math.min(this.firstRow, config.firstRow);
+        var last = Math.max(this.lastRow, config.lastRow, lineWidgets.length);
+        
+        while (first > 0 && !lineWidgets[first])
+            first--;
+        
+        this.firstRow = config.firstRow;
+        this.lastRow = config.lastRow;
+
+        renderer.$cursorLayer.config = config;
+        for (var i = first; i <= last; i++) {
+            var w = lineWidgets[i];
+            if (!w || !w.el) continue;
+
+            if (!w._inDocument) {
+                w._inDocument = true;
+                renderer.container.appendChild(w.el);
+            }
+            var top = renderer.$cursorLayer.getPixelPosition({row: i, column:0}, true).top;
+            if (!w.coverLine)
+                top += config.lineHeight * this.session.getRowLineCount(w.row);
+            w.el.style.top = top - config.offset + "px";
+            
+            var left = w.coverGutter ? 0 : renderer.gutterWidth;
+            if (!w.fixedWidth)
+                left -= renderer.scrollLeft;
+            w.el.style.left = left + "px";
+
+            if (w.fixedWidth) {
+                w.el.style.right = renderer.scrollBar.getWidth() + "px";
+            } else {
+                w.el.style.right = "";
+            }
+        }
+    };
+    
+}).call(LineWidgets.prototype);
+
+
+exports.LineWidgets = LineWidgets;
+
+});
+
+ace.define("ace/ext/error_marker",["require","exports","module","ace/line_widgets","ace/lib/dom","ace/range"], function(require, exports, module) {
+"use strict";
+var LineWidgets = require("../line_widgets").LineWidgets;
+var dom = require("../lib/dom");
+var Range = require("../range").Range;
+
+function binarySearch(array, needle, comparator) {
+    var first = 0;
+    var last = array.length - 1;
+
+    while (first <= last) {
+        var mid = (first + last) >> 1;
+        var c = comparator(needle, array[mid]);
+        if (c > 0)
+            first = mid + 1;
+        else if (c < 0)
+            last = mid - 1;
+        else
+            return mid;
+    }
+    return -(first + 1);
+}
+
+function findAnnotations(session, row, dir) {
+    var annotations = session.getAnnotations().sort(Range.comparePoints);
+    if (!annotations.length)
+        return;
+    
+    var i = binarySearch(annotations, {row: row, column: -1}, Range.comparePoints);
+    if (i < 0)
+        i = -i - 1;
+    
+    if (i >= annotations.length)
+        i = dir > 0 ? 0 : annotations.length - 1;
+    else if (i === 0 && dir < 0)
+        i = annotations.length - 1;
+    
+    var annotation = annotations[i];
+    if (!annotation || !dir)
+        return;
+
+    if (annotation.row === row) {
+        do {
+            annotation = annotations[i += dir];
+        } while (annotation && annotation.row === row);
+        if (!annotation)
+            return annotations.slice();
+    }
+    
+    
+    var matched = [];
+    row = annotation.row;
+    do {
+        matched[dir < 0 ? "unshift" : "push"](annotation);
+        annotation = annotations[i += dir];
+    } while (annotation && annotation.row == row);
+    return matched.length && matched;
+}
+
+exports.showErrorMarker = function(editor, dir) {
+    var session = editor.session;
+    if (!session.widgetManager) {
+        session.widgetManager = new LineWidgets(session);
+        session.widgetManager.attach(editor);
+    }
+    
+    var pos = editor.getCursorPosition();
+    var row = pos.row;
+    var oldWidget = session.lineWidgets && session.lineWidgets[row];
+    if (oldWidget) {
+        oldWidget.destroy();
+    } else {
+        row -= dir;
+    }
+    var annotations = findAnnotations(session, row, dir);
+    var gutterAnno;
+    if (annotations) {
+        var annotation = annotations[0];
+        pos.column = (annotation.pos && typeof annotation.column != "number"
+            ? annotation.pos.sc
+            : annotation.column) || 0;
+        pos.row = annotation.row;
+        gutterAnno = editor.renderer.$gutterLayer.$annotations[pos.row];
+    } else if (oldWidget) {
+        return;
+    } else {
+        gutterAnno = {
+            text: ["Looks good!"],
+            className: "ace_ok"
+        };
+    }
+    editor.session.unfold(pos.row);
+    editor.selection.moveToPosition(pos);
+    
+    var w = {
+        row: pos.row, 
+        fixedWidth: true,
+        coverGutter: true,
+        el: dom.createElement("div")
+    };
+    var el = w.el.appendChild(dom.createElement("div"));
+    var arrow = w.el.appendChild(dom.createElement("div"));
+    arrow.className = "error_widget_arrow " + gutterAnno.className;
+    
+    var left = editor.renderer.$cursorLayer
+        .getPixelPosition(pos).left;
+    arrow.style.left = left + editor.renderer.gutterWidth - 5 + "px";
+    
+    w.el.className = "error_widget_wrapper";
+    el.className = "error_widget " + gutterAnno.className;
+    el.innerHTML = gutterAnno.text.join("<br>");
+    
+    el.appendChild(dom.createElement("div"));
+    
+    var kb = function(_, hashId, keyString) {
+        if (hashId === 0 && (keyString === "esc" || keyString === "return")) {
+            w.destroy();
+            return {command: "null"};
+        }
+    };
+    
+    w.destroy = function() {
+        if (editor.$mouseHandler.isMousePressed)
+            return;
+        editor.keyBinding.removeKeyboardHandler(kb);
+        session.widgetManager.removeLineWidget(w);
+        editor.off("changeSelection", w.destroy);
+        editor.off("changeSession", w.destroy);
+        editor.off("mouseup", w.destroy);
+        editor.off("change", w.destroy);
+    };
+    
+    editor.keyBinding.addKeyboardHandler(kb);
+    editor.on("changeSelection", w.destroy);
+    editor.on("changeSession", w.destroy);
+    editor.on("mouseup", w.destroy);
+    editor.on("change", w.destroy);
+    
+    editor.session.widgetManager.addLineWidget(w);
+    
+    w.el.onmousedown = editor.focus.bind(editor);
+    
+    editor.renderer.scrollCursorIntoView(null, 0.5, {bottom: w.el.offsetHeight});
+};
+
+
+dom.importCssString("\
+    .error_widget_wrapper {\
+        background: inherit;\
+        color: inherit;\
+        border:none\
+    }\
+    .error_widget {\
+        border-top: solid 2px;\
+        border-bottom: solid 2px;\
+        margin: 5px 0;\
+        padding: 10px 40px;\
+        white-space: pre-wrap;\
+    }\
+    .error_widget.ace_error, .error_widget_arrow.ace_error{\
+        border-color: #ff5a5a\
+    }\
+    .error_widget.ace_warning, .error_widget_arrow.ace_warning{\
+        border-color: #F1D817\
+    }\
+    .error_widget.ace_info, .error_widget_arrow.ace_info{\
+        border-color: #5a5a5a\
+    }\
+    .error_widget.ace_ok, .error_widget_arrow.ace_ok{\
+        border-color: #5aaa5a\
+    }\
+    .error_widget_arrow {\
+        position: absolute;\
+        border: solid 5px;\
+        border-top-color: transparent!important;\
+        border-right-color: transparent!important;\
+        border-left-color: transparent!important;\
+        top: -5px;\
+    }\
+", "");
+
+});
+
+ace.define("ace/ace",["require","exports","module","ace/lib/fixoldbrowsers","ace/lib/dom","ace/lib/event","ace/editor","ace/edit_session","ace/undomanager","ace/virtual_renderer","ace/worker/worker_client","ace/keyboard/hash_handler","ace/placeholder","ace/multi_select","ace/mode/folding/fold_mode","ace/theme/textmate","ace/ext/error_marker","ace/config"], function(require, exports, module) {
+"use strict";
+
+require("./lib/fixoldbrowsers");
+
+var dom = require("./lib/dom");
+var event = require("./lib/event");
+
+var Editor = require("./editor").Editor;
+var EditSession = require("./edit_session").EditSession;
+var UndoManager = require("./undomanager").UndoManager;
+var Renderer = require("./virtual_renderer").VirtualRenderer;
+require("./worker/worker_client");
+require("./keyboard/hash_handler");
+require("./placeholder");
+require("./multi_select");
+require("./mode/folding/fold_mode");
+require("./theme/textmate");
+require("./ext/error_marker");
+
+exports.config = require("./config");
+exports.require = require;
+exports.edit = function(el) {
+    if (typeof(el) == "string") {
+        var _id = el;
+        el = document.getElementById(_id);
+        if (!el)
+            throw new Error("ace.edit can't find div #" + _id);
+    }
+
+    if (el && el.env && el.env.editor instanceof Editor)
+        return el.env.editor;
+
+    var value = "";
+    if (el && /input|textarea/i.test(el.tagName)) {
+        var oldNode = el;
+        value = oldNode.value;
+        el = dom.createElement("pre");
+        oldNode.parentNode.replaceChild(el, oldNode);
+    } else if (el) {
+        value = dom.getInnerText(el);
+        el.innerHTML = '';
+    }
+
+    var doc = exports.createEditSession(value);
+
+    var editor = new Editor(new Renderer(el));
+    editor.setSession(doc);
+
+    var env = {
+        document: doc,
+        editor: editor,
+        onResize: editor.resize.bind(editor, null)
+    };
+    if (oldNode) env.textarea = oldNode;
+    event.addListener(window, "resize", env.onResize);
+    editor.on("destroy", function() {
+        event.removeListener(window, "resize", env.onResize);
+        env.editor.container.env = null; // prevent memory leak on old ie
+    });
+    editor.container.env = editor.env = env;
+    return editor;
+};
+exports.createEditSession = function(text, mode) {
+    var doc = new EditSession(text, mode);
+    doc.setUndoManager(new UndoManager());
+    return doc;
+}
+exports.EditSession = EditSession;
+exports.UndoManager = UndoManager;
+});
+            (function() {
+                ace.require(["ace/ace"], function(a) {
+                    a && a.config.init(true);
+                    if (!window.ace)
+                        window.ace = a;
+                    for (var key in a) if (a.hasOwnProperty(key))
+                        window.ace[key] = a[key];
+                });
+            })();
+        ace.define("ace/snippets",["require","exports","module","ace/lib/oop","ace/lib/event_emitter","ace/lib/lang","ace/range","ace/anchor","ace/keyboard/hash_handler","ace/tokenizer","ace/lib/dom","ace/editor"], function(require, exports, module) {
 "use strict";
 var oop = require("./lib/oop");
 var EventEmitter = require("./lib/event_emitter").EventEmitter;
@@ -18339,11 +19279,11 @@ var TabstopManager = function(editor) {
         this.editor = null;
     };
 
-    this.onChange = function(e) {
-        var changeRange = e.data.range;
-        var isRemove = e.data.action[0] == "r";
-        var start = changeRange.start;
-        var end = changeRange.end;
+    this.onChange = function(delta) {
+        var changeRange = delta;
+        var isRemove = delta.action[0] == "r";
+        var start = delta.start;
+        var end = delta.end;
         var startRow = start.row;
         var endRow = end.row;
         var lineDif = endRow - startRow;
@@ -18616,10 +19556,9 @@ var Editor = require("./editor").Editor;
 
 });
 
-ace.define("ace/autocomplete/popup",["require","exports","module","ace/edit_session","ace/virtual_renderer","ace/editor","ace/range","ace/lib/event","ace/lib/lang","ace/lib/dom"], function(require, exports, module) {
+ace.define("ace/autocomplete/popup",["require","exports","module","ace/virtual_renderer","ace/editor","ace/range","ace/lib/event","ace/lib/lang","ace/lib/dom"], function(require, exports, module) {
 "use strict";
 
-var EditSession = require("../edit_session").EditSession;
 var Renderer = require("../virtual_renderer").VirtualRenderer;
 var Editor = require("../editor").Editor;
 var Range = require("../range").Range;
@@ -18784,8 +19723,11 @@ var AcePopup = function(parentNode) {
 
         if (data.meta) {
             var maxW = popup.renderer.$size.scrollerWidth / popup.renderer.layerConfig.characterWidth;
-            if (data.meta.length + data.caption.length < maxW - 2)
-                tokens.push({type: "rightAlignedText", value: data.meta});
+            var metaData = data.meta;
+            if (metaData.length + data.caption.length > maxW - 2) {
+                metaData = metaData.substr(0, maxW - data.caption.length - 3) + "\u2026"
+            }
+            tokens.push({type: "rightAlignedText", value: metaData});
         }
         return tokens;
     };
@@ -18795,13 +19737,15 @@ var AcePopup = function(parentNode) {
     popup.session.$computeWidth = function() {
         return this.screenWidth = 0;
     };
+
+    popup.$blockScrolling = Infinity;
     popup.isOpen = false;
     popup.isTopdown = false;
 
     popup.data = [];
     popup.setData = function(list) {
-        popup.data = list || [];
         popup.setValue(lang.stringRepeat("\n", list.length), -1);
+        popup.data = list || [];
         popup.setRow(0);
     };
     popup.getData = function(row) {
@@ -18826,6 +19770,7 @@ var AcePopup = function(parentNode) {
     popup.on("changeSelection", function() {
         if (popup.isOpen)
             popup.setRow(popup.selection.lead.row);
+        popup.renderer.scrollCursorIntoView();
     });
 
     popup.hide = function() {
@@ -18978,8 +19923,10 @@ var dom = require("./lib/dom");
 var snippetManager = require("./snippets").snippetManager;
 
 var Autocomplete = function() {
-    this.autoInsert = true;
+    this.autoInsert = false;
     this.autoSelect = true;
+    this.exactMatch = false;
+    this.gatherCompletionsId = 0;
     this.keyboardHandler = new HashHandler();
     this.keyboardHandler.bindKeys(this.commands);
 
@@ -18991,12 +19938,11 @@ var Autocomplete = function() {
     this.changeTimer = lang.delayedCall(function() {
         this.updateCompletions(true);
     }.bind(this));
-    
+
     this.tooltipTimer = lang.delayedCall(this.updateDocTooltip.bind(this), 50);
 };
 
 (function() {
-    this.gatherCompletionsId = 0;
 
     this.$init = function() {
         this.popup = new AcePopup(document.body || document.documentElement);
@@ -19010,7 +19956,7 @@ var Autocomplete = function() {
         this.popup.on("changeHoverMarker", this.tooltipTimer.bind(null, null));
         return this.popup;
     };
-    
+
     this.getPopup = function() {
         return this.popup || this.$init();
     };
@@ -19021,6 +19967,8 @@ var Autocomplete = function() {
 
         this.popup.setData(this.completions.filtered);
 
+        editor.keyBinding.addKeyboardHandler(this.keyboardHandler);
+        
         var renderer = editor.renderer;
         this.popup.setRow(this.autoSelect ? 0 : -1);
         if (!keepPopupPosition) {
@@ -19035,7 +19983,7 @@ var Autocomplete = function() {
             var rect = editor.container.getBoundingClientRect();
             pos.top += rect.top - renderer.layerConfig.offset;
             pos.left += rect.left - editor.renderer.scrollLeft;
-            pos.left += renderer.$gutterLayer.gutterWidth;
+            pos.left += renderer.gutterWidth;
 
             this.popup.show(pos, lineHeight);
         } else if (keepPopupPosition && !prefix) {
@@ -19052,11 +20000,10 @@ var Autocomplete = function() {
         this.changeTimer.cancel();
         this.hideDocTooltip();
 
-        if (this.popup && this.popup.isOpen) {
-            this.gatherCompletionsId += 1;
+        this.gatherCompletionsId += 1;
+        if (this.popup && this.popup.isOpen)
             this.popup.hide();
-        }
-        
+
         if (this.base)
             this.base.detach();
         this.activated = false;
@@ -19076,10 +20023,11 @@ var Autocomplete = function() {
 
     this.blurListener = function(e) {
         var el = document.activeElement;
-        var text = this.editor.textInput.getElement()
-        if (el != text && el.parentNode != this.popup.container 
-            && el != this.tooltipNode && e.relatedTarget != this.tooltipNode
-            && e.relatedTarget != text
+        var text = this.editor.textInput.getElement();
+        var fromTooltip = e.relatedTarget && e.relatedTarget == this.tooltipNode;
+        var container = this.popup && this.popup.container;
+        if (el != text && el.parentNode != container && !fromTooltip
+            && el != this.tooltipNode && e.relatedTarget != text
         ) {
             this.detach();
         }
@@ -19107,7 +20055,7 @@ var Autocomplete = function() {
         this.popup.setRow(row);
     };
 
-    this.insertMatch = function(data) {
+    this.insertMatch = function(data, options) {
         if (!data)
             data = this.popup.getData(this.popup.getRow());
         if (!data)
@@ -19139,9 +20087,8 @@ var Autocomplete = function() {
         "Ctrl-Down|Ctrl-End": function(editor) { editor.completer.goTo("end"); },
 
         "Esc": function(editor) { editor.completer.detach(); },
-        "Space": function(editor) { editor.completer.detach(); editor.insert(" ");},
         "Return": function(editor) { return editor.completer.insertMatch(); },
-        "Shift-Return": function(editor) { editor.completer.insertMatch(true); },
+        "Shift-Return": function(editor) { editor.completer.insertMatch(null, {deleteSuffix: true}); },
         "Tab": function(editor) {
             var result = editor.completer.insertMatch();
             if (!result && !editor.tabstopManager)
@@ -19163,7 +20110,7 @@ var Autocomplete = function() {
 
         this.base = session.doc.createAnchor(pos.row, pos.column - prefix.length);
         this.base.$insertRight = true;
-        
+
         var matches = [];
         var total = editor.completers.length;
         editor.completers.forEach(function(completer, i) {
@@ -19195,7 +20142,6 @@ var Autocomplete = function() {
             editor.completer = this;
         }
 
-        editor.keyBinding.addKeyboardHandler(this.keyboardHandler);
         editor.on("changeSelection", this.changeListener);
         editor.on("blur", this.blurListener);
         editor.on("mousedown", this.mousedownListener);
@@ -19229,13 +20175,17 @@ var Autocomplete = function() {
 
             var prefix = results.prefix;
             var matches = results && results.matches;
-            
+
             if (!matches || !matches.length)
                 return detachIfFinished();
             if (prefix.indexOf(results.prefix) !== 0 || _id != this.gatherCompletionsId)
                 return;
 
             this.completions = new FilteredList(matches);
+
+            if (this.exactMatch)
+                this.completions.exactMatch = true;
+
             this.completions.setFilter(prefix);
             var filtered = this.completions.filtered;
             if (!filtered.length)
@@ -19252,7 +20202,7 @@ var Autocomplete = function() {
     this.cancelContextMenu = function() {
         this.editor.$mouseHandler.cancelContextMenu();
     };
-    
+
     this.updateDocTooltip = function() {
         var popup = this.popup;
         var all = popup.data;
@@ -19267,14 +20217,14 @@ var Autocomplete = function() {
         });
         if (!doc)
             doc = selected;
-        
+
         if (typeof doc == "string")
-            doc = {docText: doc}
+            doc = {docText: doc};
         if (!doc || !(doc.docHTML || doc.docText))
             return this.hideDocTooltip();
         this.showDocTooltip(doc);
     };
-    
+
     this.showDocTooltip = function(item) {
         if (!this.tooltipNode) {
             this.tooltipNode = dom.createElement("div");
@@ -19284,21 +20234,21 @@ var Autocomplete = function() {
             this.tooltipNode.tabIndex = -1;
             this.tooltipNode.onblur = this.blurListener.bind(this);
         }
-        
+
         var tooltipNode = this.tooltipNode;
         if (item.docHTML) {
             tooltipNode.innerHTML = item.docHTML;
         } else if (item.docText) {
             tooltipNode.textContent = item.docText;
         }
-        
+
         if (!tooltipNode.parentNode)
-            document.body.appendChild(tooltipNode);        
+            document.body.appendChild(tooltipNode);
         var popup = this.popup;
         var rect = popup.container.getBoundingClientRect();
         tooltipNode.style.top = popup.container.style.top;
         tooltipNode.style.bottom = popup.container.style.bottom;
-        
+
         if (window.innerWidth - rect.right < 320) {
             tooltipNode.style.right = window.innerWidth - rect.left + "px";
             tooltipNode.style.left = "";
@@ -19308,7 +20258,7 @@ var Autocomplete = function() {
         }
         tooltipNode.style.display = "block";
     };
-    
+
     this.hideDocTooltip = function() {
         this.tooltipTimer.cancel();
         if (!this.tooltipNode) return;
@@ -19316,7 +20266,7 @@ var Autocomplete = function() {
         if (!this.editor.isFocused() && document.activeElement == el)
             this.editor.focus();
         this.tooltipNode = null;
-        if (el.parentNode) 
+        if (el.parentNode)
             el.parentNode.removeChild(el);
     };
 
@@ -19327,7 +20277,7 @@ Autocomplete.startCommand = {
     exec: function(editor) {
         if (!editor.completer)
             editor.completer = new Autocomplete();
-        editor.completer.autoInsert = 
+        editor.completer.autoInsert = false;
         editor.completer.autoSelect = true;
         editor.completer.showPopup(editor);
         editor.completer.cancelContextMenu();
@@ -19335,10 +20285,11 @@ Autocomplete.startCommand = {
     bindKey: "Ctrl-Space|Ctrl-Shift-Space|Alt-Space"
 };
 
-var FilteredList = function(array, filterText, mutateData) {
+var FilteredList = function(array, filterText) {
     this.all = array;
     this.filtered = array;
     this.filterText = filterText || "";
+    this.exactMatch = false;
 };
 (function(){
     this.setFilter = function(str) {
@@ -19373,20 +20324,26 @@ var FilteredList = function(array, filterText, mutateData) {
             var matchMask = 0;
             var penalty = 0;
             var index, distance;
-            for (var j = 0; j < needle.length; j++) {
-                var i1 = caption.indexOf(lower[j], lastIndex + 1);
-                var i2 = caption.indexOf(upper[j], lastIndex + 1);
-                index = (i1 >= 0) ? ((i2 < 0 || i1 < i2) ? i1 : i2) : i2;
-                if (index < 0)
+
+            if (this.exactMatch) {
+                if (needle !== caption.substr(0, needle.length))
                     continue loop;
-                distance = index - lastIndex - 1;
-                if (distance > 0) {
-                    if (lastIndex === -1)
-                        penalty += 10;
-                    penalty += distance;
+            }else{
+                for (var j = 0; j < needle.length; j++) {
+                    var i1 = caption.indexOf(lower[j], lastIndex + 1);
+                    var i2 = caption.indexOf(upper[j], lastIndex + 1);
+                    index = (i1 >= 0) ? ((i2 < 0 || i1 < i2) ? i1 : i2) : i2;
+                    if (index < 0)
+                        continue loop;
+                    distance = index - lastIndex - 1;
+                    if (distance > 0) {
+                        if (lastIndex === -1)
+                            penalty += 10;
+                        penalty += distance;
+                    }
+                    matchMask = matchMask | (1 << index);
+                    lastIndex = index;
                 }
-                matchMask = matchMask | (1 << index);
-                lastIndex = index;
             }
             item.matchMask = matchMask;
             item.exactMatch = penalty ? 0 : 1;
@@ -19458,6 +20415,9 @@ var util = require("../autocomplete/util");
 var textCompleter = require("../autocomplete/text_completer");
 var keyWordCompleter = {
     getCompletions: function(editor, session, pos, prefix, callback) {
+        if (session.$mode.completer) {
+            return session.$mode.completer.getCompletions(editor, session, pos, prefix, callback);
+        }
         var state = editor.session.getState(pos.row);
         var completions = session.$mode.getCompletions(state, session, pos, prefix);
         callback(null, completions);
@@ -19551,7 +20511,7 @@ var loadSnippetFile = function(id) {
 function getCompletionPrefix(editor) {
     var pos = editor.getCursorPosition();
     var line = editor.session.getLine(pos.row);
-    var prefix = util.retrievePrecedingIdentifier(line, pos.column);
+    var prefix;
     editor.completers.forEach(function(completer) {
         if (completer.identifierRegexps) {
             completer.identifierRegexps.forEach(function(identifierRegex) {
@@ -19560,12 +20520,11 @@ function getCompletionPrefix(editor) {
             });
         }
     });
-    return prefix;
+    return prefix || util.retrievePrecedingIdentifier(line, pos.column);
 }
 
 var doLiveAutocomplete = function(e) {
     var editor = e.editor;
-    var text = e.args || "";
     var hasCompleter = editor.completer && editor.completer.activated;
     if (e.command.name === "backspace") {
         if (hasCompleter && !getCompletionPrefix(editor))
@@ -19577,7 +20536,6 @@ var doLiveAutocomplete = function(e) {
             if (!editor.completer) {
                 editor.completer = new Autocomplete();
             }
-            editor.completer.autoSelect = false;
             editor.completer.autoInsert = false;
             editor.completer.showPopup(editor);
         }
@@ -19625,754 +20583,6 @@ require("../config").defineOptions(Editor.prototype, "editor", {
     }
 });
 });
-
-ace.define("ace/line_widgets",["require","exports","module","ace/lib/oop","ace/lib/dom","ace/range"], function(require, exports, module) {
-"use strict";
-
-var oop = require("./lib/oop");
-var dom = require("./lib/dom");
-var Range = require("./range").Range;
-
-
-function LineWidgets(session) {
-    this.session = session;
-    this.session.widgetManager = this;
-    this.session.getRowLength = this.getRowLength;
-    this.session.$getWidgetScreenLength = this.$getWidgetScreenLength;
-    this.updateOnChange = this.updateOnChange.bind(this);
-    this.renderWidgets = this.renderWidgets.bind(this);
-    this.measureWidgets = this.measureWidgets.bind(this);
-    this.session._changedWidgets = [];
-    this.$onChangeEditor = this.$onChangeEditor.bind(this);
-    
-    this.session.on("change", this.updateOnChange);
-    this.session.on("changeEditor", this.$onChangeEditor);
-}
-
-(function() {
-    this.getRowLength = function(row) {
-        var h;
-        if (this.lineWidgets)
-            h = this.lineWidgets[row] && this.lineWidgets[row].rowCount || 0;
-        else 
-            h = 0;
-        if (!this.$useWrapMode || !this.$wrapData[row]) {
-            return 1 + h;
-        } else {
-            return this.$wrapData[row].length + 1 + h;
-        }
-    };
-
-    this.$getWidgetScreenLength = function() {
-        var screenRows = 0;
-        this.lineWidgets.forEach(function(w){
-            if (w && w.rowCount)
-                screenRows +=w.rowCount;
-        });
-        return screenRows;
-    };    
-    
-    this.$onChangeEditor = function(e) {
-        this.attach(e.editor);
-    };
-    
-    this.attach = function(editor) {
-        if (editor  && editor.widgetManager && editor.widgetManager != this)
-            editor.widgetManager.detach();
-
-        if (this.editor == editor)
-            return;
-
-        this.detach();
-        this.editor = editor;
-        
-        if (editor) {
-            editor.widgetManager = this;
-            editor.renderer.on("beforeRender", this.measureWidgets);
-            editor.renderer.on("afterRender", this.renderWidgets);
-        }
-    };
-    this.detach = function(e) {
-        var editor = this.editor;
-        if (!editor)
-            return;
-        
-        this.editor = null;
-        editor.widgetManager = null;
-        
-        editor.renderer.off("beforeRender", this.measureWidgets);
-        editor.renderer.off("afterRender", this.renderWidgets);
-        var lineWidgets = this.session.lineWidgets;
-        lineWidgets && lineWidgets.forEach(function(w) {
-            if (w && w.el && w.el.parentNode) {
-                w._inDocument = false;
-                w.el.parentNode.removeChild(w.el);
-            }
-        });
-    };
-
-    this.updateOnChange = function(e) {
-        var lineWidgets = this.session.lineWidgets;
-        if (!lineWidgets) return;
-            
-        var delta = e.data;
-        var range = delta.range;
-        var startRow = range.start.row;
-        var len = range.end.row - startRow;
-
-        if (len === 0) {
-        } else if (delta.action == "removeText" || delta.action == "removeLines") {
-            var removed = lineWidgets.splice(startRow + 1, len);
-            removed.forEach(function(w) {
-                w && this.removeLineWidget(w);
-            }, this);
-            this.$updateRows();
-        } else {
-            var args = new Array(len);
-            args.unshift(startRow, 0);
-            lineWidgets.splice.apply(lineWidgets, args);
-            this.$updateRows();
-        }
-    };
-    
-    this.$updateRows = function() {
-        var lineWidgets = this.session.lineWidgets;
-        if (!lineWidgets) return;
-        var noWidgets = true;
-        lineWidgets.forEach(function(w, i) {
-            if (w) {
-                noWidgets = false;
-                w.row = i;
-            }
-        });
-        if (noWidgets)
-            this.session.lineWidgets = null;
-    };
-
-    this.addLineWidget = function(w) {
-        if (!this.session.lineWidgets)
-            this.session.lineWidgets = new Array(this.session.getLength());
-        
-        this.session.lineWidgets[w.row] = w;
-        
-        var renderer = this.editor.renderer;
-        if (w.html && !w.el) {
-            w.el = dom.createElement("div");
-            w.el.innerHTML = w.html;
-        }
-        if (w.el) {
-            dom.addCssClass(w.el, "ace_lineWidgetContainer");
-            w.el.style.position = "absolute";
-            w.el.style.zIndex = 5;
-            renderer.container.appendChild(w.el);
-            w._inDocument = true;
-        }
-        
-        if (!w.coverGutter) {
-            w.el.style.zIndex = 3;
-        }
-        if (!w.pixelHeight) {
-            w.pixelHeight = w.el.offsetHeight;
-        }
-        if (w.rowCount == null)
-            w.rowCount = w.pixelHeight / renderer.layerConfig.lineHeight;
-        
-        this.session._emit("changeFold", {data:{start:{row: w.row}}});
-        
-        this.$updateRows();
-        this.renderWidgets(null, renderer);
-        return w;
-    };
-    
-    this.removeLineWidget = function(w) {
-        w._inDocument = false;
-        if (w.el && w.el.parentNode)
-            w.el.parentNode.removeChild(w.el);
-        if (w.editor && w.editor.destroy) try {
-            w.editor.destroy();
-        } catch(e){}
-        if (this.session.lineWidgets)
-            this.session.lineWidgets[w.row] = undefined;
-        this.session._emit("changeFold", {data:{start:{row: w.row}}});
-        this.$updateRows();
-    };
-    
-    this.onWidgetChanged = function(w) {
-        this.session._changedWidgets.push(w);
-        this.editor && this.editor.renderer.updateFull();
-    };
-    
-    this.measureWidgets = function(e, renderer) {
-        var changedWidgets = this.session._changedWidgets;
-        var config = renderer.layerConfig;
-        
-        if (!changedWidgets || !changedWidgets.length) return;
-        var min = Infinity;
-        for (var i = 0; i < changedWidgets.length; i++) {
-            var w = changedWidgets[i];
-            if (!w._inDocument) {
-                w._inDocument = true;
-                renderer.container.appendChild(w.el);
-            }
-            
-            w.h = w.el.offsetHeight;
-            
-            if (!w.fixedWidth) {
-                w.w = w.el.offsetWidth;
-                w.screenWidth = Math.ceil(w.w / config.characterWidth);
-            }
-            
-            var rowCount = w.h / config.lineHeight;
-            if (w.coverLine) {
-                rowCount -= this.session.getRowLineCount(w.row);
-                if (rowCount < 0)
-                    rowCount = 0;
-            }
-            if (w.rowCount != rowCount) {
-                w.rowCount = rowCount;
-                if (w.row < min)
-                    min = w.row;
-            }
-        }
-        if (min != Infinity) {
-            this.session._emit("changeFold", {data:{start:{row: min}}});
-            this.session.lineWidgetWidth = null;
-        }
-        this.session._changedWidgets = [];
-    };
-    
-    this.renderWidgets = function(e, renderer) {
-        var config = renderer.layerConfig;
-        var lineWidgets = this.session.lineWidgets;
-        if (!lineWidgets)
-            return;
-        var first = Math.min(this.firstRow, config.firstRow);
-        var last = Math.max(this.lastRow, config.lastRow, lineWidgets.length);
-        
-        while (first > 0 && !lineWidgets[first])
-            first--;
-        
-        this.firstRow = config.firstRow;
-        this.lastRow = config.lastRow;
-
-        renderer.$cursorLayer.config = config;
-        for (var i = first; i <= last; i++) {
-            var w = lineWidgets[i];
-            if (!w || !w.el) continue;
-
-            if (!w._inDocument) {
-                w._inDocument = true;
-                renderer.container.appendChild(w.el);
-            }
-            var top = renderer.$cursorLayer.getPixelPosition({row: i, column:0}, true).top;
-            if (!w.coverLine)
-                top += config.lineHeight * this.session.getRowLineCount(w.row);
-            w.el.style.top = top - config.offset + "px";
-            
-            var left = w.coverGutter ? 0 : renderer.gutterWidth;
-            if (!w.fixedWidth)
-                left -= renderer.scrollLeft;
-            w.el.style.left = left + "px";
-
-            if (w.fixedWidth) {
-                w.el.style.right = renderer.scrollBar.getWidth() + "px";
-            } else {
-                w.el.style.right = "";
-            }
-        }
-    };
-    
-}).call(LineWidgets.prototype);
-
-
-exports.LineWidgets = LineWidgets;
-
-});
-
-ace.define("ace/ext/error_marker",["require","exports","module","ace/line_widgets","ace/lib/dom","ace/range"], function(require, exports, module) {
-"use strict";
-var LineWidgets = require("../line_widgets").LineWidgets;
-var dom = require("../lib/dom");
-var Range = require("../range").Range;
-
-function binarySearch(array, needle, comparator) {
-    var first = 0;
-    var last = array.length - 1;
-
-    while (first <= last) {
-        var mid = (first + last) >> 1;
-        var c = comparator(needle, array[mid]);
-        if (c > 0)
-            first = mid + 1;
-        else if (c < 0)
-            last = mid - 1;
-        else
-            return mid;
-    }
-    return -(first + 1);
-}
-
-function findAnnotations(session, row, dir) {
-    var annotations = session.getAnnotations().sort(Range.comparePoints);
-    if (!annotations.length)
-        return;
-    
-    var i = binarySearch(annotations, {row: row, column: -1}, Range.comparePoints);
-    if (i < 0)
-        i = -i - 1;
-    
-    if (i >= annotations.length - 1)
-        i = dir > 0 ? 0 : annotations.length - 1;
-    else if (i === 0 && dir < 0)
-        i = annotations.length - 1;
-    
-    var annotation = annotations[i];
-    if (!annotation || !dir)
-        return;
-
-    if (annotation.row === row) {
-        do {
-            annotation = annotations[i += dir];
-        } while (annotation && annotation.row === row);
-        if (!annotation)
-            return annotations.slice();
-    }
-    
-    
-    var matched = [];
-    row = annotation.row;
-    do {
-        matched[dir < 0 ? "unshift" : "push"](annotation);
-        annotation = annotations[i += dir];
-    } while (annotation && annotation.row == row);
-    return matched.length && matched;
-}
-
-exports.showErrorMarker = function(editor, dir) {
-    var session = editor.session;
-    if (!session.widgetManager) {
-        session.widgetManager = new LineWidgets(session);
-        session.widgetManager.attach(editor);
-    }
-    
-    var pos = editor.getCursorPosition();
-    var row = pos.row;
-    var oldWidget = session.lineWidgets && session.lineWidgets[row];
-    if (oldWidget) {
-        oldWidget.destroy();
-    } else {
-        row -= dir;
-    }
-    var annotations = findAnnotations(session, row, dir);
-    var gutterAnno;
-    if (annotations) {
-        var annotation = annotations[0];
-        pos.column = (annotation.pos && typeof annotation.column != "number"
-            ? annotation.pos.sc
-            : annotation.column) || 0;
-        pos.row = annotation.row;
-        gutterAnno = editor.renderer.$gutterLayer.$annotations[pos.row];
-    } else if (oldWidget) {
-        return;
-    } else {
-        gutterAnno = {
-            text: ["Looks good!"],
-            className: "ace_ok"
-        };
-    }
-    editor.session.unfold(pos.row);
-    editor.selection.moveToPosition(pos);
-    
-    var w = {
-        row: pos.row, 
-        fixedWidth: true,
-        coverGutter: true,
-        el: dom.createElement("div")
-    };
-    var el = w.el.appendChild(dom.createElement("div"));
-    var arrow = w.el.appendChild(dom.createElement("div"));
-    arrow.className = "error_widget_arrow " + gutterAnno.className;
-    
-    var left = editor.renderer.$cursorLayer
-        .getPixelPosition(pos).left;
-    arrow.style.left = left + editor.renderer.gutterWidth - 5 + "px";
-    
-    w.el.className = "error_widget_wrapper";
-    el.className = "error_widget " + gutterAnno.className;
-    el.innerHTML = gutterAnno.text.join("<br>");
-    
-    el.appendChild(dom.createElement("div"));
-    
-    var kb = function(_, hashId, keyString) {
-        if (hashId === 0 && (keyString === "esc" || keyString === "return")) {
-            w.destroy();
-            return {command: "null"};
-        }
-    };
-    
-    w.destroy = function() {
-        if (editor.$mouseHandler.isMousePressed)
-            return;
-        editor.keyBinding.removeKeyboardHandler(kb);
-        session.widgetManager.removeLineWidget(w);
-        editor.off("changeSelection", w.destroy);
-        editor.off("changeSession", w.destroy);
-        editor.off("mouseup", w.destroy);
-        editor.off("change", w.destroy);
-    };
-    
-    editor.keyBinding.addKeyboardHandler(kb);
-    editor.on("changeSelection", w.destroy);
-    editor.on("changeSession", w.destroy);
-    editor.on("mouseup", w.destroy);
-    editor.on("change", w.destroy);
-    
-    editor.session.widgetManager.addLineWidget(w);
-    
-    w.el.onmousedown = editor.focus.bind(editor);
-    
-    editor.renderer.scrollCursorIntoView(null, 0.5, {bottom: w.el.offsetHeight});
-};
-
-
-dom.importCssString("\
-    .error_widget_wrapper {\
-        background: inherit;\
-        color: inherit;\
-        border:none\
-    }\
-    .error_widget {\
-        border-top: solid 2px;\
-        border-bottom: solid 2px;\
-        margin: 5px 0;\
-        padding: 10px 40px;\
-        white-space: pre-wrap;\
-    }\
-    .error_widget.ace_error, .error_widget_arrow.ace_error{\
-        border-color: #ff5a5a\
-    }\
-    .error_widget.ace_warning, .error_widget_arrow.ace_warning{\
-        border-color: #F1D817\
-    }\
-    .error_widget.ace_info, .error_widget_arrow.ace_info{\
-        border-color: #5a5a5a\
-    }\
-    .error_widget.ace_ok, .error_widget_arrow.ace_ok{\
-        border-color: #5aaa5a\
-    }\
-    .error_widget_arrow {\
-        position: absolute;\
-        border: solid 5px;\
-        border-top-color: transparent!important;\
-        border-right-color: transparent!important;\
-        border-left-color: transparent!important;\
-        top: -5px;\
-    }\
-", "");
-
-});
-
-ace.define("ace/worker/worker_client",["require","exports","module","ace/lib/oop","ace/lib/net","ace/lib/event_emitter","ace/config"], function(require, exports, module) {
-"use strict";
-
-var oop = require("../lib/oop");
-var net = require("../lib/net");
-var EventEmitter = require("../lib/event_emitter").EventEmitter;
-var config = require("../config");
-
-var WorkerClient = function(topLevelNamespaces, mod, classname, workerUrl) {
-    this.$sendDeltaQueue = this.$sendDeltaQueue.bind(this);
-    this.changeListener = this.changeListener.bind(this);
-    this.onMessage = this.onMessage.bind(this);
-    if (require.nameToUrl && !require.toUrl)
-        require.toUrl = require.nameToUrl;
-    
-    if (config.get("packaged") || !require.toUrl) {
-        workerUrl = workerUrl || config.moduleUrl(mod, "worker");
-    } else {
-        var normalizePath = this.$normalizePath;
-        workerUrl = workerUrl || normalizePath(require.toUrl("ace/worker/worker.js", null, "_"));
-
-        var tlns = {};
-        topLevelNamespaces.forEach(function(ns) {
-            tlns[ns] = normalizePath(require.toUrl(ns, null, "_").replace(/(\.js)?(\?.*)?$/, ""));
-        });
-    }
-
-    try {
-        this.$worker = new Worker(workerUrl);
-    } catch(e) {
-        if (e instanceof window.DOMException) {
-            var blob = this.$workerBlob(workerUrl);
-            var URL = window.URL || window.webkitURL;
-            var blobURL = URL.createObjectURL(blob);
-
-            this.$worker = new Worker(blobURL);
-            URL.revokeObjectURL(blobURL);
-        } else {
-            throw e;
-        }
-    }
-    this.$worker.postMessage({
-        init : true,
-        tlns : tlns,
-        module : mod,
-        classname : classname
-    });
-
-    this.callbackId = 1;
-    this.callbacks = {};
-
-    this.$worker.onmessage = this.onMessage;
-};
-
-(function(){
-
-    oop.implement(this, EventEmitter);
-
-    this.onMessage = function(e) {
-        var msg = e.data;
-        switch(msg.type) {
-            case "event":
-                this._signal(msg.name, {data: msg.data});
-                break;
-            case "call":
-                var callback = this.callbacks[msg.id];
-                if (callback) {
-                    callback(msg.data);
-                    delete this.callbacks[msg.id];
-                }
-                break;
-            case "error":
-                this.reportError(msg.data);
-                break;
-            case "log":
-                window.console && console.log && console.log.apply(console, msg.data);
-                break;
-        }
-    };
-    
-    this.reportError = function(err) {
-        window.console && console.error && console.error(err);
-    };
-
-    this.$normalizePath = function(path) {
-        return net.qualifyURL(path);
-    };
-
-    this.terminate = function() {
-        this._signal("terminate", {});
-        this.deltaQueue = null;
-        this.$worker.terminate();
-        this.$worker = null;
-        if (this.$doc)
-            this.$doc.off("change", this.changeListener);
-        this.$doc = null;
-    };
-
-    this.send = function(cmd, args) {
-        this.$worker.postMessage({command: cmd, args: args});
-    };
-
-    this.call = function(cmd, args, callback) {
-        if (callback) {
-            var id = this.callbackId++;
-            this.callbacks[id] = callback;
-            args.push(id);
-        }
-        this.send(cmd, args);
-    };
-
-    this.emit = function(event, data) {
-        try {
-            this.$worker.postMessage({event: event, data: {data: data.data}});
-        }
-        catch(ex) {
-            console.error(ex.stack);
-        }
-    };
-
-    this.attachToDocument = function(doc) {
-        if(this.$doc)
-            this.terminate();
-
-        this.$doc = doc;
-        this.call("setValue", [doc.getValue()]);
-        doc.on("change", this.changeListener);
-    };
-
-    this.changeListener = function(e) {
-        if (!this.deltaQueue) {
-            this.deltaQueue = [e.data];
-            setTimeout(this.$sendDeltaQueue, 0);
-        } else
-            this.deltaQueue.push(e.data);
-    };
-
-    this.$sendDeltaQueue = function() {
-        var q = this.deltaQueue;
-        if (!q) return;
-        this.deltaQueue = null;
-        if (q.length > 20 && q.length > this.$doc.getLength() >> 1) {
-            this.call("setValue", [this.$doc.getValue()]);
-        } else
-            this.emit("change", {data: q});
-    };
-
-    this.$workerBlob = function(workerUrl) {
-        var script = "importScripts('" + net.qualifyURL(workerUrl) + "');";
-        try {
-            return new Blob([script], {"type": "application/javascript"});
-        } catch (e) { // Backwards-compatibility
-            var BlobBuilder = window.BlobBuilder || window.WebKitBlobBuilder || window.MozBlobBuilder;
-            var blobBuilder = new BlobBuilder();
-            blobBuilder.append(script);
-            return blobBuilder.getBlob("application/javascript");
-        }
-    };
-
-}).call(WorkerClient.prototype);
-
-
-var UIWorkerClient = function(topLevelNamespaces, mod, classname) {
-    this.$sendDeltaQueue = this.$sendDeltaQueue.bind(this);
-    this.changeListener = this.changeListener.bind(this);
-    this.callbackId = 1;
-    this.callbacks = {};
-    this.messageBuffer = [];
-
-    var main = null;
-    var emitSync = false;
-    var sender = Object.create(EventEmitter);
-    var _self = this;
-
-    this.$worker = {};
-    this.$worker.terminate = function() {};
-    this.$worker.postMessage = function(e) {
-        _self.messageBuffer.push(e);
-        if (main) {
-            if (emitSync)
-                setTimeout(processNext);
-            else
-                processNext();
-        }
-    };
-    this.setEmitSync = function(val) { emitSync = val };
-
-    var processNext = function() {
-        var msg = _self.messageBuffer.shift();
-        if (msg.command)
-            main[msg.command].apply(main, msg.args);
-        else if (msg.event)
-            sender._signal(msg.event, msg.data);
-    };
-
-    sender.postMessage = function(msg) {
-        _self.onMessage({data: msg});
-    };
-    sender.callback = function(data, callbackId) {
-        this.postMessage({type: "call", id: callbackId, data: data});
-    };
-    sender.emit = function(name, data) {
-        this.postMessage({type: "event", name: name, data: data});
-    };
-
-    config.loadModule(["worker", mod], function(Main) {
-        main = new Main[classname](sender);
-        while (_self.messageBuffer.length)
-            processNext();
-    });
-};
-
-UIWorkerClient.prototype = WorkerClient.prototype;
-
-exports.UIWorkerClient = UIWorkerClient;
-exports.WorkerClient = WorkerClient;
-
-});
-
-ace.define("ace/ace",["require","exports","module","ace/lib/fixoldbrowsers","ace/lib/dom","ace/lib/event","ace/editor","ace/edit_session","ace/undomanager","ace/virtual_renderer","ace/multi_select","ace/single_line_edit","ace/keyboard/hash_handler","ace/placeholder","ace/mode/folding/fold_mode","ace/theme/textmate","ace/snippets","ace/ext/language_tools","ace/ext/error_marker","ace/config","ace/worker/worker_client"], function(require, exports, module) {
-"use strict";
-
-require("./lib/fixoldbrowsers");
-
-var dom = require("./lib/dom");
-var event = require("./lib/event");
-
-var Editor = require("./editor").Editor;
-var EditSession = require("./edit_session").EditSession;
-var UndoManager = require("./undomanager").UndoManager;
-var Renderer = require("./virtual_renderer").VirtualRenderer;
-var MultiSelect = require("./multi_select").MultiSelect;
-var singleLineEdit = require("./single_line_edit").singleLineEdit;
-require("./keyboard/hash_handler");
-require("./placeholder");
-require("./mode/folding/fold_mode");
-require("./theme/textmate");
-
-require("ace/snippets");
-require("ace/ext/language_tools"); // for autocompletion
-require("./ext/error_marker");
-    
-exports.config = require("./config");
-var workerModule = require("ace/worker/worker_client");
-workerModule.WorkerClient = workerModule.UIWorkerClient;
-exports.require = require;
-exports.edit = function(el) {
-    if (typeof(el) == "string") {
-        var _id = el;
-        var el = document.getElementById(_id);
-        if (!el)
-            throw new Error("ace.edit can't find div #" + _id);
-    }
-
-    if (el && el.env && el.env.editor instanceof Editor)
-        return el.env.editor;
-
-    var doc = exports.createEditSession(dom.getInnerText(el));
-    el.innerHTML = '';
-
-    var editor = new Editor(new Renderer(el));
-    new MultiSelect(editor);
-    editor.setSession(doc);
-
-    var env = {
-        document: doc,
-        editor: editor,
-        onResize: editor.resize.bind(editor, null)
-    };
-    event.addListener(window, "resize", env.onResize);
-    editor.on("destroy", function() {
-        event.removeListener(window, "resize", env.onResize);
-        env.editor.container.env = null; // prevent memory leak on old ie
-    });
-    editor.container.env = editor.env = env;
-    return editor;
-};
-
-exports.commandLineEdit = function(el) {
-    var editor = singleLineEdit(el);
-    return editor;
-}
-exports.createEditSession = function(text, mode) {
-    var doc = new EditSession(text, mode);
-    doc.setUndoManager(new UndoManager());
-    return doc;
-}
-exports.EditSession = EditSession;
-exports.UndoManager = UndoManager;
-});
-            (function() {
-                ace.require(["ace/ace"], function(a) {
-                    a && a.config.init(true);
-                    if (!window.ace)
-                        window.ace = a;
-                    for (var key in a) if (a.hasOwnProperty(key))
-                        window.ace[key] = a[key];
-                });
-            })();
-        
-;
                 (function() {
                     ace.require(["ace/ext/language_tools"], function() {});
                 })();
@@ -20559,9 +20769,8 @@ OccurKeyboardHandler.installIn = function(editor) {
 
 OccurKeyboardHandler.uninstallFrom = function(editor) {
     editor.commands.removeCommands(occurCommands);
-    var handler = editor.keyBinding.$handlers.filter(function(ea) {
-      return ea.isOccurHandler; })[0];
-    if (handler && handler.isOccurHandler)
+    var handler = editor.getKeyboardHandler();
+    if (handler.isOccurHandler)
         editor.keyBinding.removeKeyboardHandler(handler);
 }
 
@@ -20606,18 +20815,14 @@ exports.iSearchCommands = [{
     bindKey: {win: "Ctrl-F", mac: "Command-F"},
     exec: function(iSearch) {
         iSearch.cancelSearch(true);
-    },
-    readOnly: true,
-    isIncrementalSearchCommand: true
+    }
 }, {
     name: "searchForward",
     bindKey: {win: "Ctrl-S|Ctrl-K", mac: "Ctrl-S|Command-G"},
     exec: function(iSearch, options) {
         options.useCurrentOrPrevSearch = true;
         iSearch.next(options);
-    },
-    readOnly: true,
-    isIncrementalSearchCommand: true
+    }
 }, {
     name: "searchBackward",
     bindKey: {win: "Ctrl-R|Ctrl-Shift-K", mac: "Ctrl-R|Command-Shift-G"},
@@ -20625,42 +20830,30 @@ exports.iSearchCommands = [{
         options.useCurrentOrPrevSearch = true;
         options.backwards = true;
         iSearch.next(options);
-    },
-    readOnly: true,
-    isIncrementalSearchCommand: true
+    }
 }, {
     name: "extendSearchTerm",
     exec: function(iSearch, string) {
         iSearch.addString(string);
-    },
-    readOnly: true,
-    isIncrementalSearchCommand: true
+    }
 }, {
     name: "extendSearchTermSpace",
     bindKey: "space",
-    exec: function(iSearch) { iSearch.addString(' '); },
-    readOnly: true,
-    isIncrementalSearchCommand: true
+    exec: function(iSearch) { iSearch.addString(' '); }
 }, {
     name: "shrinkSearchTerm",
     bindKey: "backspace",
     exec: function(iSearch) {
         iSearch.removeChar();
-    },
-    readOnly: true,
-    isIncrementalSearchCommand: true
+    }
 }, {
     name: 'confirmSearch',
     bindKey: 'return',
-    exec: function(iSearch) { iSearch.deactivate(); },
-    readOnly: true,
-    isIncrementalSearchCommand: true
+    exec: function(iSearch) { iSearch.deactivate(); }
 }, {
     name: 'cancelSearch',
     bindKey: 'esc|Ctrl-G',
-    exec: function(iSearch) { iSearch.deactivate(true); },
-    readOnly: true,
-    isIncrementalSearchCommand: true
+    exec: function(iSearch) { iSearch.deactivate(true); }
 }, {
     name: 'occurisearch',
     bindKey: 'Ctrl-O',
@@ -20668,9 +20861,7 @@ exports.iSearchCommands = [{
         var options = oop.mixin({}, iSearch.$options);
         iSearch.deactivate();
         occurStartCommand.exec(iSearch.$editor, options);
-    },
-    readOnly: true,
-    isIncrementalSearchCommand: true
+    }
 }, {
     name: "yankNextWord",
     bindKey: "Ctrl-w",
@@ -20679,9 +20870,7 @@ exports.iSearchCommands = [{
             range = ed.selection.getRangeOfMovements(function(sel) { sel.moveCursorWordRight(); }),
             string = ed.session.getTextRange(range);
         iSearch.addString(string);
-    },
-    readOnly: true,
-    isIncrementalSearchCommand: true
+    }
 }, {
     name: "yankNextChar",
     bindKey: "Ctrl-Alt-y",
@@ -20690,15 +20879,11 @@ exports.iSearchCommands = [{
             range = ed.selection.getRangeOfMovements(function(sel) { sel.moveCursorRight(); }),
             string = ed.session.getTextRange(range);
         iSearch.addString(string);
-    },
-    readOnly: true,
-    isIncrementalSearchCommand: true
+    }
 }, {
     name: 'recenterTopBottom',
     bindKey: 'Ctrl-l',
-    exec: function(iSearch) { iSearch.$editor.execCommand('recenterTopBottom'); },
-    readOnly: true,
-    isIncrementalSearchCommand: true
+    exec: function(iSearch) { iSearch.$editor.execCommand('recenterTopBottom'); }
 }, {
     name: 'selectAllMatches',
     bindKey: 'Ctrl-space',
@@ -20710,18 +20895,19 @@ exports.iSearchCommands = [{
                     return ranges.concat(ea ? ea : []); }, []) : [];
         iSearch.deactivate(false);
         ranges.forEach(ed.selection.addRange.bind(ed.selection));
-    },
-    readOnly: true,
-    isIncrementalSearchCommand: true
+    }
 }, {
     name: 'searchAsRegExp',
     bindKey: 'Alt-r',
     exec: function(iSearch) {
         iSearch.convertNeedleToRegExp();
-    },
-    readOnly: true,
-    isIncrementalSearchCommand: true
-}];
+    }
+}].map(function(cmd) {
+    cmd.readOnly = true;
+    cmd.isIncrementalSearchCommand = true;
+    cmd.scrollIntoView = "animate-cursor";
+    return cmd;
+});
 
 function IncrementalSearchKeyboardHandler(iSearch) {
     this.$iSearch = iSearch;
@@ -20729,7 +20915,7 @@ function IncrementalSearchKeyboardHandler(iSearch) {
 
 oop.inherits(IncrementalSearchKeyboardHandler, HashHandler);
 
-;(function() {
+(function() {
 
     this.attach = function(editor) {
         var iSearch = this.$iSearch;
@@ -20738,15 +20924,19 @@ oop.inherits(IncrementalSearchKeyboardHandler, HashHandler);
             if (!e.command.isIncrementalSearchCommand) return undefined;
             e.stopPropagation();
             e.preventDefault();
-            return e.command.exec(iSearch, e.args || {});
+            var scrollTop = editor.session.getScrollTop();
+            var result = e.command.exec(iSearch, e.args || {});
+            editor.renderer.scrollCursorIntoView(null, 0.5);
+            editor.renderer.animateScrolling(scrollTop);
+            return result;
         });
-    }
+    };
 
     this.detach = function(editor) {
         if (!this.$commandExecHandler) return;
         editor.commands.removeEventListener('exec', this.$commandExecHandler);
         delete this.$commandExecHandler;
-    }
+    };
 
     var handleKeyboard$super = this.handleKeyboard;
     this.handleKeyboard = function(data, hashId, key, keyCode) {
@@ -20759,7 +20949,7 @@ oop.inherits(IncrementalSearchKeyboardHandler, HashHandler);
             if (extendCmd) { return {command: extendCmd, args: key}; }
         }
         return {command: "null", passEvent: hashId == 0 || hashId == 4};
-    }
+    };
 
 }).call(IncrementalSearchKeyboardHandler.prototype);
 
@@ -20820,7 +21010,7 @@ function objectToRegExp(obj) {
         this.$mousedownHandler = ed.addEventListener('mousedown', this.onMouseDown.bind(this));
         this.selectionFix(ed);
         this.statusMessage(true);
-    }
+    };
 
     this.deactivate = function(reset) {
         this.cancelSearch(reset);
@@ -20832,13 +21022,13 @@ function objectToRegExp(obj) {
         }
         ed.onPaste = this.$originalEditorOnPaste;
         this.message('');
-    }
+    };
 
     this.selectionFix = function(editor) {
         if (editor.selection.isEmpty() && !editor.session.$emacsMark) {
             editor.clearSelection();
         }
-    }
+    };
 
     this.highlight = function(regexp) {
         var sess = this.$editor.session,
@@ -20846,7 +21036,7 @@ function objectToRegExp(obj) {
                 new SearchHighlight(null, "ace_isearch-result", "text"));
         hl.setRegexp(regexp);
         sess._emit("changeBackMarker"); // force highlight layer redraw
-    }
+    };
 
     this.cancelSearch = function(reset) {
         var e = this.$editor;
@@ -20860,7 +21050,7 @@ function objectToRegExp(obj) {
         }
         this.highlight(null);
         return Range.fromPoints(this.$currentPos, this.$currentPos);
-    }
+    };
 
     this.highlightAndFindWithNeedle = function(moveToNext, needleUpdateFunc) {
         if (!this.$editor) return null;
@@ -20871,7 +21061,7 @@ function objectToRegExp(obj) {
         if (options.needle.length === 0) {
             this.statusMessage(true);
             return this.cancelSearch(true);
-        };
+        }
         options.start = this.$currentPos;
         var session = this.$editor.session,
             found = this.find(session),
@@ -20881,13 +21071,13 @@ function objectToRegExp(obj) {
             if (options.backwards) found = Range.fromPoints(found.end, found.start);
             this.$editor.selection.setRange(Range.fromPoints(shouldSelect ? this.$startPos : found.end, found.end));
             if (moveToNext) this.$currentPos = found.end;
-            this.highlight(options.re)
+            this.highlight(options.re);
         }
 
         this.statusMessage(found);
 
         return found;
-    }
+    };
 
     this.addString = function(s) {
         return this.highlightAndFindWithNeedle(false, function(needle) {
@@ -20897,7 +21087,7 @@ function objectToRegExp(obj) {
             reObj.expression += s;
             return objectToRegExp(reObj);
         });
-    }
+    };
 
     this.removeChar = function(c) {
         return this.highlightAndFindWithNeedle(false, function(needle) {
@@ -20907,7 +21097,7 @@ function objectToRegExp(obj) {
             reObj.expression = reObj.expression.substring(0, reObj.expression.length-1);
             return objectToRegExp(reObj);
         });
-    }
+    };
 
     this.next = function(options) {
         options = options || {};
@@ -20917,28 +21107,28 @@ function objectToRegExp(obj) {
             return options.useCurrentOrPrevSearch && needle.length === 0 ?
                 this.$prevNeedle || '' : needle;
         });
-    }
+    };
 
     this.onMouseDown = function(evt) {
         this.deactivate();
         return true;
-    }
+    };
 
     this.onPaste = function(text) {
         this.addString(text);
-    }
+    };
 
     this.convertNeedleToRegExp = function() {
         return this.highlightAndFindWithNeedle(false, function(needle) {
             return isRegExp(needle) ? needle : stringToRegExp(needle, 'ig');
         });
-    }
+    };
 
     this.convertNeedleToString = function() {
         return this.highlightAndFindWithNeedle(false, function(needle) {
             return isRegExp(needle) ? regExpToObject(needle).expression : needle;
         });
-    }
+    };
 
     this.statusMessage = function(found) {
         var options = this.$options, msg = '';
@@ -20946,16 +21136,16 @@ function objectToRegExp(obj) {
         msg += 'isearch: ' + options.needle;
         msg += found ? '' : ' (not found)';
         this.message(msg);
-    }
+    };
 
     this.message = function(msg) {
         if (this.$editor.showCommandLine) {
             this.$editor.showCommandLine(msg);
-            this.$editor.focus();
+            // this.$editor.focus();
         } else {
             console.log(msg);
         }
-    }
+    };
 
 }).call(IncrementalSearch.prototype);
 
@@ -21101,8 +21291,6 @@ exports.handler.attach = function(editor) {
     };
 
     editor.emacsMarkForSelection = function(replacement) {
-        // find the mark in $emacsMarkRing corresponding to the current
-        // selection
         var sel = this.selection,
             multiRangeLength = this.multiSelect ?
                 this.multiSelect.getAllRanges().length : 1,
@@ -21139,6 +21327,7 @@ exports.handler.detach = function(editor) {
     editor.commands.removeCommands(commands);
     editor.removeEventListener('copy', this.onCopy);
     editor.removeEventListener('paste', this.onPaste);
+    editor.$emacsModeHandler = null;
 };
 
 var $kbSessionChange = function(e) {
@@ -21180,7 +21369,7 @@ exports.handler.onCopy = function(e, editor) {
     if (editor.$handlesEmacsOnCopy) return;
     editor.$handlesEmacsOnCopy = true;
     exports.handler.commands.killRingSave.exec(editor);
-    delete editor.$handlesEmacsOnCopy;
+    editor.$handlesEmacsOnCopy = false;
 };
 
 exports.handler.onPaste = function(e, editor) {
@@ -21207,10 +21396,20 @@ exports.handler.bindKey = function(key, command) {
     }, this);
 };
 
+exports.handler.getStatusText = function(editor, data) {
+  var str = "";
+  if (data.count)
+    str += data.count;
+  if (data.keyChain)
+    str += " " + data.keyChain
+  return str;
+};
+
 exports.handler.handleKeyboard = function(data, hashId, key, keyCode) {
     if (keyCode === -1) return undefined;
 
     var editor = data.editor;
+    editor._signal("changeStatus");
     if (hashId == -1) {
         editor.pushEmacsMark();
         if (data.count) {
@@ -21220,20 +21419,15 @@ exports.handler.handleKeyboard = function(data, hashId, key, keyCode) {
         }
     }
 
-    if (key == "\x00") return undefined;
-
     var modifier = eMods[hashId];
-    if (modifier == "c-" || data.universalArgument) {
-        var prevCount = String(data.count || 0);
+    if (modifier == "c-" || data.count) {
         var count = parseInt(key[key.length - 1]);
         if (typeof count === 'number' && !isNaN(count)) {
-            data.count = parseInt(prevCount + count);
+            data.count = Math.max(data.count, 0) || 0;
+            data.count = 10 * data.count + count;
             return {command: "null"};
-        } else if (data.universalArgument) {
-            data.count = 4;
         }
     }
-    data.universalArgument = false;
     if (modifier) key = modifier + key;
     if (data.keyChain) key = data.keyChain += " " + key;
     var command = this.commandKeyBinding[key];
@@ -21242,7 +21436,7 @@ exports.handler.handleKeyboard = function(data, hashId, key, keyCode) {
     if (command === "null") return {command: "null"};
 
     if (command === "universalArgument") {
-        data.universalArgument = true;
+        data.count = 4;
         return {command: "null"};
     }
     var args;
@@ -21360,7 +21554,7 @@ exports.emacsKeys = {
     "M-;": "togglecomment",
 
     "C-/|C-x u|S-C--|C-z": "undo",
-    "S-C-/|S-C-x u|C--|S-C-z": "redo", //infinite undo?
+    "S-C-/|S-C-x u|C--|S-C-z": "redo", // infinite undo?
     "C-x r":  "selectRectangularRegion",
     "M-x": {command: "focusCommandLine", args: "M-x "}
 };
@@ -21402,7 +21596,7 @@ exports.handler.addCommands({
                 transientMarkModeActive = true,
                 hasNoSelection = ranges.every(function(range) { return range.isEmpty(); });
             if (transientMarkModeActive && (mark || !hasNoSelection)) {
-                if (editor.inMultiSelectMode) editor.forEachSelection({exec: editor.clearSelection.bind(editor)})
+                if (editor.inMultiSelectMode) editor.forEachSelection({exec: editor.clearSelection.bind(editor)});
                 else editor.clearSelection();
                 if (mark) editor.pushEmacsMark(null);
                 return;
@@ -21416,7 +21610,10 @@ exports.handler.addCommands({
 
             function moveToMark() {
                 var mark = editor.popEmacsMark();
-                mark && editor.moveCursorToPosition(mark);
+                if (mark) {
+                    editor.moveCursorToPosition(mark);
+                    editor.renderer.scrollCursorIntoView();
+                };
             }
 
         },
@@ -21428,16 +21625,14 @@ exports.handler.addCommands({
             var sel = editor.selection;
             if (!args.count && !sel.isEmpty()) { // just invert selection
                 sel.setSelectionRange(sel.getRange(), !sel.isBackwards());
-                return;
-            }
-
-            if (args.count) { // replace mark and point
+            } else if (args.count) { // replace mark and point
                 var pos = {row: sel.lead.row, column: sel.lead.column};
                 sel.clearSelection();
                 sel.moveCursorToPosition(editor.emacsMarkForSelection(pos));
             } else { // create selection to last mark
                 sel.selectToPosition(editor.emacsMarkForSelection());
             }
+            editor.renderer.scrollCursorIntoView();
         },
         readOnly: true,
         handlesCount: true,
@@ -21523,6 +21718,7 @@ exports.handler.addCommands({
     keyboardQuit: function(editor) {
         editor.selection.clearSelection();
         editor.setEmacsMark(null);
+        editor.keyBinding.$data.count = null;
     },
     focusCommandLine: function(editor, arg) {
         if (editor.showCommandLine)
@@ -21559,1763 +21755,5569 @@ exports.killRing = {
 };
 
 });
-ace.define("ace/keyboard/vim/registers",["require","exports","module"], function(require, exports, module) {
+ace.define("ace/keyboard/vim",["require","exports","module","ace/range","ace/lib/event_emitter","ace/lib/dom","ace/lib/oop","ace/lib/keys","ace/lib/event","ace/search","ace/lib/useragent","ace/search_highlight","ace/commands/multi_select_commands","ace/mode/text","ace/multi_select"], function(require, exports, module) {
+  'use strict';
 
-"never use strict";
-
-module.exports = {
-    _default: {
-        text: "",
-        isLine: false
+  function log() {
+    var d = "";
+    function format(p) {
+      if (typeof p != "object")
+        return p + "";
+      if ("line" in p) {
+        return p.line + ":" + p.ch;
+      }
+      if ("anchor" in p) {
+        return format(p.anchor) + "->" + format(p.head);
+      }
+      if (Array.isArray(p))
+        return "[" + p.map(function(x) {
+          return format(x);
+        }) + "]";
+      return JSON.stringify(p);
     }
-};
-
-});
-
-ace.define("ace/keyboard/vim/maps/util",["require","exports","module","ace/keyboard/vim/registers","ace/lib/dom"], function(require, exports, module) {
-var registers = require("../registers");
-
-var dom = require("../../../lib/dom");
-dom.importCssString('.insert-mode .ace_cursor{\
-    border-left: 2px solid #333333;\
-}\
-.ace_dark.insert-mode .ace_cursor{\
-    border-left: 2px solid #eeeeee;\
-}\
-.normal-mode .ace_cursor{\
-    border: 0!important;\
-    background-color: red;\
-    opacity: 0.5;\
-}', 'vimMode');
-
-module.exports = {
-    onVisualMode: false,
-    onVisualLineMode: false,
-    currentMode: 'normal',
-    noMode: function(editor) {
-        editor.unsetStyle('insert-mode');
-        editor.unsetStyle('normal-mode');
-        if (editor.commands.recording)
-            editor.commands.toggleRecording(editor);
-        editor.setOverwrite(false);
-    },
-    insertMode: function(editor) {
-        this.currentMode = 'insert';
-        editor.setStyle('insert-mode');
-        editor.unsetStyle('normal-mode');
-
-        editor.setOverwrite(false);
-        editor.keyBinding.$data.buffer = "";
-        editor.keyBinding.$data.vimState = "insertMode";
-        this.onVisualMode = false;
-        this.onVisualLineMode = false;
-        if(this.onInsertReplaySequence) {
-            editor.commands.macro = this.onInsertReplaySequence;
-            editor.commands.replay(editor);
-            this.onInsertReplaySequence = null;
-            this.normalMode(editor);
-        } else {
-            editor._emit("changeStatus");
-            if(!editor.commands.recording)
-                editor.commands.toggleRecording(editor);
-        }
-    },
-    normalMode: function(editor) {
-        this.currentMode = 'normal';
-
-        editor.unsetStyle('insert-mode');
-        editor.setStyle('normal-mode');
-        editor.clearSelection();
-
-        var pos;
-        if (!editor.getOverwrite()) {
-            pos = editor.getCursorPosition();
-            if (pos.column > 0)
-                editor.navigateLeft();
-        }
-
-        editor.setOverwrite(true);
-        editor.keyBinding.$data.buffer = "";
-        editor.keyBinding.$data.vimState = "start";
-        this.onVisualMode = false;
-        this.onVisualLineMode = false;
-        editor._emit("changeStatus");
-        if (editor.commands.recording) {
-            editor.commands.toggleRecording(editor);
-            return editor.commands.macro;
-        }
-        else {
-            return [];
-        }
-    },
-    visualMode: function(editor, lineMode) {
-        if (
-            (this.onVisualLineMode && lineMode)
-            || (this.onVisualMode && !lineMode)
-        ) {
-            this.normalMode(editor);
-            return;
-        }
-
-        editor.setStyle('insert-mode');
-        editor.unsetStyle('normal-mode');
-
-        editor._emit("changeStatus");
-        if (lineMode) {
-            this.onVisualLineMode = true;
-        } else {
-            this.onVisualMode = true;
-            this.onVisualLineMode = false;
-        }
-    },
-    getRightNthChar: function(editor, cursor, ch, n) {
-        var line = editor.getSession().getLine(cursor.row);
-        var matches = line.substr(cursor.column + 1).split(ch);
-
-        return n < matches.length ? matches.slice(0, n).join(ch).length : null;
-    },
-    getLeftNthChar: function(editor, cursor, ch, n) {
-        var line = editor.getSession().getLine(cursor.row);
-        var matches = line.substr(0, cursor.column).split(ch);
-
-        return n < matches.length ? matches.slice(-1 * n).join(ch).length : null;
-    },
-    toRealChar: function(ch) {
-        if (ch.length === 1)
-            return ch;
-
-        if (/^shift-./.test(ch))
-            return ch[ch.length - 1].toUpperCase();
-        else
-            return "";
-    },
-    copyLine: function(editor) {
-        var pos = editor.getCursorPosition();
-        editor.selection.moveTo(pos.row, pos.column);
-        editor.selection.selectLine();
-        registers._default.isLine = true;
-        registers._default.text = editor.getCopyText().replace(/\n$/, "");
-        editor.selection.moveTo(pos.row, pos.column);
+    for (var i = 0; i < arguments.length; i++) {
+      var p = arguments[i];
+      var f = format(p);
+      d += f + "  ";
     }
-};
-});
+    console.log(d);
+  }
+  var Range = require("../range").Range;
+  var EventEmitter = require("../lib/event_emitter").EventEmitter;
+  var dom = require("../lib/dom");
+  var oop = require("../lib/oop");
+  var KEYS = require("../lib/keys");
+  var event = require("../lib/event");
+  var Search = require("../search").Search;
+  var useragent = require("../lib/useragent");
+  var SearchHighlight = require("../search_highlight").SearchHighlight;
+  var multiSelectCommands = require("../commands/multi_select_commands");
+  var TextModeTokenRe = require("../mode/text").Mode.prototype.tokenRe;
+  require("../multi_select");
 
-ace.define("ace/keyboard/vim/maps/motions",["require","exports","module","ace/keyboard/vim/maps/util","ace/search","ace/range"], function(require, exports, module) {
-"use strict";
+  var CodeMirror = function(ace) {
+    this.ace = ace;
+    this.state = {};
+    this.marks = {};
+    this.$uid = 0;
+    this.onChange = this.onChange.bind(this);
+    this.onSelectionChange = this.onSelectionChange.bind(this);
+    this.onBeforeEndOperation = this.onBeforeEndOperation.bind(this);
+    this.ace.on('change', this.onChange);
+    this.ace.on('changeSelection', this.onSelectionChange);
+    this.ace.on('beforeEndOperation', this.onBeforeEndOperation);
+  };
+  CodeMirror.Pos = function(line, ch) {
+    if (!(this instanceof Pos)) return new Pos(line, ch);
+    this.line = line; this.ch = ch;
+  };
+  CodeMirror.defineOption = function(name, val, setter) {};
+  CodeMirror.commands = {
+    redo: function(cm) { cm.ace.redo(); },
+    undo: function(cm) { cm.ace.undo(); },
+    newlineAndIndent: function(cm) { cm.ace.insert("\n"); },
+  };
+  CodeMirror.keyMap = {};
+  CodeMirror.addClass = CodeMirror.rmClass =
+  CodeMirror.e_stop = function() {};
+  CodeMirror.keyName = function(e) {
+    if (e.key) return e.key;
+    var key = (KEYS[e.keyCode] || "");
+    if (key.length == 1) key = key.toUpperCase();
+    key = event.getModifierString(e).replace(/(^|-)\w/g, function(m) {
+      return m.toUpperCase();
+    }) + key;
+    return key;
+  };
+  CodeMirror.keyMap['default'] = function(key) {
+    return function(cm) {
+      var cmd = cm.ace.commands.commandKeyBinding[key.toLowerCase()];
+      return cmd && cm.ace.execCommand(cmd) !== false;
+    };
+  };
+  CodeMirror.lookupKey = function lookupKey(key, map, handle) {
+    if (typeof map == "string")
+      map = CodeMirror.keyMap[map];
+    var found = typeof map == "function" ? map(key) : map[key];
+    if (found === false) return "nothing";
+    if (found === "...") return "multi";
+    if (found != null && handle(found)) return "handled";
 
-var util = require("./util");
+    if (map.fallthrough) {
+      if (!Array.isArray(map.fallthrough))
+        return lookupKey(key, map.fallthrough, handle);
+      for (var i = 0; i < map.fallthrough.length; i++) {
+        var result = lookupKey(key, map.fallthrough[i], handle);
+        if (result) return result;
+      }
+    }
+  };
 
-var keepScrollPosition = function(editor, fn) {
-    var scrollTopRow = editor.renderer.getScrollTopRow();
-    var initialRow = editor.getCursorPosition().row;
-    var diff = initialRow - scrollTopRow;
-    fn && fn.call(editor);
-    editor.renderer.scrollToRow(editor.getCursorPosition().row - diff);
-};
+  CodeMirror.signal = function(o, name, e) { return o._signal(name, e) };
+  CodeMirror.on = event.addListener;
+  CodeMirror.off = event.removeListener;
+  CodeMirror.isWordChar = function(ch) {
+    if (ch < "\x7f") return /^\w$/.test(ch);
+    TextModeTokenRe.lastIndex = 0;
+    return TextModeTokenRe.test(ch);
+  };
+  
+(function() {
+  oop.implement(CodeMirror.prototype, EventEmitter);
+  
+  this.destroy = function() {
+    this.ace.off('change', this.onChange);
+    this.ace.off('changeSelection', this.onSelectionChange);
+    this.ace.off('beforeEndOperation', this.onBeforeEndOperation);
+    this.removeOverlay();
+  };
+  this.virtualSelectionMode = function() {
+    return this.ace.inVirtualSelectionMode && this.ace.selection.index;
+  };
+  this.onChange = function(delta) {
+    if (delta.action[0] == 'i') {
+      var change = { text: delta.lines };
+      var curOp = this.curOp = this.curOp || {};
+      if (!curOp.changeHandlers)
+        curOp.changeHandlers = this._eventRegistry["change"] && this._eventRegistry["change"].slice();
+      if (this.virtualSelectionMode()) return;
+      if (!curOp.lastChange) {
+        curOp.lastChange = curOp.change = change;
+      } else {
+        curOp.lastChange.next = curOp.lastChange = change;
+      }
+    }
+    this.$updateMarkers(delta);
+  };
+  this.onSelectionChange = function() {
+    var curOp = this.curOp = this.curOp || {};
+    if (!curOp.cursorActivityHandlers)
+      curOp.cursorActivityHandlers = this._eventRegistry["cursorActivity"] && this._eventRegistry["cursorActivity"].slice();
+    this.curOp.cursorActivity = true;
+    if (this.ace.inMultiSelectMode) {
+      this.ace.keyBinding.removeKeyboardHandler(multiSelectCommands.keyboardHandler);
+    }
+  };
+  this.operation = function(fn, force) {
+    if (!force && this.curOp || force && this.curOp && this.curOp.force) {
+      return fn();
+    }
+    if (force || !this.ace.curOp) {
+      if (this.curOp)
+        this.onBeforeEndOperation();
+    }
+    if (!this.ace.curOp) {
+      var prevOp = this.ace.prevOp;
+      this.ace.startOperation({
+        command: { name: "vim",  scrollIntoView: "cursor" }
+      });
+    }
+    var curOp = this.curOp = this.curOp || {};
+    this.curOp.force = force;
+    var result = fn();
+    if (this.ace.curOp && this.ace.curOp.command.name == "vim") {
+      this.ace.endOperation();
+      if (!curOp.cursorActivity && !curOp.lastChange && prevOp)
+        this.ace.prevOp = prevOp;
+    }
+    if (force || !this.ace.curOp) {
+      if (this.curOp)
+        this.onBeforeEndOperation();
+    }
+    return result;
+  };
+  this.onBeforeEndOperation = function() {
+    var op = this.curOp;
+    if (op) {
+      if (op.change) { this.signal("change", op.change, op); }
+      if (op && op.cursorActivity) { this.signal("cursorActivity", null, op); }
+      this.curOp = null;
+    }
+  };
 
-function Motion(m) {
-    if (typeof m == "function") {
-        var getPos = m;
-        m = this;
+  this.signal = function(eventName, e, handlers) {
+    var listeners = handlers ? handlers[eventName + "Handlers"]
+        : (this._eventRegistry || {})[eventName];
+    if (!listeners)
+        return;
+    listeners = listeners.slice();
+    for (var i=0; i<listeners.length; i++)
+        listeners[i](this, e);
+  };
+  this.firstLine = function() { return 0; };
+  this.lastLine = function() { return this.ace.session.getLength() - 1; };
+  this.lineCount = function() { return this.ace.session.getLength(); };
+  this.setCursor = function(line, ch) {
+    if (typeof line === 'object') {
+      ch = line.ch;
+      line = line.line;
+    }
+    if (!this.ace.inVirtualSelectionMode)
+      this.ace.exitMultiSelectMode();
+    this.ace.session.unfold({row: line, column: ch});
+    this.ace.selection.moveTo(line, ch);
+  };
+  this.getCursor = function(p) {
+    var sel = this.ace.selection;
+    var pos = p == 'anchor' ? (sel.isEmpty() ? sel.lead : sel.anchor) :
+        p == 'head' || !p ? sel.lead : sel.getRange()[p];
+    return toCmPos(pos);
+  };
+  this.listSelections = function(p) {
+    var ranges = this.ace.multiSelect.rangeList.ranges;
+    if (!ranges.length || this.ace.inVirtualSelectionMode)
+      return [{anchor: this.getCursor('anchor'), head: this.getCursor('head')}];
+    return ranges.map(function(r) {
+      return {
+        anchor: this.clipPos(toCmPos(r.cursor == r.end ? r.start : r.end)),
+        head: this.clipPos(toCmPos(r.cursor))
+      };
+    }, this);
+  };
+  this.setSelections = function(p, primIndex) {
+    var sel = this.ace.multiSelect;
+    var ranges = p.map(function(x) {
+      var anchor = toAcePos(x.anchor);
+      var head = toAcePos(x.head);
+      var r = Range.comparePoints(anchor, head) < 0
+        ? new Range.fromPoints(anchor, head)
+        : new Range.fromPoints(head, anchor);
+      r.cursor = Range.comparePoints(r.start, head) ? r.end : r.start;
+      return r;
+    });
+    
+    if (this.ace.inVirtualSelectionMode) {
+      this.ace.selection.fromOrientedRange(ranges[0]);
+      return;
+    }
+    if (!primIndex) {
+        ranges = ranges.reverse();
+    } else if (ranges[primIndex]) {
+       ranges.push(ranges.splice(primIndex, 1)[0]);
+    }
+    sel.toSingleRange(ranges[0].clone());
+    var session = this.ace.session;
+    for (var i = 0; i < ranges.length; i++) {
+      var range = session.$clipRangeToDocument(ranges[i]); // todo why ace doesn't do this?
+      sel.addRange(range);
+    }
+  };
+  this.setSelection = function(a, h, options) {
+    var sel = this.ace.selection;
+    sel.moveTo(a.line, a.ch);
+    sel.selectTo(h.line, h.ch);
+    if (options && options.origin == '*mouse') {
+      this.onBeforeEndOperation();
+    }
+  };
+  this.somethingSelected = function(p) {
+    return !this.ace.selection.isEmpty();
+  };
+  this.clipPos = function(p) {
+    var pos = this.ace.session.$clipPositionToDocument(p.line, p.ch);
+    return toCmPos(pos);
+  };
+  this.markText = function(cursor) {
+    return {clear: function() {}, find: function() {}};
+  };
+  this.$updateMarkers = function(delta) {
+    var isInsert = delta.action == "insert";
+    var start = delta.start;
+    var end = delta.end;
+    var rowShift = (end.row - start.row) * (isInsert ? 1 : -1);
+    var colShift = (end.column - start.column) * (isInsert ? 1 : -1);
+    if (isInsert) end = start;
+    
+    for (var i in this.marks) {
+      var point = this.marks[i];
+      var cmp = Range.comparePoints(point, start);
+      if (cmp < 0) {
+        continue; // delta starts after the range
+      }
+      if (cmp === 0) {
+        if (isInsert) {
+          if (point.bias == 1) {
+            cmp = 1;
+          } else {
+            point.bias == -1;
+            continue;
+          }
+        }
+      }
+      var cmp2 = isInsert ? cmp : Range.comparePoints(point, end);
+      if (cmp2 > 0) {
+        point.row += rowShift;
+        point.column += point.row == end.row ? colShift : 0;
+        continue;
+      }
+      if (!isInsert && cmp2 <= 0) {
+        point.row = start.row;
+        point.column = start.column;
+        if (cmp2 === 0)
+          point.bias = 1;
+      }
+    }
+  };
+  var Marker = function(cm, id, row, column) {
+    this.cm = cm;
+    this.id = id;
+    this.row = row;
+    this.column = column;
+    cm.marks[this.id] = this;
+  };
+  Marker.prototype.clear = function() { delete this.cm.marks[this.id] };
+  Marker.prototype.find = function() { return toCmPos(this) };
+  this.setBookmark = function(cursor, options) {
+    var bm = new Marker(this, this.$uid++, cursor.line, cursor.ch);
+    if (!options || !options.insertLeft)
+      bm.$insertRight = true;
+    this.marks[bm.id] = bm;
+    return bm;
+  };
+  this.moveH = function(increment, unit) {
+    if (unit == 'char') {
+      var sel = this.ace.selection;
+      sel.clearSelection();
+      sel.moveCursorBy(0, increment);
+    }
+  };
+  this.findPosV = function(start, amount, unit, goalColumn) {
+    if (unit == 'page') {
+      var renderer = this.ace.renderer;
+      var config = renderer.layerConfig;
+      amount = amount * Math.floor(config.height / config.lineHeight);
+      unit = 'line';
+    }
+    if (unit == 'line') {
+      var screenPos = this.ace.session.documentToScreenPosition(start.line, start.ch);
+      if (goalColumn != null)
+        screenPos.column = goalColumn;
+      screenPos.row += amount;
+      screenPos.row = Math.min(Math.max(0, screenPos.row), this.ace.session.getScreenLength() - 1);
+      var pos = this.ace.session.screenToDocumentPosition(screenPos.row, screenPos.column);
+      return toCmPos(pos);
     } else {
-        var getPos = m.getPos;
+      debugger;
     }
-    m.nav = function(editor, range, count, param) {
-        var a = getPos(editor, range, count, param, false);
-        if (!a)
-            return;
-        editor.selection.moveTo(a.row, a.column);
-    };
-    m.sel = function(editor, range, count, param) {
-        var a = getPos(editor, range, count, param, true);
-        if (!a)
-            return;
-        editor.selection.selectTo(a.row, a.column);
-    };
-    return m;
-}
-
-var nonWordRe = /[\s.\/\\()\"'-:,.;<>~!@#$%^&*|+=\[\]{}`~?]/;
-var wordSeparatorRe = /[.\/\\()\"'-:,.;<>~!@#$%^&*|+=\[\]{}`~?]/;
-var whiteRe = /\s/;
-var StringStream = function(editor, cursor) {
-    var sel = editor.selection;
-    this.range = sel.getRange();
-    cursor = cursor || sel.selectionLead;
-    this.row = cursor.row;
-    this.col = cursor.column;
-    var line = editor.session.getLine(this.row);
-    var maxRow = editor.session.getLength();
-    this.ch = line[this.col] || '\n';
-    this.skippedLines = 0;
-
-    this.next = function() {
-        this.ch = line[++this.col] || this.handleNewLine(1);
-        return this.ch;
-    };
-    this.prev = function() {
-        this.ch = line[--this.col] || this.handleNewLine(-1);
-        return this.ch;
-    };
-    this.peek = function(dir) {
-        var ch = line[this.col + dir];
-        if (ch)
-            return ch;
-        if (dir == -1)
-            return '\n';
-        if (this.col == line.length - 1)
-            return '\n';
-        return editor.session.getLine(this.row + 1)[0] || '\n';
-    };
-
-    this.handleNewLine = function(dir) {
-        if (dir == 1){
-            if (this.col == line.length)
-                return '\n';
-            if (this.row == maxRow - 1)
-                return '';
-            this.col = 0;
-            this.row ++;
-            line = editor.session.getLine(this.row);
-            this.skippedLines++;
-            return line[0] || '\n';
-        }
-        if (dir == -1) {
-            if (this.row === 0)
-                return '';
-            this.row --;
-            line = editor.session.getLine(this.row);
-            this.col = line.length;
-            this.skippedLines--;
-            return '\n';
-        }
-    };
-    this.debug = function() {
-        console.log(line.substring(0, this.col)+'|'+this.ch+'\''+this.col+'\''+line.substr(this.col+1));
-    };
-};
-
-var Search = require("../../../search").Search;
-var search = new Search();
-
-function find(editor, needle, dir) {
-    search.$options.needle = needle;
-    search.$options.backwards = dir == -1;
-    return search.find(editor.session);
-}
-
-var Range = require("../../../range").Range;
-
-var LAST_SEARCH_MOTION = {};
-
-module.exports = {
-    "w": new Motion(function(editor) {
-        var str = new StringStream(editor);
-
-        if (str.ch && wordSeparatorRe.test(str.ch)) {
-            while (str.ch && wordSeparatorRe.test(str.ch))
-                str.next();
-        } else {
-            while (str.ch && !nonWordRe.test(str.ch))
-                str.next();
-        }
-        while (str.ch && whiteRe.test(str.ch) && str.skippedLines < 2)
-            str.next();
-
-        str.skippedLines == 2 && str.prev();
-        return {column: str.col, row: str.row};
-    }),
-    "W": new Motion(function(editor) {
-        var str = new StringStream(editor);
-        while(str.ch && !(whiteRe.test(str.ch) && !whiteRe.test(str.peek(1))) && str.skippedLines < 2)
-            str.next();
-        if (str.skippedLines == 2)
-            str.prev();
-        else
-            str.next();
-
-        return {column: str.col, row: str.row};
-    }),
-    "b": new Motion(function(editor) {
-        var str = new StringStream(editor);
-
-        str.prev();
-        while (str.ch && whiteRe.test(str.ch) && str.skippedLines > -2)
-            str.prev();
-
-        if (str.ch && wordSeparatorRe.test(str.ch)) {
-            while (str.ch && wordSeparatorRe.test(str.ch))
-                str.prev();
-        } else {
-            while (str.ch && !nonWordRe.test(str.ch))
-                str.prev();
-        }
-        str.ch && str.next();
-        return {column: str.col, row: str.row};
-    }),
-    "B": new Motion(function(editor) {
-        var str = new StringStream(editor);
-        str.prev();
-        while(str.ch && !(!whiteRe.test(str.ch) && whiteRe.test(str.peek(-1))) && str.skippedLines > -2)
-            str.prev();
-
-        if (str.skippedLines == -2)
-            str.next();
-
-        return {column: str.col, row: str.row};
-    }),
-    "e": new Motion(function(editor) {
-        var str = new StringStream(editor);
-
-        str.next();
-        while (str.ch && whiteRe.test(str.ch))
-            str.next();
-
-        if (str.ch && wordSeparatorRe.test(str.ch)) {
-            while (str.ch && wordSeparatorRe.test(str.ch))
-                str.next();
-        } else {
-            while (str.ch && !nonWordRe.test(str.ch))
-                str.next();
-        }
-        str.ch && str.prev();
-        return {column: str.col, row: str.row};
-    }),
-    "E": new Motion(function(editor) {
-        var str = new StringStream(editor);
-        str.next();
-        while(str.ch && !(!whiteRe.test(str.ch) && whiteRe.test(str.peek(1))))
-            str.next();
-
-        return {column: str.col, row: str.row};
-    }),
-
-    "l": {
-        nav: function(editor) {
-            var pos = editor.getCursorPosition();
-            var col = pos.column;
-            var lineLen = editor.session.getLine(pos.row).length;
-            if (lineLen && col !== lineLen)
-                editor.navigateRight();
-        },
-        sel: function(editor) {
-            var pos = editor.getCursorPosition();
-            var col = pos.column;
-            var lineLen = editor.session.getLine(pos.row).length;
-            if (lineLen && col !== lineLen) //In selection mode you can select the newline
-                editor.selection.selectRight();
-        }
-    },
-    "h": {
-        nav: function(editor) {
-            var pos = editor.getCursorPosition();
-            if (pos.column > 0)
-                editor.navigateLeft();
-        },
-        sel: function(editor) {
-            var pos = editor.getCursorPosition();
-            if (pos.column > 0)
-                editor.selection.selectLeft();
-        }
-    },
-    "H": {
-        nav: function(editor) {
-            var row = editor.renderer.getScrollTopRow();
-            editor.moveCursorTo(row);
-        },
-        sel: function(editor) {
-            var row = editor.renderer.getScrollTopRow();
-            editor.selection.selectTo(row);
-        }
-    },
-    "M": {
-        nav: function(editor) {
-            var topRow = editor.renderer.getScrollTopRow();
-            var bottomRow = editor.renderer.getScrollBottomRow();
-            var row = topRow + ((bottomRow - topRow) / 2);
-            editor.moveCursorTo(row);
-        },
-        sel: function(editor) {
-            var topRow = editor.renderer.getScrollTopRow();
-            var bottomRow = editor.renderer.getScrollBottomRow();
-            var row = topRow + ((bottomRow - topRow) / 2);
-            editor.selection.selectTo(row);
-        }
-    },
-    "L": {
-        nav: function(editor) {
-            var row = editor.renderer.getScrollBottomRow();
-            editor.moveCursorTo(row);
-        },
-        sel: function(editor) {
-            var row = editor.renderer.getScrollBottomRow();
-            editor.selection.selectTo(row);
-        }
-    },
-    "k": {
-        nav: function(editor) {
-            editor.navigateUp();
-        },
-        sel: function(editor) {
-            editor.selection.selectUp();
-        }
-    },
-    "j": {
-        nav: function(editor) {
-            editor.navigateDown();
-        },
-        sel: function(editor) {
-            editor.selection.selectDown();
-        }
-    },
-
-    "i": {
-        param: true,
-        sel: function(editor, range, count, param) {
-            switch (param) {
-                case "w":
-                    editor.selection.selectWord();
-                    break;
-                case "W":
-                    editor.selection.selectAWord();
-                    break;
-                case "(":
-                case "{":
-                case "[":
-                    var cursor = editor.getCursorPosition();
-                    var end = editor.session.$findClosingBracket(param, cursor, /paren/);
-                    if (!end)
-                        return;
-                    var start = editor.session.$findOpeningBracket(editor.session.$brackets[param], cursor, /paren/);
-                    if (!start)
-                        return;
-                    start.column ++;
-                    editor.selection.setSelectionRange(Range.fromPoints(start, end));
-                    break;
-                case "'":
-                case '"':
-                case "/":
-                    var end = find(editor, param, 1);
-                    if (!end)
-                        return;
-                    var start = find(editor, param, -1);
-                    if (!start)
-                        return;
-                    editor.selection.setSelectionRange(Range.fromPoints(start.end, end.start));
-                    break;
-            }
-        }
-    },
-    "a": {
-        param: true,
-        sel: function(editor, range, count, param) {
-            switch (param) {
-                case "w":
-                    editor.selection.selectAWord();
-                    break;
-                case "W":
-                    editor.selection.selectAWord();
-                    break;
-                case ")":
-                case "}":
-                case "]":
-                    param = editor.session.$brackets[param];
-                case "(":
-                case "{":
-                case "[":
-                    var cursor = editor.getCursorPosition();
-                    var end = editor.session.$findClosingBracket(param, cursor, /paren/);
-                    if (!end)
-                        return;
-                    var start = editor.session.$findOpeningBracket(editor.session.$brackets[param], cursor, /paren/);
-                    if (!start)
-                        return;
-                    end.column ++;
-                    editor.selection.setSelectionRange(Range.fromPoints(start, end));
-                    break;
-                case "'":
-                case "\"":
-                case "/":
-                    var end = find(editor, param, 1);
-                    if (!end)
-                        return;
-                    var start = find(editor, param, -1);
-                    if (!start)
-                        return;
-                    end.column ++;
-                    editor.selection.setSelectionRange(Range.fromPoints(start.start, end.end));
-                    break;
-            }
-        }
-    },
-
-    "f": new Motion({
-        param: true,
-        handlesCount: true,
-        getPos: function(editor, range, count, param, isSel, isRepeat) {
-            if (param == "space") param = " ";
-            if (!isRepeat)
-                LAST_SEARCH_MOTION = {ch: "f", param: param};
-            var cursor = editor.getCursorPosition();
-            var column = util.getRightNthChar(editor, cursor, param, count || 1);
-
-            if (typeof column === "number") {
-                cursor.column += column + (isSel ? 2 : 1);
-                return cursor;
-            }
-        }
-    }),
-    "F": new Motion({
-        param: true,
-        handlesCount: true,
-        getPos: function(editor, range, count, param, isSel, isRepeat) {
-            if (param == "space") param = " ";
-            if (!isRepeat)
-                LAST_SEARCH_MOTION = {ch: "F", param: param};
-            var cursor = editor.getCursorPosition();
-            var column = util.getLeftNthChar(editor, cursor, param, count || 1);
-
-            if (typeof column === "number") {
-                cursor.column -= column + 1;
-                return cursor;
-            }
-        }
-    }),
-    "t": new Motion({
-        param: true,
-        handlesCount: true,
-        getPos: function(editor, range, count, param, isSel, isRepeat) {
-            if (param == "space") param = " ";
-            if (!isRepeat)
-                LAST_SEARCH_MOTION = {ch: "t", param: param};
-            var cursor = editor.getCursorPosition();
-            var column = util.getRightNthChar(editor, cursor, param, count || 1);
-
-            if (isRepeat && column == 0 && !(count > 1))
-                column = util.getRightNthChar(editor, cursor, param, 2);
-                
-            if (typeof column === "number") {
-                cursor.column += column + (isSel ? 1 : 0);
-                return cursor;
-            }
-        }
-    }),
-    "T": new Motion({
-        param: true,
-        handlesCount: true,
-        getPos: function(editor, range, count, param, isSel, isRepeat) {
-            if (param == "space") param = " ";
-            if (!isRepeat)
-                LAST_SEARCH_MOTION = {ch: "T", param: param};
-            var cursor = editor.getCursorPosition();
-            var column = util.getLeftNthChar(editor, cursor, param, count || 1);
-
-            if (isRepeat && column === 0 && !(count > 1))
-                column = util.getLeftNthChar(editor, cursor, param, 2);
-            
-            if (typeof column === "number") {
-                cursor.column -= column;
-                return cursor;
-            }
-        }
-    }),
-    ";": new Motion({
-        handlesCount: true,
-        getPos: function(editor, range, count, param, isSel) {
-            var ch = LAST_SEARCH_MOTION.ch;
-            if (!ch)
-                return;
-            return module.exports[ch].getPos(
-                editor, range, count, LAST_SEARCH_MOTION.param, isSel, true
-            );
-        }
-    }),
-    ",": new Motion({
-        handlesCount: true,
-        getPos: function(editor, range, count, param, isSel) {
-            var ch = LAST_SEARCH_MOTION.ch;
-            if (!ch)
-                return;
-            var up = ch.toUpperCase();
-            ch = ch === up ? ch.toLowerCase() : up;
-            
-            return module.exports[ch].getPos(
-                editor, range, count, LAST_SEARCH_MOTION.param, isSel, true
-            );
-        }
-    }),
-
-    "^": {
-        nav: function(editor) {
-            editor.navigateLineStart();
-        },
-        sel: function(editor) {
-            editor.selection.selectLineStart();
-        }
-    },
-    "$": {
-        handlesCount: true,
-        nav: function(editor, range, count, param) {
-            if (count > 1) {
-                editor.navigateDown(count-1);
-            }
-            editor.navigateLineEnd();
-        },
-        sel: function(editor, range, count, param) {
-            if (count > 1) {
-                editor.selection.moveCursorBy(count-1, 0);
-            }
-            editor.selection.selectLineEnd();
-        }
-    },
-    "0": new Motion(function(ed) {
-        return {row: ed.selection.lead.row, column: 0};
-    }),
-    "G": {
-        nav: function(editor, range, count, param) {
-            if (!count && count !== 0) { // Stupid JS
-                count = editor.session.getLength();
-            }
-            editor.gotoLine(count);
-        },
-        sel: function(editor, range, count, param) {
-            if (!count && count !== 0) { // Stupid JS
-                count = editor.session.getLength();
-            }
-            editor.selection.selectTo(count, 0);
-        }
-    },
-    "g": {
-        param: true,
-        nav: function(editor, range, count, param) {
-            switch(param) {
-                case "m":
-                    console.log("Middle line");
-                    break;
-                case "e":
-                    console.log("End of prev word");
-                    break;
-                case "g":
-                    editor.gotoLine(count || 0);
-                case "u":
-                    editor.gotoLine(count || 0);
-                case "U":
-                    editor.gotoLine(count || 0);
-            }
-        },
-        sel: function(editor, range, count, param) {
-            switch(param) {
-                case "m":
-                    console.log("Middle line");
-                    break;
-                case "e":
-                    console.log("End of prev word");
-                    break;
-                case "g":
-                    editor.selection.selectTo(count || 0, 0);
-            }
-        }
-    },
-    "o": {
-        nav: function(editor, range, count, param) {
-            count = count || 1;
-            var content = "";
-            while (0 < count--)
-                content += "\n";
-
-            if (content.length) {
-                editor.navigateLineEnd();
-                editor.insert(content);
-                util.insertMode(editor);
-            }
-        }
-    },
-    "O": {
-        nav: function(editor, range, count, param) {
-            var row = editor.getCursorPosition().row;
-            count = count || 1;
-            var content = "";
-            while (0 < count--)
-                content += "\n";
-
-            if (content.length) {
-                if(row > 0) {
-                    editor.navigateUp();
-                    editor.navigateLineEnd();
-                    editor.insert(content);
-                } else {
-                    editor.session.insert({row: 0, column: 0}, content);
-                    editor.navigateUp();
-                }
-                util.insertMode(editor);
-            }
-        }
-    },
-    "%": new Motion(function(editor){
-        var brRe = /[\[\]{}()]/g;
-        var cursor = editor.getCursorPosition();
-        var ch = editor.session.getLine(cursor.row)[cursor.column];
-        if (!brRe.test(ch)) {
-            var range = find(editor, brRe);
-            if (!range)
-                return;
-            cursor = range.start;
-        }
-        var match = editor.session.findMatchingBracket({
-            row: cursor.row,
-            column: cursor.column + 1
+  };
+  this.charCoords = function(pos, mode) {
+    if (mode == 'div' || !mode) {
+      var sc = this.ace.session.documentToScreenPosition(pos.line, pos.ch);
+      return {left: sc.column, top: sc.row};
+    }if (mode == 'local') {
+      var renderer = this.ace.renderer;
+      var sc = this.ace.session.documentToScreenPosition(pos.line, pos.ch);
+      var lh = renderer.layerConfig.lineHeight;
+      var cw = renderer.layerConfig.characterWidth;
+      var top = lh * sc.row;
+      return {left: sc.column * cw, top: top, bottom: top + lh};
+    }
+  };
+  this.coordsChar = function(pos, mode) {
+    var renderer = this.ace.renderer;
+    if (mode == 'local') {
+      var row = Math.max(0, Math.floor(pos.top / renderer.lineHeight));
+      var col = Math.max(0, Math.floor(pos.left / renderer.characterWidth));
+      var ch = renderer.session.screenToDocumentPosition(row, col);
+      return toCmPos(ch);
+    } else if (mode == 'div') {
+      throw "not implemented";
+    }
+  };
+  this.getSearchCursor = function(query, pos, caseFold) {
+    var caseSensitive = false;
+    var isRegexp = false;
+    if (query instanceof RegExp && !query.global) {
+      caseSensitive = !query.ignoreCase;
+      query = query.source;
+      isRegexp = true;
+    }
+    var search = new Search();
+    if (pos.ch == undefined) pos.ch = Number.MAX_VALUE;
+    var acePos = {row: pos.line, column: pos.ch};
+    var cm = this;
+    var last = null;
+    return {
+      findNext: function() { return this.find(false) },
+      findPrevious: function() {return this.find(true) },
+      find: function(back) {
+        search.setOptions({
+          needle: query,
+          caseSensitive: caseSensitive,
+          wrap: false,
+          backwards: back,
+          regExp: isRegexp,
+          start: last || acePos
         });
+        var range = search.find(cm.ace.session);
+        if (range && range.isEmpty()) {
+          if (cm.getLine(range.start.row).length == range.start.column) {
+            search.$options.start = range;
+            range = search.find(cm.ace.session);
+          }
+        }
+        last = range;
+        return last;
+      },
+      from: function() { return last && toCmPos(last.start) },
+      to: function() { return last && toCmPos(last.end) },
+      replace: function(text) {
+        if (last) {
+          last.end = cm.ace.session.doc.replace(last, text);
+        }
+      }
+    };
+  };
+  this.scrollTo = function(x, y) {
+    var renderer = this.ace.renderer;
+    var config = renderer.layerConfig;
+    var maxHeight = config.maxHeight;
+    maxHeight -= (renderer.$size.scrollerHeight - renderer.lineHeight) * renderer.$scrollPastEnd;
+    if (y != null) this.ace.session.setScrollTop(Math.max(0, Math.min(y, maxHeight)));
+    if (x != null) this.ace.session.setScrollLeft(Math.max(0, Math.min(x, config.width)));
+  };
+  this.scrollInfo = function() { return 0; };
+  this.scrollIntoView = function(pos, margin) {
+    if (pos) {
+      var renderer = this.ace.renderer;
+      var viewMargin = { "top": 0, "bottom": margin };
+      renderer.scrollCursorIntoView(toAcePos(pos),
+        (renderer.lineHeight * 2) / renderer.$size.scrollerHeight, viewMargin);
+    }
+  };
+  this.getLine = function(row) { return this.ace.session.getLine(row) };
+  this.getRange = function(s, e) {
+    return this.ace.session.getTextRange(new Range(s.line, s.ch, e.line, e.ch));
+  };
+  this.replaceRange = function(text, s, e) {
+    if (!e) e = s;
+    return this.ace.session.replace(new Range(s.line, s.ch, e.line, e.ch), text);
+  };
+  this.replaceSelections = function(p) {
+    var sel = this.ace.selection;
+    if (this.ace.inVirtualSelectionMode) {
+      this.ace.session.replace(sel.getRange(), p[0] || "");
+      return;
+    }
+    sel.inVirtualSelectionMode = true;
+    var ranges = sel.rangeList.ranges;
+    if (!ranges.length) ranges = [this.ace.multiSelect.getRange()];
+    for (var i = ranges.length; i--;)
+       this.ace.session.replace(ranges[i], p[i] || "");
+    sel.inVirtualSelectionMode = false;
+  };
+  this.getSelection = function() {
+    return this.ace.getSelectedText();
+  };
+  this.getSelections = function() {
+    return this.listSelections().map(function(x) {
+      return this.getRange(x.anchor, x.head);
+    }, this);
+  };
+  this.getInputField = function() {
+    return this.ace.textInput.getElement();
+  };
+  this.getWrapperElement = function() {
+    return this.ace.containter;
+  };
+  var optMap = {
+    indentWithTabs: "useSoftTabs",
+    indentUnit: "tabSize",
+    tabSize: "tabSize",
+    firstLineNumber: "firstLineNumber",
+    readOnly: "readOnly"
+  };
+  this.setOption = function(name, val) {
+    this.state[name] = val;
+    switch (name) {
+      case 'indentWithTabs':
+        name = optMap[name];
+        val = !val;
+      break;
+      default:
+        name = optMap[name];
+    }
+    if (name)
+      this.ace.setOption(name, val);
+  };
+  this.getOption = function(name, val) {
+    var aceOpt = optMap[name];
+    if (aceOpt)
+      val = this.ace.getOption(aceOpt);
+    switch (name) {
+      case 'indentWithTabs':
+        name = optMap[name];
+        return !val;
+    }
+    return aceOpt ? val : this.state[name];
+  };
+  this.toggleOverwrite = function(on) {
+    this.state.overwrite = on;
+    return this.ace.setOverwrite(on);
+  };
+  this.addOverlay = function(o) {
+    if (!this.$searchHighlight || !this.$searchHighlight.session) {
+      var highlight = new SearchHighlight(null, "ace_highlight-marker", "text");
+      var marker = this.ace.session.addDynamicMarker(highlight);
+      highlight.id = marker.id;
+      highlight.session = this.ace.session;
+      highlight.destroy = function(o) {
+        highlight.session.off("change", highlight.updateOnChange);
+        highlight.session.off("changeEditor", highlight.destroy);
+        highlight.session.removeMarker(highlight.id);
+        highlight.session = null;
+      };
+      highlight.updateOnChange = function(delta) {
+        var row = delta.start.row;
+        if (row == delta.end.row) highlight.cache[row] = undefined;
+        else highlight.cache.splice(row, highlight.cache.length);
+      };
+      highlight.session.on("changeEditor", highlight.destroy);
+      highlight.session.on("change", highlight.updateOnChange);
+    }
+    var re = new RegExp(o.query.source, "gmi");
+    this.$searchHighlight = o.highlight = highlight;
+    this.$searchHighlight.setRegexp(re);
+    this.ace.renderer.updateBackMarkers();
+  };
+  this.removeOverlay = function(o) {
+    if (this.$searchHighlight && this.$searchHighlight.session) {
+      this.$searchHighlight.destroy();
+    }
+  };
+  this.getScrollInfo = function() {
+    var renderer = this.ace.renderer;
+    var config = renderer.layerConfig;
+    return {
+      left: renderer.scrollLeft,
+      top: renderer.scrollTop,
+      height: config.maxHeight,
+      width: config.width,
+      clientHeight: config.height,
+      clientWidth: config.width
+    };
+  };
+  this.getValue = function() {
+    return this.ace.getValue();
+  };
+  this.setValue = function(v) {
+    return this.ace.setValue(v);
+  };
+  this.getTokenTypeAt = function(pos) {
+    var token = this.ace.session.getTokenAt(pos.line, pos.ch);
+    return token && /comment|string/.test(token.type) ? "string" : "";
+  };
+  this.findMatchingBracket = function(pos) {
+    var m = this.ace.session.findMatchingBracket(toAcePos(pos));
+    return {to: m && toCmPos(m)};
+  };
+  this.indentLine = function(line, method) {
+    if (method === true)
+        this.ace.session.indentRows(line, line, "\t");
+    else if (method === false)
+        this.ace.session.outdentRows(new Range(line, 0, line, 0));
+  };
+  this.indexFromPos = function(pos) {
+    return this.ace.session.doc.positionToIndex(toAcePos(pos));
+  };
+  this.posFromIndex = function(index) {
+    return toCmPos(this.ace.session.doc.indexToPosition(index));
+  };
+  this.focus = function(index) {
+    return this.ace.focus();
+  };
+  this.blur = function(index) {
+    return this.ace.blur();
+  };
+  this.defaultTextHeight = function(index) {
+    return this.ace.renderer.layerConfig.lineHeight;
+  };
+  this.scanForBracket = function(pos, dir, _, options) {
+    var re = options.bracketRegex.source;
+    if (dir == 1) {
+      var m = this.ace.session.$findClosingBracket(re.slice(1, 2), toAcePos(pos), /paren|text/);
+    } else {
+      var m = this.ace.session.$findOpeningBracket(re.slice(-2, -1), {row: pos.line, column: pos.ch + 1}, /paren|text/);
+    }
+    return m && {pos: toCmPos(m)};
+  };
+  this.refresh = function() {
+    return this.ace.resize(true);
+  };
+  this.getMode = function() {
+    return { name : this.getOption("mode") };
+  }
+}).call(CodeMirror.prototype);
+  function toAcePos(cmPos) {
+    return {row: cmPos.line, column: cmPos.ch};
+  }
+  function toCmPos(acePos) {
+    return new Pos(acePos.row, acePos.column);
+  }
 
+  var StringStream = CodeMirror.StringStream = function(string, tabSize) {
+    this.pos = this.start = 0;
+    this.string = string;
+    this.tabSize = tabSize || 8;
+    this.lastColumnPos = this.lastColumnValue = 0;
+    this.lineStart = 0;
+  };
+
+  StringStream.prototype = {
+    eol: function() {return this.pos >= this.string.length;},
+    sol: function() {return this.pos == this.lineStart;},
+    peek: function() {return this.string.charAt(this.pos) || undefined;},
+    next: function() {
+      if (this.pos < this.string.length)
+        return this.string.charAt(this.pos++);
+    },
+    eat: function(match) {
+      var ch = this.string.charAt(this.pos);
+      if (typeof match == "string") var ok = ch == match;
+      else var ok = ch && (match.test ? match.test(ch) : match(ch));
+      if (ok) {++this.pos; return ch;}
+    },
+    eatWhile: function(match) {
+      var start = this.pos;
+      while (this.eat(match)){}
+      return this.pos > start;
+    },
+    eatSpace: function() {
+      var start = this.pos;
+      while (/[\s\u00a0]/.test(this.string.charAt(this.pos))) ++this.pos;
+      return this.pos > start;
+    },
+    skipToEnd: function() {this.pos = this.string.length;},
+    skipTo: function(ch) {
+      var found = this.string.indexOf(ch, this.pos);
+      if (found > -1) {this.pos = found; return true;}
+    },
+    backUp: function(n) {this.pos -= n;},
+    column: function() {
+      throw "not implemented";
+    },
+    indentation: function() {
+      throw "not implemented";
+    },
+    match: function(pattern, consume, caseInsensitive) {
+      if (typeof pattern == "string") {
+        var cased = function(str) {return caseInsensitive ? str.toLowerCase() : str;};
+        var substr = this.string.substr(this.pos, pattern.length);
+        if (cased(substr) == cased(pattern)) {
+          if (consume !== false) this.pos += pattern.length;
+          return true;
+        }
+      } else {
+        var match = this.string.slice(this.pos).match(pattern);
+        if (match && match.index > 0) return null;
+        if (match && consume !== false) this.pos += match[0].length;
         return match;
-    }),
-    "{": new Motion(function(ed) {
-        var session = ed.session;
-        var row = session.selection.lead.row;
-        while(row > 0 && !/\S/.test(session.getLine(row)))
-            row--;
-        while(/\S/.test(session.getLine(row)))
-            row--;
-        return {column: 0, row: row};
-    }),
-    "}": new Motion(function(ed) {
-        var session = ed.session;
-        var l = session.getLength();
-        var row = session.selection.lead.row;
-        while(row < l && !/\S/.test(session.getLine(row)))
-            row++;
-        while(/\S/.test(session.getLine(row)))
-            row++;
-        return {column: 0, row: row};
-    }),
-    "ctrl-d": {
-        nav: function(editor, range, count, param) {
-            editor.selection.clearSelection();
-            keepScrollPosition(editor, editor.gotoPageDown);
-        },
-        sel: function(editor, range, count, param) {
-            keepScrollPosition(editor, editor.selectPageDown);
-        }
+      }
     },
-    "ctrl-u": {
-        nav: function(editor, range, count, param) {
-            editor.selection.clearSelection();
-            keepScrollPosition(editor, editor.gotoPageUp);
-        },
-        sel: function(editor, range, count, param) {
-            keepScrollPosition(editor, editor.selectPageUp);
-        }
-    },
-    "`": new Motion({
-        param: true,
-        handlesCount: true,
-        getPos: function(editor, range, count, param, isSel) {
-            var s = editor.session;
-            var marker = s.vimMarkers && s.vimMarkers[param];
-            if (marker) {
-                return marker.getPosition();
-            }
-        }
-    }),
-    "'": new Motion({
-        param: true,
-        handlesCount: true,
-        getPos: function(editor, range, count, param, isSel) {
-            var s = editor.session;
-            var marker = s.vimMarkers && s.vimMarkers[param];
-            if (marker) {
-                var pos = marker.getPosition();
-                var line = editor.session.getLine(pos.row);                
-                pos.column = line.search(/\S/);
-                if (pos.column == -1)
-                    pos.column = line.length;
-                return pos;
-            }
-        },
-        isLine: true
-    })
-};
-
-module.exports.backspace = module.exports.left = module.exports.h;
-module.exports.space = module.exports['return'] = module.exports.right = module.exports.l;
-module.exports.up = module.exports.k;
-module.exports.down = module.exports.j;
-module.exports.pagedown = module.exports["ctrl-d"];
-module.exports.pageup = module.exports["ctrl-u"];
-module.exports.home = module.exports["0"];
-module.exports.end = module.exports["$"];
-
-});
-
-ace.define("ace/keyboard/vim/maps/operators",["require","exports","module","ace/keyboard/vim/maps/util","ace/keyboard/vim/registers","ace/range"], function(require, exports, module) {
-
-"use strict";
-
-var util = require("./util");
-var registers = require("../registers");
-var Range = require("../../../range").Range;
-
-module.exports = {
-    "d": {
-        selFn: function(editor, range, count, param) {
-            registers._default.text = editor.getCopyText();
-            registers._default.isLine = util.onVisualLineMode;
-            if(util.onVisualLineMode)
-                editor.removeLines();
-            else
-                editor.session.remove(range);
-            util.normalMode(editor);
-        },
-        fn: function(editor, range, count, param) {
-            count = count || 1;
-            switch (param) {
-                case "d":
-                    registers._default.text = "";
-                    registers._default.isLine = true;
-                    for (var i = 0; i < count; i++) {
-                        editor.selection.selectLine();
-                        registers._default.text += editor.getCopyText();
-                        var selRange = editor.getSelectionRange();
-                        if (!selRange.isMultiLine()) {
-                            var row = selRange.start.row - 1;
-                            var col = editor.session.getLine(row).length
-                            selRange.setStart(row, col);
-                            editor.session.remove(selRange);
-                            editor.selection.clearSelection();
-                            break;
-                        }
-                        editor.session.remove(selRange);
-                        editor.selection.clearSelection();
-                    }
-                    registers._default.text = registers._default.text.replace(/\n$/, "");
-                    break;
-                default:
-                    if (range) {
-                        editor.selection.setSelectionRange(range);
-                        registers._default.text = editor.getCopyText();
-                        registers._default.isLine = false;
-                        editor.session.remove(range);
-                        editor.selection.clearSelection();
-                    }
-            }
-        }
-    },
-    "c": {
-        selFn: function(editor, range, count, param) {
-            editor.session.remove(range);
-            util.insertMode(editor);
-        },
-        fn: function(editor, range, count, param) {
-            count = count || 1;
-            switch (param) {
-                case "c":
-                    editor.$blockScrolling++;
-                    editor.selection.$moveSelection(function() {
-                        editor.selection.moveCursorBy(count - 1, 0);
-                    });
-                    var rows = editor.$getSelectedRows();
-                    range = new Range(rows.first, 0, rows.last, Infinity);
-                    editor.session.remove(range);
-                    editor.$blockScrolling--;
-                    util.insertMode(editor);
-                    break;
-                default:
-                    if (range) {
-                        editor.session.remove(range);
-                        util.insertMode(editor);
-                    }
-            }
-        }
-    },
-    "y": {
-        selFn: function(editor, range, count, param) {
-            registers._default.text = editor.getCopyText();
-            registers._default.isLine = util.onVisualLineMode;
-            editor.selection.clearSelection();
-            util.normalMode(editor);
-        },
-        fn: function(editor, range, count, param) {
-            count = count || 1;
-            if (param && param.isLine) 
-                param = "y";
-            switch (param) {
-                case "y":
-                    var pos = editor.getCursorPosition();
-                    editor.selection.selectLine();
-                    for (var i = 0; i < count - 1; i++) {
-                        editor.selection.moveCursorDown();
-                    }
-                    registers._default.text = editor.getCopyText().replace(/\n$/, "");
-                    editor.selection.clearSelection();
-                    registers._default.isLine = true;
-                    editor.moveCursorToPosition(pos);
-                    break;
-                default:
-                    if (range) {
-                        var pos = editor.getCursorPosition();
-                        editor.selection.setSelectionRange(range);
-                        registers._default.text = editor.getCopyText();
-                        registers._default.isLine = false;
-                        editor.selection.clearSelection();
-                        editor.moveCursorTo(pos.row, pos.column);
-                    }
-            }
-        }
-    },
-    ">": {
-        selFn: function(editor, range, count, param) {
-            count = count || 1;
-            for (var i = 0; i < count; i++) {
-                editor.indent();
-            }
-            util.normalMode(editor);
-        },
-        fn: function(editor, range, count, param) {
-            count = parseInt(count || 1, 10);
-            switch (param) {
-                case ">":
-                    var pos = editor.getCursorPosition();
-                    editor.selection.selectLine();
-                    for (var i = 0; i < count - 1; i++) {
-                        editor.selection.moveCursorDown();
-                    }
-                    editor.indent();
-                    editor.selection.clearSelection();
-                    editor.moveCursorToPosition(pos);
-                    editor.navigateLineEnd();
-                    editor.navigateLineStart();
-                    break;
-            }
-        }
-    },
-    "<": {
-        selFn: function(editor, range, count, param) {
-            count = count || 1;
-            for (var i = 0; i < count; i++) {
-                editor.blockOutdent();
-            }
-            util.normalMode(editor);
-        },
-        fn: function(editor, range, count, param) {
-            count = count || 1;
-            switch (param) {
-                case "<":
-                    var pos = editor.getCursorPosition();
-                    editor.selection.selectLine();
-                    for (var i = 0; i < count - 1; i++) {
-                        editor.selection.moveCursorDown();
-                    }
-                    editor.blockOutdent();
-                    editor.selection.clearSelection();
-                    editor.moveCursorToPosition(pos);
-                    editor.navigateLineEnd();
-                    editor.navigateLineStart();
-                    break;
-            }
-        }
+    current: function(){return this.string.slice(this.start, this.pos);},
+    hideFirstChars: function(n, inner) {
+      this.lineStart += n;
+      try { return inner(); }
+      finally { this.lineStart -= n; }
     }
+  };
+CodeMirror.defineExtension = function(name, fn) {
+  CodeMirror.prototype[name] = fn;
 };
-});
+dom.importCssString(".normal-mode .ace_cursor{\
+  border: 1px solid red;\
+  background-color: red;\
+  opacity: 0.5;\
+}\
+.normal-mode .ace_hidden-cursors .ace_cursor{\
+  background-color: transparent;\
+}\
+.ace_dialog {\
+  position: absolute;\
+  left: 0; right: 0;\
+  background: white;\
+  z-index: 15;\
+  padding: .1em .8em;\
+  overflow: hidden;\
+  color: #333;\
+}\
+.ace_dialog-top {\
+  border-bottom: 1px solid #eee;\
+  top: 0;\
+}\
+.ace_dialog-bottom {\
+  border-top: 1px solid #eee;\
+  bottom: 0;\
+}\
+.ace_dialog input {\
+  border: none;\
+  outline: none;\
+  background: transparent;\
+  width: 20em;\
+  color: inherit;\
+  font-family: monospace;\
+}", "vimMode");
+(function() {
+  function dialogDiv(cm, template, bottom) {
+    var wrap = cm.ace.container;
+    var dialog;
+    dialog = wrap.appendChild(document.createElement("div"));
+    if (bottom)
+      dialog.className = "ace_dialog ace_dialog-bottom";
+    else
+      dialog.className = "ace_dialog ace_dialog-top";
 
-"use strict"
-
-ace.define("ace/keyboard/vim/maps/aliases",["require","exports","module"], function(require, exports, module) {
-module.exports = {
-    "x": {
-        operator: {
-            ch: "d",
-            count: 1
-        },
-        motion: {
-            ch: "l",
-            count: 1
-        }
-    },
-    "X": {
-        operator: {
-            ch: "d",
-            count: 1
-        },
-        motion: {
-            ch: "h",
-            count: 1
-        }
-    },
-    "D": {
-        operator: {
-            ch: "d",
-            count: 1
-        },
-        motion: {
-            ch: "$",
-            count: 1
-        }
-    },
-    "C": {
-        operator: {
-            ch: "c",
-            count: 1
-        },
-        motion: {
-            ch: "$",
-            count: 1
-        }
-    },
-    "s": {
-        operator: {
-            ch: "c",
-            count: 1
-        },
-        motion: {
-            ch: "l",
-            count: 1
-        }
-    },
-    "S": {
-        operator: {
-            ch: "c",
-            count: 1
-        },
-        param: "c"
+    if (typeof template == "string") {
+      dialog.innerHTML = template;
+    } else { // Assuming it's a detached DOM element.
+      dialog.appendChild(template);
     }
-};
-});
+    return dialog;
+  }
 
-ace.define("ace/keyboard/vim/commands",["require","exports","module","ace/lib/lang","ace/keyboard/vim/maps/util","ace/keyboard/vim/maps/motions","ace/keyboard/vim/maps/operators","ace/keyboard/vim/maps/aliases","ace/keyboard/vim/registers"], function(require, exports, module) {
+  function closeNotification(cm, newVal) {
+    if (cm.state.currentNotificationClose)
+      cm.state.currentNotificationClose();
+    cm.state.currentNotificationClose = newVal;
+  }
 
-"never use strict";
+  CodeMirror.defineExtension("openDialog", function(template, callback, options) {
+    if (this.virtualSelectionMode()) return;
+    if (!options) options = {};
 
-var lang = require("../../lib/lang");
-var util = require("./maps/util");
-var motions = require("./maps/motions");
-var operators = require("./maps/operators");
-var alias = require("./maps/aliases");
-var registers = require("./registers");
+    closeNotification(this, null);
 
-var NUMBER = 1;
-var OPERATOR = 2;
-var MOTION = 3;
-var ACTION = 4;
-var HMARGIN = 8; // Minimum amount of line separation between margins;
+    var dialog = dialogDiv(this, template, options.bottom);
+    var closed = false, me = this;
+    function close(newVal) {
+      if (typeof newVal == 'string') {
+        inp.value = newVal;
+      } else {
+        if (closed) return;
+        closed = true;
+        dialog.parentNode.removeChild(dialog);
+        me.focus();
 
-var repeat = function repeat(fn, count, args) {
-    while (0 < count--)
-        fn.apply(this, args);
-};
-
-var ensureScrollMargin = function(editor) {
-    var renderer = editor.renderer;
-    var pos = renderer.$cursorLayer.getPixelPosition();
-
-    var top = pos.top;
-
-    var margin = HMARGIN * renderer.layerConfig.lineHeight;
-    if (2 * margin > renderer.$size.scrollerHeight)
-        margin = renderer.$size.scrollerHeight / 2;
-
-    if (renderer.scrollTop > top - margin) {
-        renderer.session.setScrollTop(top - margin);
+        if (options.onClose) options.onClose(dialog);
+      }
     }
 
-    if (renderer.scrollTop + renderer.$size.scrollerHeight < top + margin + renderer.lineHeight) {
-        renderer.session.setScrollTop(top + margin + renderer.lineHeight - renderer.$size.scrollerHeight);
+    var inp = dialog.getElementsByTagName("input")[0], button;
+    if (inp) {
+      if (options.value) {
+        inp.value = options.value;
+        if (options.select !== false) inp.select();
+      }
+
+      if (options.onInput)
+        CodeMirror.on(inp, "input", function(e) { options.onInput(e, inp.value, close);});
+      if (options.onKeyUp)
+        CodeMirror.on(inp, "keyup", function(e) {options.onKeyUp(e, inp.value, close);});
+
+      CodeMirror.on(inp, "keydown", function(e) {
+        if (options && options.onKeyDown && options.onKeyDown(e, inp.value, close)) { return; }
+        if (e.keyCode == 27 || (options.closeOnEnter !== false && e.keyCode == 13)) {
+          inp.blur();
+          CodeMirror.e_stop(e);
+          close();
+        }
+        if (e.keyCode == 13) callback(inp.value);
+      });
+
+      if (options.closeOnBlur !== false) CodeMirror.on(inp, "blur", close);
+
+      inp.focus();
+    } else if (button = dialog.getElementsByTagName("button")[0]) {
+      CodeMirror.on(button, "click", function() {
+        close();
+        me.focus();
+      });
+
+      if (options.closeOnBlur !== false) CodeMirror.on(button, "blur", close);
+
+      button.focus();
     }
-};
+    return close;
+  });
 
-var actions = exports.actions = {
-    "z": {
-        param: true,
-        fn: function(editor, range, count, param) {
-            switch (param) {
-                case "z":
-                    editor.renderer.alignCursor(null, 0.5);
-                    break;
-                case "t":
-                    editor.renderer.alignCursor(null, 0);
-                    break;
-                case "b":
-                    editor.renderer.alignCursor(null, 1);
-                    break;
-                case "c":
-                    editor.session.onFoldWidgetClick(range.start.row, {domEvent:{target :{}}});
-                    break;
-                case "o":
-                    editor.session.onFoldWidgetClick(range.start.row, {domEvent:{target :{}}});
-                    break;
-                case "C":
-                    editor.session.foldAll();
-                    break;
-                case "O":
-                    editor.session.unfold();
-                    break;
-            }
-        }
-    },
-    "r": {
-        param: true,
-        fn: function(editor, range, count, param) {
-            if (param && param.length) {
-                if (param.length > 1)
-                    param = param == "return" ? "\n" : param == "tab" ? "\t" : param;
-                repeat(function() { editor.insert(param); }, count || 1);
-                editor.navigateLeft();
-            }
-        }
-    },
-    "R": {
-        fn: function(editor, range, count, param) {
-            util.insertMode(editor);
-            editor.setOverwrite(true);
-        }
-    },
-    "~": {
-        fn: function(editor, range, count) {
-            repeat(function() {
-                var range = editor.selection.getRange();
-                if (range.isEmpty())
-                    range.end.column++;
-                var text = editor.session.getTextRange(range);
-                var toggled = text.toUpperCase();
-                if (toggled != text)
-                    editor.session.replace(range, toggled);
-                else if (text.toLowerCase() != text)
-                    editor.session.replace(range, text.toLowerCase())
-                else
-                    editor.navigateRight();
-            }, count || 1);
-        }
-    },
-    "*": {
-        fn: function(editor, range, count, param) {
-            editor.selection.selectWord();
-            editor.findNext();
-            ensureScrollMargin(editor);
-            var r = editor.selection.getRange();
-            editor.selection.setSelectionRange(r, true);
-        }
-    },
-    "#": {
-        fn: function(editor, range, count, param) {
-            editor.selection.selectWord();
-            editor.findPrevious();
-            ensureScrollMargin(editor);
-            var r = editor.selection.getRange();
-            editor.selection.setSelectionRange(r, true);
-        }
-    },
-    "m": {
-        param: true,
-        fn: function(editor, range, count, param) {
-            var s =  editor.session;
-            var markers = s.vimMarkers || (s.vimMarkers = {});
-            var c = editor.getCursorPosition();
-            if (!markers[param]) {
-                markers[param] = editor.session.doc.createAnchor(c);
-            }
-            markers[param].setPosition(c.row, c.column, true);
-        }
-    },
-    "n": {
-        fn: function(editor, range, count, param) {
-            var options = editor.getLastSearchOptions();
-            options.backwards = false;
-            options.start = null;
+  CodeMirror.defineExtension("openNotification", function(template, options) {
+    if (this.virtualSelectionMode()) return;
+    closeNotification(this, close);
+    var dialog = dialogDiv(this, template, options && options.bottom);
+    var closed = false, doneTimer;
+    var duration = options && typeof options.duration !== "undefined" ? options.duration : 5000;
 
-            editor.selection.moveCursorRight();
-            editor.selection.clearSelection();
-            editor.findNext(options);
-
-            ensureScrollMargin(editor);
-            var r = editor.selection.getRange();
-            r.end.row = r.start.row;
-            r.end.column = r.start.column;
-            editor.selection.setSelectionRange(r, true);
-        }
-    },
-    "N": {
-        fn: function(editor, range, count, param) {
-            var options = editor.getLastSearchOptions();
-            options.backwards = true;
-            options.start = null;
-
-            editor.findPrevious(options);
-            ensureScrollMargin(editor);
-            var r = editor.selection.getRange();
-            r.end.row = r.start.row;
-            r.end.column = r.start.column;
-            editor.selection.setSelectionRange(r, true);
-        }
-    },
-    "v": {
-        fn: function(editor, range, count, param) {
-            editor.selection.selectRight();
-            util.visualMode(editor, false);
-        },
-        acceptsMotion: true
-    },
-    "V": {
-        fn: function(editor, range, count, param) {
-            var row = editor.getCursorPosition().row;
-            editor.selection.moveTo(row, 0);
-            editor.selection.selectLineEnd();
-            editor.selection.visualLineStart = row;
-
-            util.visualMode(editor, true);
-        },
-        acceptsMotion: true
-    },
-    "Y": {
-        fn: function(editor, range, count, param) {
-            util.copyLine(editor);
-        }
-    },
-    "p": {
-        fn: function(editor, range, count, param) {
-            var defaultReg = registers._default;
-
-            editor.setOverwrite(false);
-            if (defaultReg.isLine) {
-                var pos = editor.getCursorPosition();
-                pos.column = editor.session.getLine(pos.row).length;
-                var text = lang.stringRepeat("\n" + defaultReg.text, count || 1);
-                editor.session.insert(pos, text);
-                editor.moveCursorTo(pos.row + 1, 0);
-            }
-            else {
-                editor.navigateRight();
-                editor.insert(lang.stringRepeat(defaultReg.text, count || 1));
-                editor.navigateLeft();
-            }
-            editor.setOverwrite(true);
-            editor.selection.clearSelection();
-        }
-    },
-    "P": {
-        fn: function(editor, range, count, param) {
-            var defaultReg = registers._default;
-            editor.setOverwrite(false);
-
-            if (defaultReg.isLine) {
-                var pos = editor.getCursorPosition();
-                pos.column = 0;
-                var text = lang.stringRepeat(defaultReg.text + "\n", count || 1);
-                editor.session.insert(pos, text);
-                editor.moveCursorToPosition(pos);
-            }
-            else {
-                editor.insert(lang.stringRepeat(defaultReg.text, count || 1));
-            }
-            editor.setOverwrite(true);
-            editor.selection.clearSelection();
-        }
-    },
-    "J": {
-        fn: function(editor, range, count, param) {
-            var session = editor.session;
-            range = editor.getSelectionRange();
-            var pos = {row: range.start.row, column: range.start.column};
-            count = count || range.end.row - range.start.row;
-            var maxRow = Math.min(pos.row + (count || 1), session.getLength() - 1);
-
-            range.start.column = session.getLine(pos.row).length;
-            range.end.column = session.getLine(maxRow).length;
-            range.end.row = maxRow;
-
-            var text = "";
-            for (var i = pos.row; i < maxRow; i++) {
-                var nextLine = session.getLine(i + 1);
-                text += " " + /^\s*(.*)$/.exec(nextLine)[1] || "";
-            }
-
-            session.replace(range, text);
-            editor.moveCursorTo(pos.row, pos.column);
-        }
-    },
-    "u": {
-        fn: function(editor, range, count, param) {
-            count = parseInt(count || 1, 10);
-            for (var i = 0; i < count; i++) {
-                editor.undo();
-            }
-            editor.selection.clearSelection();
-        }
-    },
-    "ctrl-r": {
-        fn: function(editor, range, count, param) {
-            count = parseInt(count || 1, 10);
-            for (var i = 0; i < count; i++) {
-                editor.redo();
-            }
-            editor.selection.clearSelection();
-        }
-    },
-    ":": {
-        fn: function(editor, range, count, param) {
-            var val = ":";
-            if (count > 1)
-                val = ".,.+" + count + val;
-            if (editor.showCommandLine)
-                editor.showCommandLine(val);
-        }
-    },
-    "/": {
-        fn: function(editor, range, count, param) {
-            if (editor.showCommandLine)
-                editor.showCommandLine("/");
-        }
-    },
-    "?": {
-        fn: function(editor, range, count, param) {
-            if (editor.showCommandLine)
-                editor.showCommandLine("?");
-        }
-    },
-    ".": {
-        fn: function(editor, range, count, param) {
-            util.onInsertReplaySequence = inputBuffer.lastInsertCommands;
-            var previous = inputBuffer.previous;
-            if (previous) // If there is a previous action
-                inputBuffer.exec(editor, previous.action, previous.param);
-        }
-    },
-    "ctrl-x": {
-        fn: function(editor, range, count, param) {
-            editor.modifyNumber(-(count || 1));
-        }
-    },
-    "ctrl-a": {
-        fn: function(editor, range, count, param) {
-            editor.modifyNumber(count || 1);
-        }
+    function close() {
+      if (closed) return;
+      closed = true;
+      clearTimeout(doneTimer);
+      dialog.parentNode.removeChild(dialog);
     }
-};
 
-var inputBuffer = exports.inputBuffer = {
-    accepting: [NUMBER, OPERATOR, MOTION, ACTION],
-    currentCmd: null,
-    currentCount: "",
-    pendingCount: "",
-    status: "",
-    operator: null,
-    motion: null,
+    CodeMirror.on(dialog, 'click', function(e) {
+      CodeMirror.e_preventDefault(e);
+      close();
+    });
 
-    lastInsertCommands: [],
+    if (duration)
+      doneTimer = setTimeout(close, duration);
 
-    push: function(editor, ch, keyId) {
-        var status = this.status;
-        var isKeyHandled = true;
-        this.idle = false;
-        var wObj = this.waitingForParam;
-        if (/^numpad\d+$/i.test(ch))
-            ch = ch.substr(6);
-            
-        if (wObj) {
-            this.exec(editor, wObj, ch);
-        }
-        else if (!(ch === "0" && !this.currentCount.length) &&
-            (/^\d+$/.test(ch) && this.isAccepting(NUMBER))) {
-            this.currentCount += ch;
-            this.currentCmd = NUMBER;
-            this.accepting = [NUMBER, OPERATOR, MOTION, ACTION];
-        }
-        else if (!this.operator && this.isAccepting(OPERATOR) && operators[ch]) {
-            this.operator = {
-                ch: ch,
-                count: this.getCount()
-            };
-            this.currentCmd = OPERATOR;
-            this.accepting = [NUMBER, MOTION, ACTION];
-            this.exec(editor, { operator: this.operator });
-        }
-        else if (motions[ch] && this.isAccepting(MOTION)) {
-            this.currentCmd = MOTION;
+    return close;
+  });
+})();
 
-            var ctx = {
-                operator: this.operator,
-                motion: {
-                    ch: ch,
-                    count: this.getCount()
-                }
-            };
+  
+  var defaultKeymap = [
+    { keys: '<Left>', type: 'keyToKey', toKeys: 'h' },
+    { keys: '<Right>', type: 'keyToKey', toKeys: 'l' },
+    { keys: '<Up>', type: 'keyToKey', toKeys: 'k' },
+    { keys: '<Down>', type: 'keyToKey', toKeys: 'j' },
+    { keys: '<Space>', type: 'keyToKey', toKeys: 'l' },
+    { keys: '<BS>', type: 'keyToKey', toKeys: 'h', context: 'normal'},
+    { keys: '<C-Space>', type: 'keyToKey', toKeys: 'W' },
+    { keys: '<C-BS>', type: 'keyToKey', toKeys: 'B', context: 'normal' },
+    { keys: '<S-Space>', type: 'keyToKey', toKeys: 'w' },
+    { keys: '<S-BS>', type: 'keyToKey', toKeys: 'b', context: 'normal' },
+    { keys: '<C-n>', type: 'keyToKey', toKeys: 'j' },
+    { keys: '<C-p>', type: 'keyToKey', toKeys: 'k' },
+    { keys: '<C-[>', type: 'keyToKey', toKeys: '<Esc>' },
+    { keys: '<C-c>', type: 'keyToKey', toKeys: '<Esc>' },
+    { keys: '<C-[>', type: 'keyToKey', toKeys: '<Esc>', context: 'insert' },
+    { keys: '<C-c>', type: 'keyToKey', toKeys: '<Esc>', context: 'insert' },
+    { keys: 's', type: 'keyToKey', toKeys: 'cl', context: 'normal' },
+    { keys: 's', type: 'keyToKey', toKeys: 'xi', context: 'visual'},
+    { keys: 'S', type: 'keyToKey', toKeys: 'cc', context: 'normal' },
+    { keys: 'S', type: 'keyToKey', toKeys: 'dcc', context: 'visual' },
+    { keys: '<Home>', type: 'keyToKey', toKeys: '0' },
+    { keys: '<End>', type: 'keyToKey', toKeys: '$' },
+    { keys: '<PageUp>', type: 'keyToKey', toKeys: '<C-b>' },
+    { keys: '<PageDown>', type: 'keyToKey', toKeys: '<C-f>' },
+    { keys: '<CR>', type: 'keyToKey', toKeys: 'j^', context: 'normal' },
+    { keys: 'H', type: 'motion', motion: 'moveToTopLine', motionArgs: { linewise: true, toJumplist: true }},
+    { keys: 'M', type: 'motion', motion: 'moveToMiddleLine', motionArgs: { linewise: true, toJumplist: true }},
+    { keys: 'L', type: 'motion', motion: 'moveToBottomLine', motionArgs: { linewise: true, toJumplist: true }},
+    { keys: 'h', type: 'motion', motion: 'moveByCharacters', motionArgs: { forward: false }},
+    { keys: 'l', type: 'motion', motion: 'moveByCharacters', motionArgs: { forward: true }},
+    { keys: 'j', type: 'motion', motion: 'moveByLines', motionArgs: { forward: true, linewise: true }},
+    { keys: 'k', type: 'motion', motion: 'moveByLines', motionArgs: { forward: false, linewise: true }},
+    { keys: 'gj', type: 'motion', motion: 'moveByDisplayLines', motionArgs: { forward: true }},
+    { keys: 'gk', type: 'motion', motion: 'moveByDisplayLines', motionArgs: { forward: false }},
+    { keys: 'w', type: 'motion', motion: 'moveByWords', motionArgs: { forward: true, wordEnd: false }},
+    { keys: 'W', type: 'motion', motion: 'moveByWords', motionArgs: { forward: true, wordEnd: false, bigWord: true }},
+    { keys: 'e', type: 'motion', motion: 'moveByWords', motionArgs: { forward: true, wordEnd: true, inclusive: true }},
+    { keys: 'E', type: 'motion', motion: 'moveByWords', motionArgs: { forward: true, wordEnd: true, bigWord: true, inclusive: true }},
+    { keys: 'b', type: 'motion', motion: 'moveByWords', motionArgs: { forward: false, wordEnd: false }},
+    { keys: 'B', type: 'motion', motion: 'moveByWords', motionArgs: { forward: false, wordEnd: false, bigWord: true }},
+    { keys: 'ge', type: 'motion', motion: 'moveByWords', motionArgs: { forward: false, wordEnd: true, inclusive: true }},
+    { keys: 'gE', type: 'motion', motion: 'moveByWords', motionArgs: { forward: false, wordEnd: true, bigWord: true, inclusive: true }},
+    { keys: '{', type: 'motion', motion: 'moveByParagraph', motionArgs: { forward: false, toJumplist: true }},
+    { keys: '}', type: 'motion', motion: 'moveByParagraph', motionArgs: { forward: true, toJumplist: true }},
+    { keys: '<C-f>', type: 'motion', motion: 'moveByPage', motionArgs: { forward: true }},
+    { keys: '<C-b>', type: 'motion', motion: 'moveByPage', motionArgs: { forward: false }},
+    { keys: '<C-d>', type: 'motion', motion: 'moveByScroll', motionArgs: { forward: true, explicitRepeat: true }},
+    { keys: '<C-u>', type: 'motion', motion: 'moveByScroll', motionArgs: { forward: false, explicitRepeat: true }},
+    { keys: 'gg', type: 'motion', motion: 'moveToLineOrEdgeOfDocument', motionArgs: { forward: false, explicitRepeat: true, linewise: true, toJumplist: true }},
+    { keys: 'G', type: 'motion', motion: 'moveToLineOrEdgeOfDocument', motionArgs: { forward: true, explicitRepeat: true, linewise: true, toJumplist: true }},
+    { keys: '0', type: 'motion', motion: 'moveToStartOfLine' },
+    { keys: '^', type: 'motion', motion: 'moveToFirstNonWhiteSpaceCharacter' },
+    { keys: '+', type: 'motion', motion: 'moveByLines', motionArgs: { forward: true, toFirstChar:true }},
+    { keys: '-', type: 'motion', motion: 'moveByLines', motionArgs: { forward: false, toFirstChar:true }},
+    { keys: '_', type: 'motion', motion: 'moveByLines', motionArgs: { forward: true, toFirstChar:true, repeatOffset:-1 }},
+    { keys: '$', type: 'motion', motion: 'moveToEol', motionArgs: { inclusive: true }},
+    { keys: '%', type: 'motion', motion: 'moveToMatchedSymbol', motionArgs: { inclusive: true, toJumplist: true }},
+    { keys: 'f<character>', type: 'motion', motion: 'moveToCharacter', motionArgs: { forward: true , inclusive: true }},
+    { keys: 'F<character>', type: 'motion', motion: 'moveToCharacter', motionArgs: { forward: false }},
+    { keys: 't<character>', type: 'motion', motion: 'moveTillCharacter', motionArgs: { forward: true, inclusive: true }},
+    { keys: 'T<character>', type: 'motion', motion: 'moveTillCharacter', motionArgs: { forward: false }},
+    { keys: ';', type: 'motion', motion: 'repeatLastCharacterSearch', motionArgs: { forward: true }},
+    { keys: ',', type: 'motion', motion: 'repeatLastCharacterSearch', motionArgs: { forward: false }},
+    { keys: '\'<character>', type: 'motion', motion: 'goToMark', motionArgs: {toJumplist: true, linewise: true}},
+    { keys: '`<character>', type: 'motion', motion: 'goToMark', motionArgs: {toJumplist: true}},
+    { keys: ']`', type: 'motion', motion: 'jumpToMark', motionArgs: { forward: true } },
+    { keys: '[`', type: 'motion', motion: 'jumpToMark', motionArgs: { forward: false } },
+    { keys: ']\'', type: 'motion', motion: 'jumpToMark', motionArgs: { forward: true, linewise: true } },
+    { keys: '[\'', type: 'motion', motion: 'jumpToMark', motionArgs: { forward: false, linewise: true } },
+    { keys: ']p', type: 'action', action: 'paste', isEdit: true, actionArgs: { after: true, isEdit: true, matchIndent: true}},
+    { keys: '[p', type: 'action', action: 'paste', isEdit: true, actionArgs: { after: false, isEdit: true, matchIndent: true}},
+    { keys: ']<character>', type: 'motion', motion: 'moveToSymbol', motionArgs: { forward: true, toJumplist: true}},
+    { keys: '[<character>', type: 'motion', motion: 'moveToSymbol', motionArgs: { forward: false, toJumplist: true}},
+    { keys: '|', type: 'motion', motion: 'moveToColumn'},
+    { keys: 'o', type: 'motion', motion: 'moveToOtherHighlightedEnd', context:'visual'},
+    { keys: 'O', type: 'motion', motion: 'moveToOtherHighlightedEnd', motionArgs: {sameLine: true}, context:'visual'},
+    { keys: 'd', type: 'operator', operator: 'delete' },
+    { keys: 'y', type: 'operator', operator: 'yank' },
+    { keys: 'c', type: 'operator', operator: 'change' },
+    { keys: '>', type: 'operator', operator: 'indent', operatorArgs: { indentRight: true }},
+    { keys: '<', type: 'operator', operator: 'indent', operatorArgs: { indentRight: false }},
+    { keys: 'g~', type: 'operator', operator: 'changeCase' },
+    { keys: 'gu', type: 'operator', operator: 'changeCase', operatorArgs: {toLower: true}, isEdit: true },
+    { keys: 'gU', type: 'operator', operator: 'changeCase', operatorArgs: {toLower: false}, isEdit: true },
+    { keys: 'n', type: 'motion', motion: 'findNext', motionArgs: { forward: true, toJumplist: true }},
+    { keys: 'N', type: 'motion', motion: 'findNext', motionArgs: { forward: false, toJumplist: true }},
+    { keys: 'x', type: 'operatorMotion', operator: 'delete', motion: 'moveByCharacters', motionArgs: { forward: true }, operatorMotionArgs: { visualLine: false }},
+    { keys: 'X', type: 'operatorMotion', operator: 'delete', motion: 'moveByCharacters', motionArgs: { forward: false }, operatorMotionArgs: { visualLine: true }},
+    { keys: 'D', type: 'operatorMotion', operator: 'delete', motion: 'moveToEol', motionArgs: { inclusive: true }, context: 'normal'},
+    { keys: 'D', type: 'operator', operator: 'delete', operatorArgs: { linewise: true }, context: 'visual'},
+    { keys: 'Y', type: 'operatorMotion', operator: 'yank', motion: 'moveToEol', motionArgs: { inclusive: true }, context: 'normal'},
+    { keys: 'Y', type: 'operator', operator: 'yank', operatorArgs: { linewise: true }, context: 'visual'},
+    { keys: 'C', type: 'operatorMotion', operator: 'change', motion: 'moveToEol', motionArgs: { inclusive: true }, context: 'normal'},
+    { keys: 'C', type: 'operator', operator: 'change', operatorArgs: { linewise: true }, context: 'visual'},
+    { keys: '~', type: 'operatorMotion', operator: 'changeCase', motion: 'moveByCharacters', motionArgs: { forward: true }, operatorArgs: { shouldMoveCursor: true }, context: 'normal'},
+    { keys: '~', type: 'operator', operator: 'changeCase', context: 'visual'},
+    { keys: '<C-w>', type: 'operatorMotion', operator: 'delete', motion: 'moveByWords', motionArgs: { forward: false, wordEnd: false }, context: 'insert' },
+    { keys: '<C-i>', type: 'action', action: 'jumpListWalk', actionArgs: { forward: true }},
+    { keys: '<C-o>', type: 'action', action: 'jumpListWalk', actionArgs: { forward: false }},
+    { keys: '<C-e>', type: 'action', action: 'scroll', actionArgs: { forward: true, linewise: true }},
+    { keys: '<C-y>', type: 'action', action: 'scroll', actionArgs: { forward: false, linewise: true }},
+    { keys: 'a', type: 'action', action: 'enterInsertMode', isEdit: true, actionArgs: { insertAt: 'charAfter' }, context: 'normal' },
+    { keys: 'A', type: 'action', action: 'enterInsertMode', isEdit: true, actionArgs: { insertAt: 'eol' }, context: 'normal' },
+    { keys: 'A', type: 'action', action: 'enterInsertMode', isEdit: true, actionArgs: { insertAt: 'endOfSelectedArea' }, context: 'visual' },
+    { keys: 'i', type: 'action', action: 'enterInsertMode', isEdit: true, actionArgs: { insertAt: 'inplace' }, context: 'normal' },
+    { keys: 'I', type: 'action', action: 'enterInsertMode', isEdit: true, actionArgs: { insertAt: 'firstNonBlank'}, context: 'normal' },
+    { keys: 'I', type: 'action', action: 'enterInsertMode', isEdit: true, actionArgs: { insertAt: 'startOfSelectedArea' }, context: 'visual' },
+    { keys: 'o', type: 'action', action: 'newLineAndEnterInsertMode', isEdit: true, interlaceInsertRepeat: true, actionArgs: { after: true }, context: 'normal' },
+    { keys: 'O', type: 'action', action: 'newLineAndEnterInsertMode', isEdit: true, interlaceInsertRepeat: true, actionArgs: { after: false }, context: 'normal' },
+    { keys: 'v', type: 'action', action: 'toggleVisualMode' },
+    { keys: 'V', type: 'action', action: 'toggleVisualMode', actionArgs: { linewise: true }},
+    { keys: '<C-v>', type: 'action', action: 'toggleVisualMode', actionArgs: { blockwise: true }},
+    { keys: 'gv', type: 'action', action: 'reselectLastSelection' },
+    { keys: 'J', type: 'action', action: 'joinLines', isEdit: true },
+    { keys: 'p', type: 'action', action: 'paste', isEdit: true, actionArgs: { after: true, isEdit: true }},
+    { keys: 'P', type: 'action', action: 'paste', isEdit: true, actionArgs: { after: false, isEdit: true }},
+    { keys: 'r<character>', type: 'action', action: 'replace', isEdit: true },
+    { keys: '@<character>', type: 'action', action: 'replayMacro' },
+    { keys: 'q<character>', type: 'action', action: 'enterMacroRecordMode' },
+    { keys: 'R', type: 'action', action: 'enterInsertMode', isEdit: true, actionArgs: { replace: true }},
+    { keys: 'u', type: 'action', action: 'undo', context: 'normal' },
+    { keys: 'u', type: 'operator', operator: 'changeCase', operatorArgs: {toLower: true}, context: 'visual', isEdit: true },
+    { keys: 'U', type: 'operator', operator: 'changeCase', operatorArgs: {toLower: false}, context: 'visual', isEdit: true },
+    { keys: '<C-r>', type: 'action', action: 'redo' },
+    { keys: 'm<character>', type: 'action', action: 'setMark' },
+    { keys: '"<character>', type: 'action', action: 'setRegister' },
+    { keys: 'zz', type: 'action', action: 'scrollToCursor', actionArgs: { position: 'center' }},
+    { keys: 'z.', type: 'action', action: 'scrollToCursor', actionArgs: { position: 'center' }, motion: 'moveToFirstNonWhiteSpaceCharacter' },
+    { keys: 'zt', type: 'action', action: 'scrollToCursor', actionArgs: { position: 'top' }},
+    { keys: 'z<CR>', type: 'action', action: 'scrollToCursor', actionArgs: { position: 'top' }, motion: 'moveToFirstNonWhiteSpaceCharacter' },
+    { keys: 'z-', type: 'action', action: 'scrollToCursor', actionArgs: { position: 'bottom' }},
+    { keys: 'zb', type: 'action', action: 'scrollToCursor', actionArgs: { position: 'bottom' }, motion: 'moveToFirstNonWhiteSpaceCharacter' },
+    { keys: '.', type: 'action', action: 'repeatLastEdit' },
+    { keys: '<C-a>', type: 'action', action: 'incrementNumberToken', isEdit: true, actionArgs: {increase: true, backtrack: false}},
+    { keys: '<C-x>', type: 'action', action: 'incrementNumberToken', isEdit: true, actionArgs: {increase: false, backtrack: false}},
+    { keys: 'a<character>', type: 'motion', motion: 'textObjectManipulation' },
+    { keys: 'i<character>', type: 'motion', motion: 'textObjectManipulation', motionArgs: { textObjectInner: true }},
+    { keys: '/', type: 'search', searchArgs: { forward: true, querySrc: 'prompt', toJumplist: true }},
+    { keys: '?', type: 'search', searchArgs: { forward: false, querySrc: 'prompt', toJumplist: true }},
+    { keys: '*', type: 'search', searchArgs: { forward: true, querySrc: 'wordUnderCursor', wholeWordOnly: true, toJumplist: true }},
+    { keys: '#', type: 'search', searchArgs: { forward: false, querySrc: 'wordUnderCursor', wholeWordOnly: true, toJumplist: true }},
+    { keys: 'g*', type: 'search', searchArgs: { forward: true, querySrc: 'wordUnderCursor', toJumplist: true }},
+    { keys: 'g#', type: 'search', searchArgs: { forward: false, querySrc: 'wordUnderCursor', toJumplist: true }},
+    { keys: ':', type: 'ex' }
+  ];
+  var defaultExCommandMap = [
+    { name: 'colorscheme', shortName: 'colo' },
+    { name: 'map' },
+    { name: 'imap', shortName: 'im' },
+    { name: 'nmap', shortName: 'nm' },
+    { name: 'vmap', shortName: 'vm' },
+    { name: 'unmap' },
+    { name: 'write', shortName: 'w' },
+    { name: 'undo', shortName: 'u' },
+    { name: 'redo', shortName: 'red' },
+    { name: 'set', shortName: 'se' },
+    { name: 'set', shortName: 'se' },
+    { name: 'setlocal', shortName: 'setl' },
+    { name: 'setglobal', shortName: 'setg' },
+    { name: 'sort', shortName: 'sor' },
+    { name: 'substitute', shortName: 's', possiblyAsync: true },
+    { name: 'nohlsearch', shortName: 'noh' },
+    { name: 'delmarks', shortName: 'delm' },
+    { name: 'registers', shortName: 'reg', excludeFromCommandHistory: true },
+    { name: 'global', shortName: 'g' }
+  ];
 
-            if (motions[ch].param)
-                this.waitForParam(ctx);
-            else
-                this.exec(editor, ctx);
-        }
-        else if (alias[ch] && this.isAccepting(MOTION)) {
-            alias[ch].operator.count = this.getCount();
-            this.exec(editor, alias[ch]);
-        }
-        else if (actions[ch] && this.isAccepting(ACTION)) {
-            var actionObj = {
-                action: {
-                    fn: actions[ch].fn,
-                    count: this.getCount()
-                }
-            };
+  var Pos = CodeMirror.Pos;
 
-            if (actions[ch].param) {
-                this.waitForParam(actionObj);
-            }
-            else {
-                this.exec(editor, actionObj);
-            }
-
-            if (actions[ch].acceptsMotion)
-                this.idle = false;
-        }
-        else if (this.operator) {
-            this.operator.count = this.getCount();
-            this.exec(editor, { operator: this.operator }, ch);
-        }
-        else {
-            isKeyHandled = ch.length == 1;
-            this.reset();
-        }
-        
-        if (this.waitingForParam || this.motion || this.operator) {
-            this.status += ch;
-        } else if (this.currentCount) {
-            this.status = this.currentCount;
-        } else if (this.status) {
-            this.status = "";
-        }
-        if (this.status != status)
-            editor._emit("changeStatus");
-        return isKeyHandled;
-    },
-
-    waitForParam: function(cmd) {
-        this.waitingForParam = cmd;
-    },
-
-    getCount: function() {
-        var count = this.currentCount || this.pendingCount;
-        this.currentCount = "";
-        this.pendingCount = count;
-        return count && parseInt(count, 10);
-    },
-
-    exec: function(editor, action, param) {
-        var m = action.motion;
-        var o = action.operator;
-        var a = action.action;
-
-        if (!param)
-            param = action.param;
-
-        if (o) {
-            this.previous = {
-                action: action,
-                param: param
-            };
-        }
-
-        if (o && !editor.selection.isEmpty()) {
-            if (operators[o.ch].selFn) {
-                operators[o.ch].selFn(editor, editor.getSelectionRange(), o.count, param);
-                this.reset();
-            }
-            return;
-        }
-        else if (!m && !a && o && param) {
-            operators[o.ch].fn(editor, null, o.count, param);
-            this.reset();
-        }
-        else if (m) {
-            var run = function(fn) {
-                if (fn && typeof fn === "function") { // There should always be a motion
-                    if (m.count && !motionObj.handlesCount)
-                        repeat(fn, m.count, [editor, null, m.count, param]);
-                    else
-                        fn(editor, null, m.count, param);
-                }
-            };
-
-            var motionObj = motions[m.ch];
-            var selectable = motionObj.sel;
-
-            if (!o) {
-                if ((util.onVisualMode || util.onVisualLineMode) && selectable)
-                    run(motionObj.sel);
-                else
-                    run(motionObj.nav);
-            }
-            else if (selectable) {
-                repeat(function() {
-                    run(motionObj.sel);
-                    operators[o.ch].fn(editor, editor.getSelectionRange(), 
-                        o.count, motionObj.param ? motionObj : param);
-                }, o.count || 1);
-            }
-            this.reset();
-        }
-        else if (a) {
-            a.fn(editor, editor.getSelectionRange(), a.count, param);
-            this.reset();
-        }
-        handleCursorMove(editor);
-    },
-
-    isAccepting: function(type) {
-        return this.accepting.indexOf(type) !== -1;
-    },
-
-    reset: function() {
-        this.operator = null;
-        this.motion = null;
-        this.currentCount = "";
-        this.pendingCount = "";
-        this.status = "";
-        this.accepting = [NUMBER, OPERATOR, MOTION, ACTION];
-        this.idle = true;
-        this.waitingForParam = null;
+  var Vim = function() { return vimApi; } //{
+    function enterVimMode(cm) {
+      cm.setOption('disableInput', true);
+      cm.setOption('showCursorWhenSelecting', false);
+      CodeMirror.signal(cm, "vim-mode-change", {mode: "normal"});
+      cm.on('cursorActivity', onCursorActivity);
+      maybeInitVimState(cm);
+      CodeMirror.on(cm.getInputField(), 'paste', getOnPasteFn(cm));
     }
-};
 
-function setPreviousCommand(fn) {
-    inputBuffer.previous = { action: { action: { fn: fn } } };
-}
-
-exports.coreCommands = {
-    start: {
-        exec: function start(editor) {
-            util.insertMode(editor);
-            setPreviousCommand(start);
-        }
-    },
-    startBeginning: {
-        exec: function startBeginning(editor) {
-            editor.navigateLineStart();
-            util.insertMode(editor);
-            setPreviousCommand(startBeginning);
-        }
-    },
-    stop: {
-        exec: function stop(editor) {
-            inputBuffer.reset();
-            util.onVisualMode = false;
-            util.onVisualLineMode = false;
-            inputBuffer.lastInsertCommands = util.normalMode(editor);
-        }
-    },
-    append: {
-        exec: function append(editor) {
-            var pos = editor.getCursorPosition();
-            var lineLen = editor.session.getLine(pos.row).length;
-            if (lineLen)
-                editor.navigateRight();
-            util.insertMode(editor);
-            setPreviousCommand(append);
-        }
-    },
-    appendEnd: {
-        exec: function appendEnd(editor) {
-            editor.navigateLineEnd();
-            util.insertMode(editor);
-            setPreviousCommand(appendEnd);
-        }
+    function leaveVimMode(cm) {
+      cm.setOption('disableInput', false);
+      cm.off('cursorActivity', onCursorActivity);
+      CodeMirror.off(cm.getInputField(), 'paste', getOnPasteFn(cm));
+      cm.state.vim = null;
     }
-};
 
-var handleCursorMove = exports.onCursorMove = function(editor, e) {
-    if (util.currentMode === 'insert' || handleCursorMove.running)
+    function detachVimMap(cm, next) {
+      if (this == CodeMirror.keyMap.vim)
+        CodeMirror.rmClass(cm.getWrapperElement(), "cm-fat-cursor");
+
+      if (!next || next.attach != attachVimMap)
+        leaveVimMode(cm, false);
+    }
+    function attachVimMap(cm, prev) {
+      if (this == CodeMirror.keyMap.vim)
+        CodeMirror.addClass(cm.getWrapperElement(), "cm-fat-cursor");
+
+      if (!prev || prev.attach != attachVimMap)
+        enterVimMode(cm);
+    }
+    CodeMirror.defineOption('vimMode', false, function(cm, val, prev) {
+      if (val && cm.getOption("keyMap") != "vim")
+        cm.setOption("keyMap", "vim");
+      else if (!val && prev != CodeMirror.Init && /^vim/.test(cm.getOption("keyMap")))
+        cm.setOption("keyMap", "default");
+    });
+
+    function cmKey(key, cm) {
+      if (!cm) { return undefined; }
+      var vimKey = cmKeyToVimKey(key);
+      if (!vimKey) {
+        return false;
+      }
+      var cmd = CodeMirror.Vim.findKey(cm, vimKey);
+      if (typeof cmd == 'function') {
+        CodeMirror.signal(cm, 'vim-keypress', vimKey);
+      }
+      return cmd;
+    }
+
+    var modifiers = {'Shift': 'S', 'Ctrl': 'C', 'Alt': 'A', 'Cmd': 'D', 'Mod': 'A'};
+    var specialKeys = {Enter:'CR',Backspace:'BS',Delete:'Del'};
+    function cmKeyToVimKey(key) {
+      if (key.charAt(0) == '\'') {
+        return key.charAt(1);
+      }
+      var pieces = key.split('-');
+      if (/-$/.test(key)) {
+        pieces.splice(-2, 2, '-');
+      }
+      var lastPiece = pieces[pieces.length - 1];
+      if (pieces.length == 1 && pieces[0].length == 1) {
+        return false;
+      } else if (pieces.length == 2 && pieces[0] == 'Shift' && lastPiece.length == 1) {
+        return false;
+      }
+      var hasCharacter = false;
+      for (var i = 0; i < pieces.length; i++) {
+        var piece = pieces[i];
+        if (piece in modifiers) { pieces[i] = modifiers[piece]; }
+        else { hasCharacter = true; }
+        if (piece in specialKeys) { pieces[i] = specialKeys[piece]; }
+      }
+      if (!hasCharacter) {
+        return false;
+      }
+      if (isUpperCase(lastPiece)) {
+        pieces[pieces.length - 1] = lastPiece.toLowerCase();
+      }
+      return '<' + pieces.join('-') + '>';
+    }
+
+    function getOnPasteFn(cm) {
+      var vim = cm.state.vim;
+      if (!vim.onPasteFn) {
+        vim.onPasteFn = function() {
+          if (!vim.insertMode) {
+            cm.setCursor(offsetCursor(cm.getCursor(), 0, 1));
+            actions.enterInsertMode(cm, {}, vim);
+          }
+        };
+      }
+      return vim.onPasteFn;
+    }
+
+    var numberRegex = /[\d]/;
+    var wordCharTest = [CodeMirror.isWordChar, function(ch) {
+      return ch && !CodeMirror.isWordChar(ch) && !/\s/.test(ch);
+    }], bigWordCharTest = [function(ch) {
+      return /\S/.test(ch);
+    }];
+    function makeKeyRange(start, size) {
+      var keys = [];
+      for (var i = start; i < start + size; i++) {
+        keys.push(String.fromCharCode(i));
+      }
+      return keys;
+    }
+    var upperCaseAlphabet = makeKeyRange(65, 26);
+    var lowerCaseAlphabet = makeKeyRange(97, 26);
+    var numbers = makeKeyRange(48, 10);
+    var validMarks = [].concat(upperCaseAlphabet, lowerCaseAlphabet, numbers, ['<', '>']);
+    var validRegisters = [].concat(upperCaseAlphabet, lowerCaseAlphabet, numbers, ['-', '"', '.', ':', '/']);
+
+    function isLine(cm, line) {
+      return line >= cm.firstLine() && line <= cm.lastLine();
+    }
+    function isLowerCase(k) {
+      return (/^[a-z]$/).test(k);
+    }
+    function isMatchableSymbol(k) {
+      return '()[]{}'.indexOf(k) != -1;
+    }
+    function isNumber(k) {
+      return numberRegex.test(k);
+    }
+    function isUpperCase(k) {
+      return (/^[A-Z]$/).test(k);
+    }
+    function isWhiteSpaceString(k) {
+      return (/^\s*$/).test(k);
+    }
+    function inArray(val, arr) {
+      for (var i = 0; i < arr.length; i++) {
+        if (arr[i] == val) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    var options = {};
+    function defineOption(name, defaultValue, type, aliases, callback) {
+      if (defaultValue === undefined && !callback) {
+        throw Error('defaultValue is required unless callback is provided');
+      }
+      if (!type) { type = 'string'; }
+      options[name] = {
+        type: type,
+        defaultValue: defaultValue,
+        callback: callback
+      };
+      if (aliases) {
+        for (var i = 0; i < aliases.length; i++) {
+          options[aliases[i]] = options[name];
+        }
+      }
+      if (defaultValue) {
+        setOption(name, defaultValue);
+      }
+    }
+
+    function setOption(name, value, cm, cfg) {
+      var option = options[name];
+      cfg = cfg || {};
+      var scope = cfg.scope;
+      if (!option) {
+        throw Error('Unknown option: ' + name);
+      }
+      if (option.type == 'boolean') {
+        if (value && value !== true) {
+          throw Error('Invalid argument: ' + name + '=' + value);
+        } else if (value !== false) {
+          value = true;
+        }
+      }
+      if (option.callback) {
+        if (scope !== 'local') {
+          option.callback(value, undefined);
+        }
+        if (scope !== 'global' && cm) {
+          option.callback(value, cm);
+        }
+      } else {
+        if (scope !== 'local') {
+          option.value = option.type == 'boolean' ? !!value : value;
+        }
+        if (scope !== 'global' && cm) {
+          cm.state.vim.options[name] = {value: value};
+        }
+      }
+    }
+
+    function getOption(name, cm, cfg) {
+      var option = options[name];
+      cfg = cfg || {};
+      var scope = cfg.scope;
+      if (!option) {
+        throw Error('Unknown option: ' + name);
+      }
+      if (option.callback) {
+        var local = cm && option.callback(undefined, cm);
+        if (scope !== 'global' && local !== undefined) {
+          return local;
+        }
+        if (scope !== 'local') {
+          return option.callback();
+        }
         return;
-    else if(!editor.selection.isEmpty()) {
-        handleCursorMove.running = true;
-        if (util.onVisualLineMode) {
-            var originRow = editor.selection.visualLineStart;
-            var cursorRow = editor.getCursorPosition().row;
-            if(originRow <= cursorRow) {
-                var endLine = editor.session.getLine(cursorRow);
-                editor.selection.moveTo(originRow, 0);
-                editor.selection.selectTo(cursorRow, endLine.length);
-            } else {
-                var endLine = editor.session.getLine(originRow);
-                editor.selection.moveTo(originRow, endLine.length);
-                editor.selection.selectTo(cursorRow, 0);
-            }
-        }
-        handleCursorMove.running = false;
+      } else {
+        var local = (scope !== 'global') && (cm && cm.state.vim.options[name]);
+        return (local || (scope !== 'local') && option || {}).value;
+      }
+    }
+
+    defineOption('filetype', undefined, 'string', ['ft'], function(name, cm) {
+      if (cm === undefined) {
         return;
-    }
-    else {
-        if (e && (util.onVisualLineMode || util.onVisualMode)) {
-            editor.selection.clearSelection();
-            util.normalMode(editor);
+      }
+      if (name === undefined) {
+        var mode = cm.getOption('mode');
+        return mode == 'null' ? '' : mode;
+      } else {
+        var mode = name == '' ? 'null' : name;
+        cm.setOption('mode', mode);
+      }
+    });
+
+    var createCircularJumpList = function() {
+      var size = 100;
+      var pointer = -1;
+      var head = 0;
+      var tail = 0;
+      var buffer = new Array(size);
+      function add(cm, oldCur, newCur) {
+        var current = pointer % size;
+        var curMark = buffer[current];
+        function useNextSlot(cursor) {
+          var next = ++pointer % size;
+          var trashMark = buffer[next];
+          if (trashMark) {
+            trashMark.clear();
+          }
+          buffer[next] = cm.setBookmark(cursor);
         }
-
-        handleCursorMove.running = true;
-        var pos = editor.getCursorPosition();
-        var lineLen = editor.session.getLine(pos.row).length;
-
-        if (lineLen && pos.column === lineLen)
-            editor.navigateLeft();
-        handleCursorMove.running = false;
-    }
-};
-});
-
-ace.define("ace/keyboard/vim",["require","exports","module","ace/keyboard/vim/commands","ace/keyboard/vim/maps/util","ace/lib/useragent"], function(require, exports, module) {
-"use strict";
-
-var cmds = require("./vim/commands");
-var coreCommands = cmds.coreCommands;
-var util = require("./vim/maps/util");
-var useragent = require("../lib/useragent");
-
-var startCommands = {
-    "i": {
-        command: coreCommands.start
-    },
-    "I": {
-        command: coreCommands.startBeginning
-    },
-    "a": {
-        command: coreCommands.append
-    },
-    "A": {
-        command: coreCommands.appendEnd
-    },
-    "ctrl-f": {
-        command: "gotopagedown"
-    },
-    "ctrl-b": {
-        command: "gotopageup"
-    }
-};
-
-exports.handler = {
-	$id: "ace/keyboard/vim",
-    handleMacRepeat: function(data, hashId, key) {
-        if (hashId == -1) {
-            data.inputChar = key;
-            data.lastEvent = "input";
-        } else if (data.inputChar && data.$lastHash == hashId && data.$lastKey == key) {
-            if (data.lastEvent == "input") {
-                data.lastEvent = "input1";
-            } else if (data.lastEvent == "input1") {
-                return true;
-            }
+        if (curMark) {
+          var markPos = curMark.find();
+          if (markPos && !cursorEqual(markPos, oldCur)) {
+            useNextSlot(oldCur);
+          }
         } else {
-            data.$lastHash = hashId;
-            data.$lastKey = key;
-            data.lastEvent = "keypress";
+          useNextSlot(oldCur);
         }
+        useNextSlot(newCur);
+        head = pointer;
+        tail = pointer - size + 1;
+        if (tail < 0) {
+          tail = 0;
+        }
+      }
+      function move(cm, offset) {
+        pointer += offset;
+        if (pointer > head) {
+          pointer = head;
+        } else if (pointer < tail) {
+          pointer = tail;
+        }
+        var mark = buffer[(size + pointer) % size];
+        if (mark && !mark.find()) {
+          var inc = offset > 0 ? 1 : -1;
+          var newCur;
+          var oldCur = cm.getCursor();
+          do {
+            pointer += inc;
+            mark = buffer[(size + pointer) % size];
+            if (mark &&
+                (newCur = mark.find()) &&
+                !cursorEqual(oldCur, newCur)) {
+              break;
+            }
+          } while (pointer < head && pointer > tail);
+        }
+        return mark;
+      }
+      return {
+        cachedCursor: undefined, //used for # and * jumps
+        add: add,
+        move: move
+      };
+    };
+    var createInsertModeChanges = function(c) {
+      if (c) {
+        return {
+          changes: c.changes,
+          expectCursorActivityForChange: c.expectCursorActivityForChange
+        };
+      }
+      return {
+        changes: [],
+        expectCursorActivityForChange: false
+      };
+    };
+
+    function MacroModeState() {
+      this.latestRegister = undefined;
+      this.isPlaying = false;
+      this.isRecording = false;
+      this.replaySearchQueries = [];
+      this.onRecordingDone = undefined;
+      this.lastInsertModeChanges = createInsertModeChanges();
+    }
+    MacroModeState.prototype = {
+      exitMacroRecordMode: function() {
+        var macroModeState = vimGlobalState.macroModeState;
+        if (macroModeState.onRecordingDone) {
+          macroModeState.onRecordingDone(); // close dialog
+        }
+        macroModeState.onRecordingDone = undefined;
+        macroModeState.isRecording = false;
+      },
+      enterMacroRecordMode: function(cm, registerName) {
+        var register =
+            vimGlobalState.registerController.getRegister(registerName);
+        if (register) {
+          register.clear();
+          this.latestRegister = registerName;
+          if (cm.openDialog) {
+            this.onRecordingDone = cm.openDialog(
+                '(recording)['+registerName+']', null, {bottom:true});
+          }
+          this.isRecording = true;
+        }
+      }
+    };
+
+    function maybeInitVimState(cm) {
+      if (!cm.state.vim) {
+        cm.state.vim = {
+          inputState: new InputState(),
+          lastEditInputState: undefined,
+          lastEditActionCommand: undefined,
+          lastHPos: -1,
+          lastHSPos: -1,
+          lastMotion: null,
+          marks: {},
+          fakeCursor: null,
+          insertMode: false,
+          insertModeRepeat: undefined,
+          visualMode: false,
+          visualLine: false,
+          visualBlock: false,
+          lastSelection: null,
+          lastPastedText: null,
+          sel: {},
+          options: {}
+        };
+      }
+      return cm.state.vim;
+    }
+    var vimGlobalState;
+    function resetVimGlobalState() {
+      vimGlobalState = {
+        searchQuery: null,
+        searchIsReversed: false,
+        lastSubstituteReplacePart: undefined,
+        jumpList: createCircularJumpList(),
+        macroModeState: new MacroModeState,
+        lastChararacterSearch: {increment:0, forward:true, selectedCharacter:''},
+        registerController: new RegisterController({}),
+        searchHistoryController: new HistoryController({}),
+        exCommandHistoryController : new HistoryController({})
+      };
+      for (var optionName in options) {
+        var option = options[optionName];
+        option.value = option.defaultValue;
+      }
+    }
+
+    var lastInsertModeKeyTimer;
+    var vimApi= {
+      buildKeyMap: function() {
+      },
+      getRegisterController: function() {
+        return vimGlobalState.registerController;
+      },
+      resetVimGlobalState_: resetVimGlobalState,
+      getVimGlobalState_: function() {
+        return vimGlobalState;
+      },
+      maybeInitVimState_: maybeInitVimState,
+
+      suppressErrorLogging: false,
+
+      InsertModeKey: InsertModeKey,
+      map: function(lhs, rhs, ctx) {
+        exCommandDispatcher.map(lhs, rhs, ctx);
+      },
+      unmap: function(lhs, ctx) {
+        exCommandDispatcher.unmap(lhs, ctx || "normal");
+      },
+      setOption: setOption,
+      getOption: getOption,
+      defineOption: defineOption,
+      defineEx: function(name, prefix, func){
+        if (!prefix) {
+          prefix = name;
+        } else if (name.indexOf(prefix) !== 0) {
+          throw new Error('(Vim.defineEx) "'+prefix+'" is not a prefix of "'+name+'", command not registered');
+        }
+        exCommands[name]=func;
+        exCommandDispatcher.commandMap_[prefix]={name:name, shortName:prefix, type:'api'};
+      },
+      handleKey: function (cm, key, origin) {
+        var command = this.findKey(cm, key, origin);
+        if (typeof command === 'function') {
+          return command();
+        }
+      },
+      findKey: function(cm, key, origin) {
+        var vim = maybeInitVimState(cm);
+        function handleMacroRecording() {
+          var macroModeState = vimGlobalState.macroModeState;
+          if (macroModeState.isRecording) {
+            if (key == 'q') {
+              macroModeState.exitMacroRecordMode();
+              clearInputState(cm);
+              return true;
+            }
+            if (origin != 'mapping') {
+              logKey(macroModeState, key);
+            }
+          }
+        }
+        function handleEsc() {
+          if (key == '<Esc>') {
+            clearInputState(cm);
+            if (vim.visualMode) {
+              exitVisualMode(cm);
+            } else if (vim.insertMode) {
+              exitInsertMode(cm);
+            }
+            return true;
+          }
+        }
+        function doKeyToKey(keys) {
+          var match;
+          while (keys) {
+            match = (/<\w+-.+?>|<\w+>|./).exec(keys);
+            key = match[0];
+            keys = keys.substring(match.index + key.length);
+            CodeMirror.Vim.handleKey(cm, key, 'mapping');
+          }
+        }
+
+        function handleKeyInsertMode() {
+          if (handleEsc()) { return true; }
+          var keys = vim.inputState.keyBuffer = vim.inputState.keyBuffer + key;
+          var keysAreChars = key.length == 1;
+          var match = commandDispatcher.matchCommand(keys, defaultKeymap, vim.inputState, 'insert');
+          while (keys.length > 1 && match.type != 'full') {
+            var keys = vim.inputState.keyBuffer = keys.slice(1);
+            var thisMatch = commandDispatcher.matchCommand(keys, defaultKeymap, vim.inputState, 'insert');
+            if (thisMatch.type != 'none') { match = thisMatch; }
+          }
+          if (match.type == 'none') { clearInputState(cm); return false; }
+          else if (match.type == 'partial') {
+            if (lastInsertModeKeyTimer) { window.clearTimeout(lastInsertModeKeyTimer); }
+            lastInsertModeKeyTimer = window.setTimeout(
+              function() { if (vim.insertMode && vim.inputState.keyBuffer) { clearInputState(cm); } },
+              getOption('insertModeEscKeysTimeout'));
+            return !keysAreChars;
+          }
+
+          if (lastInsertModeKeyTimer) { window.clearTimeout(lastInsertModeKeyTimer); }
+          if (keysAreChars) {
+            var here = cm.getCursor();
+            cm.replaceRange('', offsetCursor(here, 0, -(keys.length - 1)), here, '+input');
+          }
+          clearInputState(cm);
+          return match.command;
+        }
+
+        function handleKeyNonInsertMode() {
+          if (handleMacroRecording() || handleEsc()) { return true; };
+
+          var keys = vim.inputState.keyBuffer = vim.inputState.keyBuffer + key;
+          if (/^[1-9]\d*$/.test(keys)) { return true; }
+
+          var keysMatcher = /^(\d*)(.*)$/.exec(keys);
+          if (!keysMatcher) { clearInputState(cm); return false; }
+          var context = vim.visualMode ? 'visual' :
+                                         'normal';
+          var match = commandDispatcher.matchCommand(keysMatcher[2] || keysMatcher[1], defaultKeymap, vim.inputState, context);
+          if (match.type == 'none') { clearInputState(cm); return false; }
+          else if (match.type == 'partial') { return true; }
+
+          vim.inputState.keyBuffer = '';
+          var keysMatcher = /^(\d*)(.*)$/.exec(keys);
+          if (keysMatcher[1] && keysMatcher[1] != '0') {
+            vim.inputState.pushRepeatDigit(keysMatcher[1]);
+          }
+          return match.command;
+        }
+
+        var command;
+        if (vim.insertMode) { command = handleKeyInsertMode(); }
+        else { command = handleKeyNonInsertMode(); }
+        if (command === false) {
+          return undefined;
+        } else if (command === true) {
+          return function() {};
+        } else {
+          return function() {
+            if ((command.operator || command.isEdit) && cm.getOption('readOnly'))
+              return; // ace_patch
+            return cm.operation(function() {
+              cm.curOp.isVimOp = true;
+              try {
+                if (command.type == 'keyToKey') {
+                  doKeyToKey(command.toKeys);
+                } else {
+                  commandDispatcher.processCommand(cm, vim, command);
+                }
+              } catch (e) {
+                cm.state.vim = undefined;
+                maybeInitVimState(cm);
+                if (!CodeMirror.Vim.suppressErrorLogging) {
+                  console['log'](e);
+                }
+                throw e;
+              }
+              return true;
+            });
+          };
+        }
+      },
+      handleEx: function(cm, input) {
+        exCommandDispatcher.processCommand(cm, input);
+      },
+
+      defineMotion: defineMotion,
+      defineAction: defineAction,
+      defineOperator: defineOperator,
+      mapCommand: mapCommand,
+      _mapCommand: _mapCommand,
+
+      defineRegister: defineRegister,
+
+      exitVisualMode: exitVisualMode,
+      exitInsertMode: exitInsertMode
+    };
+    function InputState() {
+      this.prefixRepeat = [];
+      this.motionRepeat = [];
+
+      this.operator = null;
+      this.operatorArgs = null;
+      this.motion = null;
+      this.motionArgs = null;
+      this.keyBuffer = []; // For matching multi-key commands.
+      this.registerName = null; // Defaults to the unnamed register.
+    }
+    InputState.prototype.pushRepeatDigit = function(n) {
+      if (!this.operator) {
+        this.prefixRepeat = this.prefixRepeat.concat(n);
+      } else {
+        this.motionRepeat = this.motionRepeat.concat(n);
+      }
+    };
+    InputState.prototype.getRepeat = function() {
+      var repeat = 0;
+      if (this.prefixRepeat.length > 0 || this.motionRepeat.length > 0) {
+        repeat = 1;
+        if (this.prefixRepeat.length > 0) {
+          repeat *= parseInt(this.prefixRepeat.join(''), 10);
+        }
+        if (this.motionRepeat.length > 0) {
+          repeat *= parseInt(this.motionRepeat.join(''), 10);
+        }
+      }
+      return repeat;
+    };
+
+    function clearInputState(cm, reason) {
+      cm.state.vim.inputState = new InputState();
+      CodeMirror.signal(cm, 'vim-command-done', reason);
+    }
+    function Register(text, linewise, blockwise) {
+      this.clear();
+      this.keyBuffer = [text || ''];
+      this.insertModeChanges = [];
+      this.searchQueries = [];
+      this.linewise = !!linewise;
+      this.blockwise = !!blockwise;
+    }
+    Register.prototype = {
+      setText: function(text, linewise, blockwise) {
+        this.keyBuffer = [text || ''];
+        this.linewise = !!linewise;
+        this.blockwise = !!blockwise;
+      },
+      pushText: function(text, linewise) {
+        if (linewise) {
+          if (!this.linewise) {
+            this.keyBuffer.push('\n');
+          }
+          this.linewise = true;
+        }
+        this.keyBuffer.push(text);
+      },
+      pushInsertModeChanges: function(changes) {
+        this.insertModeChanges.push(createInsertModeChanges(changes));
+      },
+      pushSearchQuery: function(query) {
+        this.searchQueries.push(query);
+      },
+      clear: function() {
+        this.keyBuffer = [];
+        this.insertModeChanges = [];
+        this.searchQueries = [];
+        this.linewise = false;
+      },
+      toString: function() {
+        return this.keyBuffer.join('');
+      }
+    };
+    function defineRegister(name, register) {
+      var registers = vimGlobalState.registerController.registers[name];
+      if (!name || name.length != 1) {
+        throw Error('Register name must be 1 character');
+      }
+      registers[name] = register;
+      validRegisters.push(name);
+    }
+    function RegisterController(registers) {
+      this.registers = registers;
+      this.unnamedRegister = registers['"'] = new Register();
+      registers['.'] = new Register();
+      registers[':'] = new Register();
+      registers['/'] = new Register();
+    }
+    RegisterController.prototype = {
+      pushText: function(registerName, operator, text, linewise, blockwise) {
+        if (linewise && text.charAt(0) == '\n') {
+          text = text.slice(1) + '\n';
+        }
+        if (linewise && text.charAt(text.length - 1) !== '\n'){
+          text += '\n';
+        }
+        var register = this.isValidRegister(registerName) ?
+            this.getRegister(registerName) : null;
+        if (!register) {
+          switch (operator) {
+            case 'yank':
+              this.registers['0'] = new Register(text, linewise, blockwise);
+              break;
+            case 'delete':
+            case 'change':
+              if (text.indexOf('\n') == -1) {
+                this.registers['-'] = new Register(text, linewise);
+              } else {
+                this.shiftNumericRegisters_();
+                this.registers['1'] = new Register(text, linewise);
+              }
+              break;
+          }
+          this.unnamedRegister.setText(text, linewise, blockwise);
+          return;
+        }
+        var append = isUpperCase(registerName);
+        if (append) {
+          register.pushText(text, linewise);
+        } else {
+          register.setText(text, linewise, blockwise);
+        }
+        this.unnamedRegister.setText(register.toString(), linewise);
+      },
+      getRegister: function(name) {
+        if (!this.isValidRegister(name)) {
+          return this.unnamedRegister;
+        }
+        name = name.toLowerCase();
+        if (!this.registers[name]) {
+          this.registers[name] = new Register();
+        }
+        return this.registers[name];
+      },
+      isValidRegister: function(name) {
+        return name && inArray(name, validRegisters);
+      },
+      shiftNumericRegisters_: function() {
+        for (var i = 9; i >= 2; i--) {
+          this.registers[i] = this.getRegister('' + (i - 1));
+        }
+      }
+    };
+    function HistoryController() {
+        this.historyBuffer = [];
+        this.iterator;
+        this.initialPrefix = null;
+    }
+    HistoryController.prototype = {
+      nextMatch: function (input, up) {
+        var historyBuffer = this.historyBuffer;
+        var dir = up ? -1 : 1;
+        if (this.initialPrefix === null) this.initialPrefix = input;
+        for (var i = this.iterator + dir; up ? i >= 0 : i < historyBuffer.length; i+= dir) {
+          var element = historyBuffer[i];
+          for (var j = 0; j <= element.length; j++) {
+            if (this.initialPrefix == element.substring(0, j)) {
+              this.iterator = i;
+              return element;
+            }
+          }
+        }
+        if (i >= historyBuffer.length) {
+          this.iterator = historyBuffer.length;
+          return this.initialPrefix;
+        }
+        if (i < 0 ) return input;
+      },
+      pushInput: function(input) {
+        var index = this.historyBuffer.indexOf(input);
+        if (index > -1) this.historyBuffer.splice(index, 1);
+        if (input.length) this.historyBuffer.push(input);
+      },
+      reset: function() {
+        this.initialPrefix = null;
+        this.iterator = this.historyBuffer.length;
+      }
+    };
+    var commandDispatcher = {
+      matchCommand: function(keys, keyMap, inputState, context) {
+        var matches = commandMatches(keys, keyMap, context, inputState);
+        if (!matches.full && !matches.partial) {
+          return {type: 'none'};
+        } else if (!matches.full && matches.partial) {
+          return {type: 'partial'};
+        }
+
+        var bestMatch;
+        for (var i = 0; i < matches.full.length; i++) {
+          var match = matches.full[i];
+          if (!bestMatch) {
+            bestMatch = match;
+          }
+        }
+        if (bestMatch.keys.slice(-11) == '<character>') {
+          inputState.selectedCharacter = lastChar(keys);
+        }
+        return {type: 'full', command: bestMatch};
+      },
+      processCommand: function(cm, vim, command) {
+        vim.inputState.repeatOverride = command.repeatOverride;
+        switch (command.type) {
+          case 'motion':
+            this.processMotion(cm, vim, command);
+            break;
+          case 'operator':
+            this.processOperator(cm, vim, command);
+            break;
+          case 'operatorMotion':
+            this.processOperatorMotion(cm, vim, command);
+            break;
+          case 'action':
+            this.processAction(cm, vim, command);
+            break;
+          case 'search':
+            this.processSearch(cm, vim, command);
+            break;
+          case 'ex':
+          case 'keyToEx':
+            this.processEx(cm, vim, command);
+            break;
+          default:
+            break;
+        }
+      },
+      processMotion: function(cm, vim, command) {
+        vim.inputState.motion = command.motion;
+        vim.inputState.motionArgs = copyArgs(command.motionArgs);
+        this.evalInput(cm, vim);
+      },
+      processOperator: function(cm, vim, command) {
+        var inputState = vim.inputState;
+        if (inputState.operator) {
+          if (inputState.operator == command.operator) {
+            inputState.motion = 'expandToLine';
+            inputState.motionArgs = { linewise: true };
+            this.evalInput(cm, vim);
+            return;
+          } else {
+            clearInputState(cm);
+          }
+        }
+        inputState.operator = command.operator;
+        inputState.operatorArgs = copyArgs(command.operatorArgs);
+        if (vim.visualMode) {
+          this.evalInput(cm, vim);
+        }
+      },
+      processOperatorMotion: function(cm, vim, command) {
+        var visualMode = vim.visualMode;
+        var operatorMotionArgs = copyArgs(command.operatorMotionArgs);
+        if (operatorMotionArgs) {
+          if (visualMode && operatorMotionArgs.visualLine) {
+            vim.visualLine = true;
+          }
+        }
+        this.processOperator(cm, vim, command);
+        if (!visualMode) {
+          this.processMotion(cm, vim, command);
+        }
+      },
+      processAction: function(cm, vim, command) {
+        var inputState = vim.inputState;
+        var repeat = inputState.getRepeat();
+        var repeatIsExplicit = !!repeat;
+        var actionArgs = copyArgs(command.actionArgs) || {};
+        if (inputState.selectedCharacter) {
+          actionArgs.selectedCharacter = inputState.selectedCharacter;
+        }
+        if (command.operator) {
+          this.processOperator(cm, vim, command);
+        }
+        if (command.motion) {
+          this.processMotion(cm, vim, command);
+        }
+        if (command.motion || command.operator) {
+          this.evalInput(cm, vim);
+        }
+        actionArgs.repeat = repeat || 1;
+        actionArgs.repeatIsExplicit = repeatIsExplicit;
+        actionArgs.registerName = inputState.registerName;
+        clearInputState(cm);
+        vim.lastMotion = null;
+        if (command.isEdit) {
+          this.recordLastEdit(vim, inputState, command);
+        }
+        actions[command.action](cm, actionArgs, vim);
+      },
+      processSearch: function(cm, vim, command) {
+        if (!cm.getSearchCursor) {
+          return;
+        }
+        var forward = command.searchArgs.forward;
+        var wholeWordOnly = command.searchArgs.wholeWordOnly;
+        getSearchState(cm).setReversed(!forward);
+        var promptPrefix = (forward) ? '/' : '?';
+        var originalQuery = getSearchState(cm).getQuery();
+        var originalScrollPos = cm.getScrollInfo();
+        function handleQuery(query, ignoreCase, smartCase) {
+          vimGlobalState.searchHistoryController.pushInput(query);
+          vimGlobalState.searchHistoryController.reset();
+          try {
+            updateSearchQuery(cm, query, ignoreCase, smartCase);
+          } catch (e) {
+            showConfirm(cm, 'Invalid regex: ' + query);
+            clearInputState(cm);
+            return;
+          }
+          commandDispatcher.processMotion(cm, vim, {
+            type: 'motion',
+            motion: 'findNext',
+            motionArgs: { forward: true, toJumplist: command.searchArgs.toJumplist }
+          });
+        }
+        function onPromptClose(query) {
+          cm.scrollTo(originalScrollPos.left, originalScrollPos.top);
+          handleQuery(query, true /** ignoreCase */, true /** smartCase */);
+          var macroModeState = vimGlobalState.macroModeState;
+          if (macroModeState.isRecording) {
+            logSearchQuery(macroModeState, query);
+          }
+        }
+        function onPromptKeyUp(e, query, close) {
+          var keyName = CodeMirror.keyName(e), up;
+          if (keyName == 'Up' || keyName == 'Down') {
+            up = keyName == 'Up' ? true : false;
+            query = vimGlobalState.searchHistoryController.nextMatch(query, up) || '';
+            close(query);
+          } else {
+            if ( keyName != 'Left' && keyName != 'Right' && keyName != 'Ctrl' && keyName != 'Alt' && keyName != 'Shift')
+              vimGlobalState.searchHistoryController.reset();
+          }
+          var parsedQuery;
+          try {
+            parsedQuery = updateSearchQuery(cm, query,
+                true /** ignoreCase */, true /** smartCase */);
+          } catch (e) {
+          }
+          if (parsedQuery) {
+            cm.scrollIntoView(findNext(cm, !forward, parsedQuery), 30);
+          } else {
+            clearSearchHighlight(cm);
+            cm.scrollTo(originalScrollPos.left, originalScrollPos.top);
+          }
+        }
+        function onPromptKeyDown(e, query, close) {
+          var keyName = CodeMirror.keyName(e);
+          if (keyName == 'Esc' || keyName == 'Ctrl-C' || keyName == 'Ctrl-[' ||
+              (keyName == 'Backspace' && query == '')) {
+            vimGlobalState.searchHistoryController.pushInput(query);
+            vimGlobalState.searchHistoryController.reset();
+            updateSearchQuery(cm, originalQuery);
+            clearSearchHighlight(cm);
+            cm.scrollTo(originalScrollPos.left, originalScrollPos.top);
+            CodeMirror.e_stop(e);
+            clearInputState(cm);
+            close();
+            cm.focus();
+          } else if (keyName == 'Ctrl-U') {
+            CodeMirror.e_stop(e);
+            close('');
+          }
+        }
+        switch (command.searchArgs.querySrc) {
+          case 'prompt':
+            var macroModeState = vimGlobalState.macroModeState;
+            if (macroModeState.isPlaying) {
+              var query = macroModeState.replaySearchQueries.shift();
+              handleQuery(query, true /** ignoreCase */, false /** smartCase */);
+            } else {
+              showPrompt(cm, {
+                  onClose: onPromptClose,
+                  prefix: promptPrefix,
+                  desc: searchPromptDesc,
+                  onKeyUp: onPromptKeyUp,
+                  onKeyDown: onPromptKeyDown
+              });
+            }
+            break;
+          case 'wordUnderCursor':
+            var word = expandWordUnderCursor(cm, false /** inclusive */,
+                true /** forward */, false /** bigWord */,
+                true /** noSymbol */);
+            var isKeyword = true;
+            if (!word) {
+              word = expandWordUnderCursor(cm, false /** inclusive */,
+                  true /** forward */, false /** bigWord */,
+                  false /** noSymbol */);
+              isKeyword = false;
+            }
+            if (!word) {
+              return;
+            }
+            var query = cm.getLine(word.start.line).substring(word.start.ch,
+                word.end.ch);
+            if (isKeyword && wholeWordOnly) {
+                query = '\\b' + query + '\\b';
+            } else {
+              query = escapeRegex(query);
+            }
+            vimGlobalState.jumpList.cachedCursor = cm.getCursor();
+            cm.setCursor(word.start);
+
+            handleQuery(query, true /** ignoreCase */, false /** smartCase */);
+            break;
+        }
+      },
+      processEx: function(cm, vim, command) {
+        function onPromptClose(input) {
+          vimGlobalState.exCommandHistoryController.pushInput(input);
+          vimGlobalState.exCommandHistoryController.reset();
+          exCommandDispatcher.processCommand(cm, input);
+        }
+        function onPromptKeyDown(e, input, close) {
+          var keyName = CodeMirror.keyName(e), up;
+          if (keyName == 'Esc' || keyName == 'Ctrl-C' || keyName == 'Ctrl-[' ||
+              (keyName == 'Backspace' && input == '')) {
+            vimGlobalState.exCommandHistoryController.pushInput(input);
+            vimGlobalState.exCommandHistoryController.reset();
+            CodeMirror.e_stop(e);
+            clearInputState(cm);
+            close();
+            cm.focus();
+          }
+          if (keyName == 'Up' || keyName == 'Down') {
+            up = keyName == 'Up' ? true : false;
+            input = vimGlobalState.exCommandHistoryController.nextMatch(input, up) || '';
+            close(input);
+          } else if (keyName == 'Ctrl-U') {
+            CodeMirror.e_stop(e);
+            close('');
+          } else {
+            if ( keyName != 'Left' && keyName != 'Right' && keyName != 'Ctrl' && keyName != 'Alt' && keyName != 'Shift')
+              vimGlobalState.exCommandHistoryController.reset();
+          }
+        }
+        if (command.type == 'keyToEx') {
+          exCommandDispatcher.processCommand(cm, command.exArgs.input);
+        } else {
+          if (vim.visualMode) {
+            showPrompt(cm, { onClose: onPromptClose, prefix: ':', value: '\'<,\'>',
+                onKeyDown: onPromptKeyDown});
+          } else {
+            showPrompt(cm, { onClose: onPromptClose, prefix: ':',
+                onKeyDown: onPromptKeyDown});
+          }
+        }
+      },
+      evalInput: function(cm, vim) {
+        var inputState = vim.inputState;
+        var motion = inputState.motion;
+        var motionArgs = inputState.motionArgs || {};
+        var operator = inputState.operator;
+        var operatorArgs = inputState.operatorArgs || {};
+        var registerName = inputState.registerName;
+        var sel = vim.sel;
+        var origHead = copyCursor(vim.visualMode ? clipCursorToContent(cm, sel.head): cm.getCursor('head'));
+        var origAnchor = copyCursor(vim.visualMode ? clipCursorToContent(cm, sel.anchor) : cm.getCursor('anchor'));
+        var oldHead = copyCursor(origHead);
+        var oldAnchor = copyCursor(origAnchor);
+        var newHead, newAnchor;
+        var repeat;
+        if (operator) {
+          this.recordLastEdit(vim, inputState);
+        }
+        if (inputState.repeatOverride !== undefined) {
+          repeat = inputState.repeatOverride;
+        } else {
+          repeat = inputState.getRepeat();
+        }
+        if (repeat > 0 && motionArgs.explicitRepeat) {
+          motionArgs.repeatIsExplicit = true;
+        } else if (motionArgs.noRepeat ||
+            (!motionArgs.explicitRepeat && repeat === 0)) {
+          repeat = 1;
+          motionArgs.repeatIsExplicit = false;
+        }
+        if (inputState.selectedCharacter) {
+          motionArgs.selectedCharacter = operatorArgs.selectedCharacter =
+              inputState.selectedCharacter;
+        }
+        motionArgs.repeat = repeat;
+        clearInputState(cm);
+        if (motion) {
+          var motionResult = motions[motion](cm, origHead, motionArgs, vim);
+          vim.lastMotion = motions[motion];
+          if (!motionResult) {
+            return;
+          }
+          if (motionArgs.toJumplist) {
+            if (!operator)
+              cm.ace.curOp.command.scrollIntoView = "center-animate"; // ace_patch
+            var jumpList = vimGlobalState.jumpList;
+            var cachedCursor = jumpList.cachedCursor;
+            if (cachedCursor) {
+              recordJumpPosition(cm, cachedCursor, motionResult);
+              delete jumpList.cachedCursor;
+            } else {
+              recordJumpPosition(cm, origHead, motionResult);
+            }
+          }
+          if (motionResult instanceof Array) {
+            newAnchor = motionResult[0];
+            newHead = motionResult[1];
+          } else {
+            newHead = motionResult;
+          }
+          if (!newHead) {
+            newHead = copyCursor(origHead);
+          }
+          if (vim.visualMode) {
+            if (!(vim.visualBlock && newHead.ch === Infinity)) {
+              newHead = clipCursorToContent(cm, newHead, vim.visualBlock);
+            }
+            if (newAnchor) {
+              newAnchor = clipCursorToContent(cm, newAnchor, true);
+            }
+            newAnchor = newAnchor || oldAnchor;
+            sel.anchor = newAnchor;
+            sel.head = newHead;
+            updateCmSelection(cm);
+            updateMark(cm, vim, '<',
+                cursorIsBefore(newAnchor, newHead) ? newAnchor
+                    : newHead);
+            updateMark(cm, vim, '>',
+                cursorIsBefore(newAnchor, newHead) ? newHead
+                    : newAnchor);
+          } else if (!operator) {
+            newHead = clipCursorToContent(cm, newHead);
+            cm.setCursor(newHead.line, newHead.ch);
+          }
+        }
+        if (operator) {
+          if (operatorArgs.lastSel) {
+            newAnchor = oldAnchor;
+            var lastSel = operatorArgs.lastSel;
+            var lineOffset = Math.abs(lastSel.head.line - lastSel.anchor.line);
+            var chOffset = Math.abs(lastSel.head.ch - lastSel.anchor.ch);
+            if (lastSel.visualLine) {
+              newHead = Pos(oldAnchor.line + lineOffset, oldAnchor.ch);
+            } else if (lastSel.visualBlock) {
+              newHead = Pos(oldAnchor.line + lineOffset, oldAnchor.ch + chOffset);
+            } else if (lastSel.head.line == lastSel.anchor.line) {
+              newHead = Pos(oldAnchor.line, oldAnchor.ch + chOffset);
+            } else {
+              newHead = Pos(oldAnchor.line + lineOffset, oldAnchor.ch);
+            }
+            vim.visualMode = true;
+            vim.visualLine = lastSel.visualLine;
+            vim.visualBlock = lastSel.visualBlock;
+            sel = vim.sel = {
+              anchor: newAnchor,
+              head: newHead
+            };
+            updateCmSelection(cm);
+          } else if (vim.visualMode) {
+            operatorArgs.lastSel = {
+              anchor: copyCursor(sel.anchor),
+              head: copyCursor(sel.head),
+              visualBlock: vim.visualBlock,
+              visualLine: vim.visualLine
+            };
+          }
+          var curStart, curEnd, linewise, mode;
+          var cmSel;
+          if (vim.visualMode) {
+            curStart = cursorMin(sel.head, sel.anchor);
+            curEnd = cursorMax(sel.head, sel.anchor);
+            linewise = vim.visualLine || operatorArgs.linewise;
+            mode = vim.visualBlock ? 'block' :
+                   linewise ? 'line' :
+                   'char';
+            cmSel = makeCmSelection(cm, {
+              anchor: curStart,
+              head: curEnd
+            }, mode);
+            if (linewise) {
+              var ranges = cmSel.ranges;
+              if (mode == 'block') {
+                for (var i = 0; i < ranges.length; i++) {
+                  ranges[i].head.ch = lineLength(cm, ranges[i].head.line);
+                }
+              } else if (mode == 'line') {
+                ranges[0].head = Pos(ranges[0].head.line + 1, 0);
+              }
+            }
+          } else {
+            curStart = copyCursor(newAnchor || oldAnchor);
+            curEnd = copyCursor(newHead || oldHead);
+            if (cursorIsBefore(curEnd, curStart)) {
+              var tmp = curStart;
+              curStart = curEnd;
+              curEnd = tmp;
+            }
+            linewise = motionArgs.linewise || operatorArgs.linewise;
+            if (linewise) {
+              expandSelectionToLine(cm, curStart, curEnd);
+            } else if (motionArgs.forward) {
+              clipToLine(cm, curStart, curEnd);
+            }
+            mode = 'char';
+            var exclusive = !motionArgs.inclusive || linewise;
+            cmSel = makeCmSelection(cm, {
+              anchor: curStart,
+              head: curEnd
+            }, mode, exclusive);
+          }
+          cm.setSelections(cmSel.ranges, cmSel.primary);
+          vim.lastMotion = null;
+          operatorArgs.repeat = repeat; // For indent in visual mode.
+          operatorArgs.registerName = registerName;
+          operatorArgs.linewise = linewise;
+          var operatorMoveTo = operators[operator](
+            cm, operatorArgs, cmSel.ranges, oldAnchor, newHead);
+          if (vim.visualMode) {
+            exitVisualMode(cm, operatorMoveTo != null);
+          }
+          if (operatorMoveTo) {
+            cm.setCursor(operatorMoveTo);
+          }
+        }
+      },
+      recordLastEdit: function(vim, inputState, actionCommand) {
+        var macroModeState = vimGlobalState.macroModeState;
+        if (macroModeState.isPlaying) { return; }
+        vim.lastEditInputState = inputState;
+        vim.lastEditActionCommand = actionCommand;
+        macroModeState.lastInsertModeChanges.changes = [];
+        macroModeState.lastInsertModeChanges.expectCursorActivityForChange = false;
+      }
+    };
+    var motions = {
+      moveToTopLine: function(cm, _head, motionArgs) {
+        var line = getUserVisibleLines(cm).top + motionArgs.repeat -1;
+        return Pos(line, findFirstNonWhiteSpaceCharacter(cm.getLine(line)));
+      },
+      moveToMiddleLine: function(cm) {
+        var range = getUserVisibleLines(cm);
+        var line = Math.floor((range.top + range.bottom) * 0.5);
+        return Pos(line, findFirstNonWhiteSpaceCharacter(cm.getLine(line)));
+      },
+      moveToBottomLine: function(cm, _head, motionArgs) {
+        var line = getUserVisibleLines(cm).bottom - motionArgs.repeat +1;
+        return Pos(line, findFirstNonWhiteSpaceCharacter(cm.getLine(line)));
+      },
+      expandToLine: function(_cm, head, motionArgs) {
+        var cur = head;
+        return Pos(cur.line + motionArgs.repeat - 1, Infinity);
+      },
+      findNext: function(cm, _head, motionArgs) {
+        var state = getSearchState(cm);
+        var query = state.getQuery();
+        if (!query) {
+          return;
+        }
+        var prev = !motionArgs.forward;
+        prev = (state.isReversed()) ? !prev : prev;
+        highlightSearchMatches(cm, query);
+        return findNext(cm, prev/** prev */, query, motionArgs.repeat);
+      },
+      goToMark: function(cm, _head, motionArgs, vim) {
+        var mark = vim.marks[motionArgs.selectedCharacter];
+        if (mark) {
+          var pos = mark.find();
+          return motionArgs.linewise ? { line: pos.line, ch: findFirstNonWhiteSpaceCharacter(cm.getLine(pos.line)) } : pos;
+        }
+        return null;
+      },
+      moveToOtherHighlightedEnd: function(cm, _head, motionArgs, vim) {
+        if (vim.visualBlock && motionArgs.sameLine) {
+          var sel = vim.sel;
+          return [
+            clipCursorToContent(cm, Pos(sel.anchor.line, sel.head.ch)),
+            clipCursorToContent(cm, Pos(sel.head.line, sel.anchor.ch))
+          ];
+        } else {
+          return ([vim.sel.head, vim.sel.anchor]);
+        }
+      },
+      jumpToMark: function(cm, head, motionArgs, vim) {
+        var best = head;
+        for (var i = 0; i < motionArgs.repeat; i++) {
+          var cursor = best;
+          for (var key in vim.marks) {
+            if (!isLowerCase(key)) {
+              continue;
+            }
+            var mark = vim.marks[key].find();
+            var isWrongDirection = (motionArgs.forward) ?
+              cursorIsBefore(mark, cursor) : cursorIsBefore(cursor, mark);
+
+            if (isWrongDirection) {
+              continue;
+            }
+            if (motionArgs.linewise && (mark.line == cursor.line)) {
+              continue;
+            }
+
+            var equal = cursorEqual(cursor, best);
+            var between = (motionArgs.forward) ?
+              cursorIsBetween(cursor, mark, best) :
+              cursorIsBetween(best, mark, cursor);
+
+            if (equal || between) {
+              best = mark;
+            }
+          }
+        }
+
+        if (motionArgs.linewise) {
+          best = Pos(best.line, findFirstNonWhiteSpaceCharacter(cm.getLine(best.line)));
+        }
+        return best;
+      },
+      moveByCharacters: function(_cm, head, motionArgs) {
+        var cur = head;
+        var repeat = motionArgs.repeat;
+        var ch = motionArgs.forward ? cur.ch + repeat : cur.ch - repeat;
+        return Pos(cur.line, ch);
+      },
+      moveByLines: function(cm, head, motionArgs, vim) {
+        var cur = head;
+        var endCh = cur.ch;
+        switch (vim.lastMotion) {
+          case this.moveByLines:
+          case this.moveByDisplayLines:
+          case this.moveByScroll:
+          case this.moveToColumn:
+          case this.moveToEol:
+            endCh = vim.lastHPos;
+            break;
+          default:
+            vim.lastHPos = endCh;
+        }
+        var repeat = motionArgs.repeat+(motionArgs.repeatOffset||0);
+        var line = motionArgs.forward ? cur.line + repeat : cur.line - repeat;
+        var first = cm.firstLine();
+        var last = cm.lastLine();
+        if ((line < first && cur.line == first) ||
+            (line > last && cur.line == last)) {
+          return;
+        }
+        var fold = cm.ace.session.getFoldAt(line, endCh);
+        if (fold) {
+          if (motionArgs.forward)
+            line = fold.end.row + 1;
+          else
+            line = fold.start.row - 1;
+        }
+        if (motionArgs.toFirstChar){
+          endCh=findFirstNonWhiteSpaceCharacter(cm.getLine(line));
+          vim.lastHPos = endCh;
+        }
+        vim.lastHSPos = cm.charCoords(Pos(line, endCh),'div').left;
+        return Pos(line, endCh);
+      },
+      moveByDisplayLines: function(cm, head, motionArgs, vim) {
+        var cur = head;
+        switch (vim.lastMotion) {
+          case this.moveByDisplayLines:
+          case this.moveByScroll:
+          case this.moveByLines:
+          case this.moveToColumn:
+          case this.moveToEol:
+            break;
+          default:
+            vim.lastHSPos = cm.charCoords(cur,'div').left;
+        }
+        var repeat = motionArgs.repeat;
+        var res=cm.findPosV(cur,(motionArgs.forward ? repeat : -repeat),'line',vim.lastHSPos);
+        if (res.hitSide) {
+          if (motionArgs.forward) {
+            var lastCharCoords = cm.charCoords(res, 'div');
+            var goalCoords = { top: lastCharCoords.top + 8, left: vim.lastHSPos };
+            var res = cm.coordsChar(goalCoords, 'div');
+          } else {
+            var resCoords = cm.charCoords(Pos(cm.firstLine(), 0), 'div');
+            resCoords.left = vim.lastHSPos;
+            res = cm.coordsChar(resCoords, 'div');
+          }
+        }
+        vim.lastHPos = res.ch;
+        return res;
+      },
+      moveByPage: function(cm, head, motionArgs) {
+        var curStart = head;
+        var repeat = motionArgs.repeat;
+        return cm.findPosV(curStart, (motionArgs.forward ? repeat : -repeat), 'page');
+      },
+      moveByParagraph: function(cm, head, motionArgs) {
+        var dir = motionArgs.forward ? 1 : -1;
+        return findParagraph(cm, head, motionArgs.repeat, dir);
+      },
+      moveByScroll: function(cm, head, motionArgs, vim) {
+        var scrollbox = cm.getScrollInfo();
+        var curEnd = null;
+        var repeat = motionArgs.repeat;
+        if (!repeat) {
+          repeat = scrollbox.clientHeight / (2 * cm.defaultTextHeight());
+        }
+        var orig = cm.charCoords(head, 'local');
+        motionArgs.repeat = repeat;
+        var curEnd = motions.moveByDisplayLines(cm, head, motionArgs, vim);
+        if (!curEnd) {
+          return null;
+        }
+        var dest = cm.charCoords(curEnd, 'local');
+        cm.scrollTo(null, scrollbox.top + dest.top - orig.top);
+        return curEnd;
+      },
+      moveByWords: function(cm, head, motionArgs) {
+        return moveToWord(cm, head, motionArgs.repeat, !!motionArgs.forward,
+            !!motionArgs.wordEnd, !!motionArgs.bigWord);
+      },
+      moveTillCharacter: function(cm, _head, motionArgs) {
+        var repeat = motionArgs.repeat;
+        var curEnd = moveToCharacter(cm, repeat, motionArgs.forward,
+            motionArgs.selectedCharacter);
+        var increment = motionArgs.forward ? -1 : 1;
+        recordLastCharacterSearch(increment, motionArgs);
+        if (!curEnd) return null;
+        curEnd.ch += increment;
+        return curEnd;
+      },
+      moveToCharacter: function(cm, head, motionArgs) {
+        var repeat = motionArgs.repeat;
+        recordLastCharacterSearch(0, motionArgs);
+        return moveToCharacter(cm, repeat, motionArgs.forward,
+            motionArgs.selectedCharacter) || head;
+      },
+      moveToSymbol: function(cm, head, motionArgs) {
+        var repeat = motionArgs.repeat;
+        return findSymbol(cm, repeat, motionArgs.forward,
+            motionArgs.selectedCharacter) || head;
+      },
+      moveToColumn: function(cm, head, motionArgs, vim) {
+        var repeat = motionArgs.repeat;
+        vim.lastHPos = repeat - 1;
+        vim.lastHSPos = cm.charCoords(head,'div').left;
+        return moveToColumn(cm, repeat);
+      },
+      moveToEol: function(cm, head, motionArgs, vim) {
+        var cur = head;
+        vim.lastHPos = Infinity;
+        var retval= Pos(cur.line + motionArgs.repeat - 1, Infinity);
+        var end=cm.clipPos(retval);
+        end.ch--;
+        vim.lastHSPos = cm.charCoords(end,'div').left;
+        return retval;
+      },
+      moveToFirstNonWhiteSpaceCharacter: function(cm, head) {
+        var cursor = head;
+        return Pos(cursor.line,
+                   findFirstNonWhiteSpaceCharacter(cm.getLine(cursor.line)));
+      },
+      moveToMatchedSymbol: function(cm, head) {
+        var cursor = head;
+        var line = cursor.line;
+        var ch = cursor.ch;
+        var lineText = cm.getLine(line);
+        var symbol;
+        do {
+          symbol = lineText.charAt(ch++);
+          if (symbol && isMatchableSymbol(symbol)) {
+            var style = cm.getTokenTypeAt(Pos(line, ch));
+            if (style !== "string" && style !== "comment") {
+              break;
+            }
+          }
+        } while (symbol);
+        if (symbol) {
+          var matched = cm.findMatchingBracket(Pos(line, ch));
+          return matched.to;
+        } else {
+          return cursor;
+        }
+      },
+      moveToStartOfLine: function(_cm, head) {
+        return Pos(head.line, 0);
+      },
+      moveToLineOrEdgeOfDocument: function(cm, _head, motionArgs) {
+        var lineNum = motionArgs.forward ? cm.lastLine() : cm.firstLine();
+        if (motionArgs.repeatIsExplicit) {
+          lineNum = motionArgs.repeat - cm.getOption('firstLineNumber');
+        }
+        return Pos(lineNum,
+                   findFirstNonWhiteSpaceCharacter(cm.getLine(lineNum)));
+      },
+      textObjectManipulation: function(cm, head, motionArgs, vim) {
+        var mirroredPairs = {'(': ')', ')': '(',
+                             '{': '}', '}': '{',
+                             '[': ']', ']': '['};
+        var selfPaired = {'\'': true, '"': true};
+
+        var character = motionArgs.selectedCharacter;
+        if (character == 'b') {
+          character = '(';
+        } else if (character == 'B') {
+          character = '{';
+        }
+        var inclusive = !motionArgs.textObjectInner;
+
+        var tmp;
+        if (mirroredPairs[character]) {
+          tmp = selectCompanionObject(cm, head, character, inclusive);
+        } else if (selfPaired[character]) {
+          tmp = findBeginningAndEnd(cm, head, character, inclusive);
+        } else if (character === 'W') {
+          tmp = expandWordUnderCursor(cm, inclusive, true /** forward */,
+                                                     true /** bigWord */);
+        } else if (character === 'w') {
+          tmp = expandWordUnderCursor(cm, inclusive, true /** forward */,
+                                                     false /** bigWord */);
+        } else if (character === 'p') {
+          tmp = findParagraph(cm, head, motionArgs.repeat, 0, inclusive);
+          motionArgs.linewise = true;
+          if (vim.visualMode) {
+            if (!vim.visualLine) { vim.visualLine = true; }
+          } else {
+            var operatorArgs = vim.inputState.operatorArgs;
+            if (operatorArgs) { operatorArgs.linewise = true; }
+            tmp.end.line--;
+          }
+        } else {
+          return null;
+        }
+
+        if (!cm.state.vim.visualMode) {
+          return [tmp.start, tmp.end];
+        } else {
+          return expandSelection(cm, tmp.start, tmp.end);
+        }
+      },
+
+      repeatLastCharacterSearch: function(cm, head, motionArgs) {
+        var lastSearch = vimGlobalState.lastChararacterSearch;
+        var repeat = motionArgs.repeat;
+        var forward = motionArgs.forward === lastSearch.forward;
+        var increment = (lastSearch.increment ? 1 : 0) * (forward ? -1 : 1);
+        cm.moveH(-increment, 'char');
+        motionArgs.inclusive = forward ? true : false;
+        var curEnd = moveToCharacter(cm, repeat, forward, lastSearch.selectedCharacter);
+        if (!curEnd) {
+          cm.moveH(increment, 'char');
+          return head;
+        }
+        curEnd.ch += increment;
+        return curEnd;
+      }
+    };
+
+    function defineMotion(name, fn) {
+      motions[name] = fn;
+    }
+
+    function fillArray(val, times) {
+      var arr = [];
+      for (var i = 0; i < times; i++) {
+        arr.push(val);
+      }
+      return arr;
+    }
+    var operators = {
+      change: function(cm, args, ranges) {
+        var finalHead, text;
+        var vim = cm.state.vim;
+        vimGlobalState.macroModeState.lastInsertModeChanges.inVisualBlock = vim.visualBlock;
+        if (!vim.visualMode) {
+          var anchor = ranges[0].anchor,
+              head = ranges[0].head;
+          text = cm.getRange(anchor, head);
+          var lastState = vim.lastEditInputState || {};
+          if (lastState.motion == "moveByWords" && !isWhiteSpaceString(text)) {
+            var match = (/\s+$/).exec(text);
+            if (match && lastState.motionArgs && lastState.motionArgs.forward) {
+              head = offsetCursor(head, 0, - match[0].length);
+              text = text.slice(0, - match[0].length);
+            }
+          }
+          var wasLastLine = head.line - 1 == cm.lastLine();
+          cm.replaceRange('', anchor, head);
+          if (args.linewise && !wasLastLine) {
+            CodeMirror.commands.newlineAndIndent(cm);
+            anchor.ch = null;
+          }
+          finalHead = anchor;
+        } else {
+          text = cm.getSelection();
+          var replacement = fillArray('', ranges.length);
+          cm.replaceSelections(replacement);
+          finalHead = cursorMin(ranges[0].head, ranges[0].anchor);
+        }
+        vimGlobalState.registerController.pushText(
+            args.registerName, 'change', text,
+            args.linewise, ranges.length > 1);
+        actions.enterInsertMode(cm, {head: finalHead}, cm.state.vim);
+      },
+      'delete': function(cm, args, ranges) {
+        var finalHead, text;
+        var vim = cm.state.vim;
+        if (!vim.visualBlock) {
+          var anchor = ranges[0].anchor,
+              head = ranges[0].head;
+          if (args.linewise &&
+              head.line != cm.firstLine() &&
+              anchor.line == cm.lastLine() &&
+              anchor.line == head.line - 1) {
+            if (anchor.line == cm.firstLine()) {
+              anchor.ch = 0;
+            } else {
+              anchor = Pos(anchor.line - 1, lineLength(cm, anchor.line - 1));
+            }
+          }
+          text = cm.getRange(anchor, head);
+          cm.replaceRange('', anchor, head);
+          finalHead = anchor;
+          if (args.linewise) {
+            finalHead = motions.moveToFirstNonWhiteSpaceCharacter(cm, anchor);
+          }
+        } else {
+          text = cm.getSelection();
+          var replacement = fillArray('', ranges.length);
+          cm.replaceSelections(replacement);
+          finalHead = ranges[0].anchor;
+        }
+        vimGlobalState.registerController.pushText(
+            args.registerName, 'delete', text,
+            args.linewise, vim.visualBlock);
+        return clipCursorToContent(cm, finalHead);
+      },
+      indent: function(cm, args, ranges) {
+        var vim = cm.state.vim;
+        var startLine = ranges[0].anchor.line;
+        var endLine = vim.visualBlock ?
+          ranges[ranges.length - 1].anchor.line :
+          ranges[0].head.line;
+        var repeat = (vim.visualMode) ? args.repeat : 1;
+        if (args.linewise) {
+          endLine--;
+        }
+        for (var i = startLine; i <= endLine; i++) {
+          for (var j = 0; j < repeat; j++) {
+            cm.indentLine(i, args.indentRight);
+          }
+        }
+        return motions.moveToFirstNonWhiteSpaceCharacter(cm, ranges[0].anchor);
+      },
+      changeCase: function(cm, args, ranges, oldAnchor, newHead) {
+        var selections = cm.getSelections();
+        var swapped = [];
+        var toLower = args.toLower;
+        for (var j = 0; j < selections.length; j++) {
+          var toSwap = selections[j];
+          var text = '';
+          if (toLower === true) {
+            text = toSwap.toLowerCase();
+          } else if (toLower === false) {
+            text = toSwap.toUpperCase();
+          } else {
+            for (var i = 0; i < toSwap.length; i++) {
+              var character = toSwap.charAt(i);
+              text += isUpperCase(character) ? character.toLowerCase() :
+                  character.toUpperCase();
+            }
+          }
+          swapped.push(text);
+        }
+        cm.replaceSelections(swapped);
+        if (args.shouldMoveCursor){
+          return newHead;
+        } else if (!cm.state.vim.visualMode && args.linewise && ranges[0].anchor.line + 1 == ranges[0].head.line) {
+          return motions.moveToFirstNonWhiteSpaceCharacter(cm, oldAnchor);
+        } else if (args.linewise){
+          return oldAnchor;
+        } else {
+          return cursorMin(ranges[0].anchor, ranges[0].head);
+        }
+      },
+      yank: function(cm, args, ranges, oldAnchor) {
+        var vim = cm.state.vim;
+        var text = cm.getSelection();
+        var endPos = vim.visualMode
+          ? cursorMin(vim.sel.anchor, vim.sel.head, ranges[0].head, ranges[0].anchor)
+          : oldAnchor;
+        vimGlobalState.registerController.pushText(
+            args.registerName, 'yank',
+            text, args.linewise, vim.visualBlock);
+        return endPos;
+      }
+    };
+
+    function defineOperator(name, fn) {
+      operators[name] = fn;
+    }
+
+    var actions = {
+      jumpListWalk: function(cm, actionArgs, vim) {
+        if (vim.visualMode) {
+          return;
+        }
+        var repeat = actionArgs.repeat;
+        var forward = actionArgs.forward;
+        var jumpList = vimGlobalState.jumpList;
+
+        var mark = jumpList.move(cm, forward ? repeat : -repeat);
+        var markPos = mark ? mark.find() : undefined;
+        markPos = markPos ? markPos : cm.getCursor();
+        cm.setCursor(markPos);
+        cm.ace.curOp.command.scrollIntoView = "center-animate"; // ace_patch
+      },
+      scroll: function(cm, actionArgs, vim) {
+        if (vim.visualMode) {
+          return;
+        }
+        var repeat = actionArgs.repeat || 1;
+        var lineHeight = cm.defaultTextHeight();
+        var top = cm.getScrollInfo().top;
+        var delta = lineHeight * repeat;
+        var newPos = actionArgs.forward ? top + delta : top - delta;
+        var cursor = copyCursor(cm.getCursor());
+        var cursorCoords = cm.charCoords(cursor, 'local');
+        if (actionArgs.forward) {
+          if (newPos > cursorCoords.top) {
+             cursor.line += (newPos - cursorCoords.top) / lineHeight;
+             cursor.line = Math.ceil(cursor.line);
+             cm.setCursor(cursor);
+             cursorCoords = cm.charCoords(cursor, 'local');
+             cm.scrollTo(null, cursorCoords.top);
+          } else {
+             cm.scrollTo(null, newPos);
+          }
+        } else {
+          var newBottom = newPos + cm.getScrollInfo().clientHeight;
+          if (newBottom < cursorCoords.bottom) {
+             cursor.line -= (cursorCoords.bottom - newBottom) / lineHeight;
+             cursor.line = Math.floor(cursor.line);
+             cm.setCursor(cursor);
+             cursorCoords = cm.charCoords(cursor, 'local');
+             cm.scrollTo(
+                 null, cursorCoords.bottom - cm.getScrollInfo().clientHeight);
+          } else {
+             cm.scrollTo(null, newPos);
+          }
+        }
+      },
+      scrollToCursor: function(cm, actionArgs) {
+        var lineNum = cm.getCursor().line;
+        var charCoords = cm.charCoords(Pos(lineNum, 0), 'local');
+        var height = cm.getScrollInfo().clientHeight;
+        var y = charCoords.top;
+        var lineHeight = charCoords.bottom - y;
+        switch (actionArgs.position) {
+          case 'center': y = y - (height / 2) + lineHeight;
+            break;
+          case 'bottom': y = y - height + lineHeight*1.4;
+            break;
+          case 'top': y = y + lineHeight*0.4;
+            break;
+        }
+        cm.scrollTo(null, y);
+      },
+      replayMacro: function(cm, actionArgs, vim) {
+        var registerName = actionArgs.selectedCharacter;
+        var repeat = actionArgs.repeat;
+        var macroModeState = vimGlobalState.macroModeState;
+        if (registerName == '@') {
+          registerName = macroModeState.latestRegister;
+        }
+        while(repeat--){
+          executeMacroRegister(cm, vim, macroModeState, registerName);
+        }
+      },
+      enterMacroRecordMode: function(cm, actionArgs) {
+        var macroModeState = vimGlobalState.macroModeState;
+        var registerName = actionArgs.selectedCharacter;
+        macroModeState.enterMacroRecordMode(cm, registerName);
+      },
+      enterInsertMode: function(cm, actionArgs, vim) {
+        if (cm.getOption('readOnly')) { return; }
+        vim.insertMode = true;
+        vim.insertModeRepeat = actionArgs && actionArgs.repeat || 1;
+        var insertAt = (actionArgs) ? actionArgs.insertAt : null;
+        var sel = vim.sel;
+        var head = actionArgs.head || cm.getCursor('head');
+        var height = cm.listSelections().length;
+        if (insertAt == 'eol') {
+          head = Pos(head.line, lineLength(cm, head.line));
+        } else if (insertAt == 'charAfter') {
+          head = offsetCursor(head, 0, 1);
+        } else if (insertAt == 'firstNonBlank') {
+          head = motions.moveToFirstNonWhiteSpaceCharacter(cm, head);
+        } else if (insertAt == 'startOfSelectedArea') {
+          if (!vim.visualBlock) {
+            if (sel.head.line < sel.anchor.line) {
+              head = sel.head;
+            } else {
+              head = Pos(sel.anchor.line, 0);
+            }
+          } else {
+            head = Pos(
+                Math.min(sel.head.line, sel.anchor.line),
+                Math.min(sel.head.ch, sel.anchor.ch));
+            height = Math.abs(sel.head.line - sel.anchor.line) + 1;
+          }
+        } else if (insertAt == 'endOfSelectedArea') {
+          if (!vim.visualBlock) {
+            if (sel.head.line >= sel.anchor.line) {
+              head = offsetCursor(sel.head, 0, 1);
+            } else {
+              head = Pos(sel.anchor.line, 0);
+            }
+          } else {
+            head = Pos(
+                Math.min(sel.head.line, sel.anchor.line),
+                Math.max(sel.head.ch + 1, sel.anchor.ch));
+            height = Math.abs(sel.head.line - sel.anchor.line) + 1;
+          }
+        } else if (insertAt == 'inplace') {
+          if (vim.visualMode){
+            return;
+          }
+        }
+        cm.setOption('keyMap', 'vim-insert');
+        cm.setOption('disableInput', false);
+        if (actionArgs && actionArgs.replace) {
+          cm.toggleOverwrite(true);
+          cm.setOption('keyMap', 'vim-replace');
+          CodeMirror.signal(cm, "vim-mode-change", {mode: "replace"});
+        } else {
+          cm.setOption('keyMap', 'vim-insert');
+          CodeMirror.signal(cm, "vim-mode-change", {mode: "insert"});
+        }
+        if (!vimGlobalState.macroModeState.isPlaying) {
+          cm.on('change', onChange);
+          CodeMirror.on(cm.getInputField(), 'keydown', onKeyEventTargetKeyDown);
+        }
+        if (vim.visualMode) {
+          exitVisualMode(cm);
+        }
+        selectForInsert(cm, head, height);
+      },
+      toggleVisualMode: function(cm, actionArgs, vim) {
+        var repeat = actionArgs.repeat;
+        var anchor = cm.getCursor();
+        var head;
+        if (!vim.visualMode) {
+          vim.visualMode = true;
+          vim.visualLine = !!actionArgs.linewise;
+          vim.visualBlock = !!actionArgs.blockwise;
+          head = clipCursorToContent(
+              cm, Pos(anchor.line, anchor.ch + repeat - 1),
+              true /** includeLineBreak */);
+          vim.sel = {
+            anchor: anchor,
+            head: head
+          };
+          CodeMirror.signal(cm, "vim-mode-change", {mode: "visual", subMode: vim.visualLine ? "linewise" : vim.visualBlock ? "blockwise" : ""});
+          updateCmSelection(cm);
+          updateMark(cm, vim, '<', cursorMin(anchor, head));
+          updateMark(cm, vim, '>', cursorMax(anchor, head));
+        } else if (vim.visualLine ^ actionArgs.linewise ||
+            vim.visualBlock ^ actionArgs.blockwise) {
+          vim.visualLine = !!actionArgs.linewise;
+          vim.visualBlock = !!actionArgs.blockwise;
+          CodeMirror.signal(cm, "vim-mode-change", {mode: "visual", subMode: vim.visualLine ? "linewise" : vim.visualBlock ? "blockwise" : ""});
+          updateCmSelection(cm);
+        } else {
+          exitVisualMode(cm);
+        }
+      },
+      reselectLastSelection: function(cm, _actionArgs, vim) {
+        var lastSelection = vim.lastSelection;
+        if (vim.visualMode) {
+          updateLastSelection(cm, vim);
+        }
+        if (lastSelection) {
+          var anchor = lastSelection.anchorMark.find();
+          var head = lastSelection.headMark.find();
+          if (!anchor || !head) {
+            return;
+          }
+          vim.sel = {
+            anchor: anchor,
+            head: head
+          };
+          vim.visualMode = true;
+          vim.visualLine = lastSelection.visualLine;
+          vim.visualBlock = lastSelection.visualBlock;
+          updateCmSelection(cm);
+          updateMark(cm, vim, '<', cursorMin(anchor, head));
+          updateMark(cm, vim, '>', cursorMax(anchor, head));
+          CodeMirror.signal(cm, 'vim-mode-change', {
+            mode: 'visual',
+            subMode: vim.visualLine ? 'linewise' :
+                     vim.visualBlock ? 'blockwise' : ''});
+        }
+      },
+      joinLines: function(cm, actionArgs, vim) {
+        var curStart, curEnd;
+        if (vim.visualMode) {
+          curStart = cm.getCursor('anchor');
+          curEnd = cm.getCursor('head');
+          if (cursorIsBefore(curEnd, curStart)) {
+            var tmp = curEnd;
+            curEnd = curStart;
+            curStart = tmp;
+          }
+          curEnd.ch = lineLength(cm, curEnd.line) - 1;
+        } else {
+          var repeat = Math.max(actionArgs.repeat, 2);
+          curStart = cm.getCursor();
+          curEnd = clipCursorToContent(cm, Pos(curStart.line + repeat - 1,
+                                               Infinity));
+        }
+        var finalCh = 0;
+        for (var i = curStart.line; i < curEnd.line; i++) {
+          finalCh = lineLength(cm, curStart.line);
+          var tmp = Pos(curStart.line + 1,
+                        lineLength(cm, curStart.line + 1));
+          var text = cm.getRange(curStart, tmp);
+          text = text.replace(/\n\s*/g, ' ');
+          cm.replaceRange(text, curStart, tmp);
+        }
+        var curFinalPos = Pos(curStart.line, finalCh);
+        if (vim.visualMode) {
+          exitVisualMode(cm, false);
+        }
+        cm.setCursor(curFinalPos);
+      },
+      newLineAndEnterInsertMode: function(cm, actionArgs, vim) {
+        vim.insertMode = true;
+        var insertAt = copyCursor(cm.getCursor());
+        if (insertAt.line === cm.firstLine() && !actionArgs.after) {
+          cm.replaceRange('\n', Pos(cm.firstLine(), 0));
+          cm.setCursor(cm.firstLine(), 0);
+        } else {
+          insertAt.line = (actionArgs.after) ? insertAt.line :
+              insertAt.line - 1;
+          insertAt.ch = lineLength(cm, insertAt.line);
+          cm.setCursor(insertAt);
+          var newlineFn = CodeMirror.commands.newlineAndIndentContinueComment ||
+              CodeMirror.commands.newlineAndIndent;
+          newlineFn(cm);
+        }
+        this.enterInsertMode(cm, { repeat: actionArgs.repeat }, vim);
+      },
+      paste: function(cm, actionArgs, vim) {
+        var cur = copyCursor(cm.getCursor());
+        var register = vimGlobalState.registerController.getRegister(
+            actionArgs.registerName);
+        var text = register.toString();
+        if (!text) {
+          return;
+        }
+        if (actionArgs.matchIndent) {
+          var tabSize = cm.getOption("tabSize");
+          var whitespaceLength = function(str) {
+            var tabs = (str.split("\t").length - 1);
+            var spaces = (str.split(" ").length - 1);
+            return tabs * tabSize + spaces * 1;
+          };
+          var currentLine = cm.getLine(cm.getCursor().line);
+          var indent = whitespaceLength(currentLine.match(/^\s*/)[0]);
+          var chompedText = text.replace(/\n$/, '');
+          var wasChomped = text !== chompedText;
+          var firstIndent = whitespaceLength(text.match(/^\s*/)[0]);
+          var text = chompedText.replace(/^\s*/gm, function(wspace) {
+            var newIndent = indent + (whitespaceLength(wspace) - firstIndent);
+            if (newIndent < 0) {
+              return "";
+            }
+            else if (cm.getOption("indentWithTabs")) {
+              var quotient = Math.floor(newIndent / tabSize);
+              return Array(quotient + 1).join('\t');
+            }
+            else {
+              return Array(newIndent + 1).join(' ');
+            }
+          });
+          text += wasChomped ? "\n" : "";
+        }
+        if (actionArgs.repeat > 1) {
+          var text = Array(actionArgs.repeat + 1).join(text);
+        }
+        var linewise = register.linewise;
+        var blockwise = register.blockwise;
+        if (linewise && !blockwise) {
+          if(vim.visualMode) {
+            text = vim.visualLine ? text.slice(0, -1) : '\n' + text.slice(0, text.length - 1) + '\n';
+          } else if (actionArgs.after) {
+            text = '\n' + text.slice(0, text.length - 1);
+            cur.ch = lineLength(cm, cur.line);
+          } else {
+            cur.ch = 0;
+          }
+        } else {
+          if (blockwise) {
+            text = text.split('\n');
+            for (var i = 0; i < text.length; i++) {
+              text[i] = (text[i] == '') ? ' ' : text[i];
+            }
+          }
+          cur.ch += actionArgs.after ? 1 : 0;
+        }
+        var curPosFinal;
+        var idx;
+        if (vim.visualMode) {
+          vim.lastPastedText = text;
+          var lastSelectionCurEnd;
+          var selectedArea = getSelectedAreaRange(cm, vim);
+          var selectionStart = selectedArea[0];
+          var selectionEnd = selectedArea[1];
+          var selectedText = cm.getSelection();
+          var selections = cm.listSelections();
+          var emptyStrings = new Array(selections.length).join('1').split('1');
+          if (vim.lastSelection) {
+            lastSelectionCurEnd = vim.lastSelection.headMark.find();
+          }
+          vimGlobalState.registerController.unnamedRegister.setText(selectedText);
+          if (blockwise) {
+            cm.replaceSelections(emptyStrings);
+            selectionEnd = Pos(selectionStart.line + text.length-1, selectionStart.ch);
+            cm.setCursor(selectionStart);
+            selectBlock(cm, selectionEnd);
+            cm.replaceSelections(text);
+            curPosFinal = selectionStart;
+          } else if (vim.visualBlock) {
+            cm.replaceSelections(emptyStrings);
+            cm.setCursor(selectionStart);
+            cm.replaceRange(text, selectionStart, selectionStart);
+            curPosFinal = selectionStart;
+          } else {
+            cm.replaceRange(text, selectionStart, selectionEnd);
+            curPosFinal = cm.posFromIndex(cm.indexFromPos(selectionStart) + text.length - 1);
+          }
+          if(lastSelectionCurEnd) {
+            vim.lastSelection.headMark = cm.setBookmark(lastSelectionCurEnd);
+          }
+          if (linewise) {
+            curPosFinal.ch=0;
+          }
+        } else {
+          if (blockwise) {
+            cm.setCursor(cur);
+            for (var i = 0; i < text.length; i++) {
+              var line = cur.line+i;
+              if (line > cm.lastLine()) {
+                cm.replaceRange('\n',  Pos(line, 0));
+              }
+              var lastCh = lineLength(cm, line);
+              if (lastCh < cur.ch) {
+                extendLineToColumn(cm, line, cur.ch);
+              }
+            }
+            cm.setCursor(cur);
+            selectBlock(cm, Pos(cur.line + text.length-1, cur.ch));
+            cm.replaceSelections(text);
+            curPosFinal = cur;
+          } else {
+            cm.replaceRange(text, cur);
+            if (linewise && actionArgs.after) {
+              curPosFinal = Pos(
+              cur.line + 1,
+              findFirstNonWhiteSpaceCharacter(cm.getLine(cur.line + 1)));
+            } else if (linewise && !actionArgs.after) {
+              curPosFinal = Pos(
+                cur.line,
+                findFirstNonWhiteSpaceCharacter(cm.getLine(cur.line)));
+            } else if (!linewise && actionArgs.after) {
+              idx = cm.indexFromPos(cur);
+              curPosFinal = cm.posFromIndex(idx + text.length - 1);
+            } else {
+              idx = cm.indexFromPos(cur);
+              curPosFinal = cm.posFromIndex(idx + text.length);
+            }
+          }
+        }
+        if (vim.visualMode) {
+          exitVisualMode(cm, false);
+        }
+        cm.setCursor(curPosFinal);
+      },
+      undo: function(cm, actionArgs) {
+        cm.operation(function() {
+          repeatFn(cm, CodeMirror.commands.undo, actionArgs.repeat)();
+          cm.setCursor(cm.getCursor('anchor'));
+        });
+      },
+      redo: function(cm, actionArgs) {
+        repeatFn(cm, CodeMirror.commands.redo, actionArgs.repeat)();
+      },
+      setRegister: function(_cm, actionArgs, vim) {
+        vim.inputState.registerName = actionArgs.selectedCharacter;
+      },
+      setMark: function(cm, actionArgs, vim) {
+        var markName = actionArgs.selectedCharacter;
+        updateMark(cm, vim, markName, cm.getCursor());
+      },
+      replace: function(cm, actionArgs, vim) {
+        var replaceWith = actionArgs.selectedCharacter;
+        var curStart = cm.getCursor();
+        var replaceTo;
+        var curEnd;
+        var selections = cm.listSelections();
+        if (vim.visualMode) {
+          curStart = cm.getCursor('start');
+          curEnd = cm.getCursor('end');
+        } else {
+          var line = cm.getLine(curStart.line);
+          replaceTo = curStart.ch + actionArgs.repeat;
+          if (replaceTo > line.length) {
+            replaceTo=line.length;
+          }
+          curEnd = Pos(curStart.line, replaceTo);
+        }
+        if (replaceWith=='\n') {
+          if (!vim.visualMode) cm.replaceRange('', curStart, curEnd);
+          (CodeMirror.commands.newlineAndIndentContinueComment || CodeMirror.commands.newlineAndIndent)(cm);
+        } else {
+          var replaceWithStr = cm.getRange(curStart, curEnd);
+          replaceWithStr = replaceWithStr.replace(/[^\n]/g, replaceWith);
+          if (vim.visualBlock) {
+            var spaces = new Array(cm.getOption("tabSize")+1).join(' ');
+            replaceWithStr = cm.getSelection();
+            replaceWithStr = replaceWithStr.replace(/\t/g, spaces).replace(/[^\n]/g, replaceWith).split('\n');
+            cm.replaceSelections(replaceWithStr);
+          } else {
+            cm.replaceRange(replaceWithStr, curStart, curEnd);
+          }
+          if (vim.visualMode) {
+            curStart = cursorIsBefore(selections[0].anchor, selections[0].head) ?
+                         selections[0].anchor : selections[0].head;
+            cm.setCursor(curStart);
+            exitVisualMode(cm, false);
+          } else {
+            cm.setCursor(offsetCursor(curEnd, 0, -1));
+          }
+        }
+      },
+      incrementNumberToken: function(cm, actionArgs) {
+        var cur = cm.getCursor();
+        var lineStr = cm.getLine(cur.line);
+        var re = /-?\d+/g;
+        var match;
+        var start;
+        var end;
+        var numberStr;
+        var token;
+        while ((match = re.exec(lineStr)) !== null) {
+          token = match[0];
+          start = match.index;
+          end = start + token.length;
+          if (cur.ch < end)break;
+        }
+        if (!actionArgs.backtrack && (end <= cur.ch))return;
+        if (token) {
+          var increment = actionArgs.increase ? 1 : -1;
+          var number = parseInt(token) + (increment * actionArgs.repeat);
+          var from = Pos(cur.line, start);
+          var to = Pos(cur.line, end);
+          numberStr = number.toString();
+          cm.replaceRange(numberStr, from, to);
+        } else {
+          return;
+        }
+        cm.setCursor(Pos(cur.line, start + numberStr.length - 1));
+      },
+      repeatLastEdit: function(cm, actionArgs, vim) {
+        var lastEditInputState = vim.lastEditInputState;
+        if (!lastEditInputState) { return; }
+        var repeat = actionArgs.repeat;
+        if (repeat && actionArgs.repeatIsExplicit) {
+          vim.lastEditInputState.repeatOverride = repeat;
+        } else {
+          repeat = vim.lastEditInputState.repeatOverride || repeat;
+        }
+        repeatLastEdit(cm, vim, repeat, false /** repeatForInsert */);
+      },
+      exitInsertMode: exitInsertMode
+    };
+
+    function defineAction(name, fn) {
+      actions[name] = fn;
+    }
+    function clipCursorToContent(cm, cur, includeLineBreak) {
+      var line = Math.min(Math.max(cm.firstLine(), cur.line), cm.lastLine() );
+      var maxCh = lineLength(cm, line) - 1;
+      maxCh = (includeLineBreak) ? maxCh + 1 : maxCh;
+      var ch = Math.min(Math.max(0, cur.ch), maxCh);
+      return Pos(line, ch);
+    }
+    function copyArgs(args) {
+      var ret = {};
+      for (var prop in args) {
+        if (args.hasOwnProperty(prop)) {
+          ret[prop] = args[prop];
+        }
+      }
+      return ret;
+    }
+    function offsetCursor(cur, offsetLine, offsetCh) {
+      if (typeof offsetLine === 'object') {
+        offsetCh = offsetLine.ch;
+        offsetLine = offsetLine.line;
+      }
+      return Pos(cur.line + offsetLine, cur.ch + offsetCh);
+    }
+    function getOffset(anchor, head) {
+      return {
+        line: head.line - anchor.line,
+        ch: head.line - anchor.line
+      };
+    }
+    function commandMatches(keys, keyMap, context, inputState) {
+      var match, partial = [], full = [];
+      for (var i = 0; i < keyMap.length; i++) {
+        var command = keyMap[i];
+        if (context == 'insert' && command.context != 'insert' ||
+            command.context && command.context != context ||
+            inputState.operator && command.type == 'action' ||
+            !(match = commandMatch(keys, command.keys))) { continue; }
+        if (match == 'partial') { partial.push(command); }
+        if (match == 'full') { full.push(command); }
+      }
+      return {
+        partial: partial.length && partial,
+        full: full.length && full
+      };
+    }
+    function commandMatch(pressed, mapped) {
+      if (mapped.slice(-11) == '<character>') {
+        var prefixLen = mapped.length - 11;
+        var pressedPrefix = pressed.slice(0, prefixLen);
+        var mappedPrefix = mapped.slice(0, prefixLen);
+        return pressedPrefix == mappedPrefix && pressed.length > prefixLen ? 'full' :
+               mappedPrefix.indexOf(pressedPrefix) == 0 ? 'partial' : false;
+      } else {
+        return pressed == mapped ? 'full' :
+               mapped.indexOf(pressed) == 0 ? 'partial' : false;
+      }
+    }
+    function lastChar(keys) {
+      var match = /^.*(<[\w\-]+>)$/.exec(keys);
+      var selectedCharacter = match ? match[1] : keys.slice(-1);
+      if (selectedCharacter.length > 1){
+        switch(selectedCharacter){
+          case '<CR>':
+            selectedCharacter='\n';
+            break;
+          case '<Space>':
+            selectedCharacter=' ';
+            break;
+          default:
+            break;
+        }
+      }
+      return selectedCharacter;
+    }
+    function repeatFn(cm, fn, repeat) {
+      return function() {
+        for (var i = 0; i < repeat; i++) {
+          fn(cm);
+        }
+      };
+    }
+    function copyCursor(cur) {
+      return Pos(cur.line, cur.ch);
+    }
+    function cursorEqual(cur1, cur2) {
+      return cur1.ch == cur2.ch && cur1.line == cur2.line;
+    }
+    function cursorIsBefore(cur1, cur2) {
+      if (cur1.line < cur2.line) {
+        return true;
+      }
+      if (cur1.line == cur2.line && cur1.ch < cur2.ch) {
+        return true;
+      }
+      return false;
+    }
+    function cursorMin(cur1, cur2) {
+      if (arguments.length > 2) {
+        cur2 = cursorMin.apply(undefined, Array.prototype.slice.call(arguments, 1));
+      }
+      return cursorIsBefore(cur1, cur2) ? cur1 : cur2;
+    }
+    function cursorMax(cur1, cur2) {
+      if (arguments.length > 2) {
+        cur2 = cursorMax.apply(undefined, Array.prototype.slice.call(arguments, 1));
+      }
+      return cursorIsBefore(cur1, cur2) ? cur2 : cur1;
+    }
+    function cursorIsBetween(cur1, cur2, cur3) {
+      var cur1before2 = cursorIsBefore(cur1, cur2);
+      var cur2before3 = cursorIsBefore(cur2, cur3);
+      return cur1before2 && cur2before3;
+    }
+    function lineLength(cm, lineNum) {
+      return cm.getLine(lineNum).length;
+    }
+    function trim(s) {
+      if (s.trim) {
+        return s.trim();
+      }
+      return s.replace(/^\s+|\s+$/g, '');
+    }
+    function escapeRegex(s) {
+      return s.replace(/([.?*+$\[\]\/\\(){}|\-])/g, '\\$1');
+    }
+    function extendLineToColumn(cm, lineNum, column) {
+      var endCh = lineLength(cm, lineNum);
+      var spaces = new Array(column-endCh+1).join(' ');
+      cm.setCursor(Pos(lineNum, endCh));
+      cm.replaceRange(spaces, cm.getCursor());
+    }
+    function selectBlock(cm, selectionEnd) {
+      var selections = [], ranges = cm.listSelections();
+      var head = copyCursor(cm.clipPos(selectionEnd));
+      var isClipped = !cursorEqual(selectionEnd, head);
+      var curHead = cm.getCursor('head');
+      var primIndex = getIndex(ranges, curHead);
+      var wasClipped = cursorEqual(ranges[primIndex].head, ranges[primIndex].anchor);
+      var max = ranges.length - 1;
+      var index = max - primIndex > primIndex ? max : 0;
+      var base = ranges[index].anchor;
+
+      var firstLine = Math.min(base.line, head.line);
+      var lastLine = Math.max(base.line, head.line);
+      var baseCh = base.ch, headCh = head.ch;
+
+      var dir = ranges[index].head.ch - baseCh;
+      var newDir = headCh - baseCh;
+      if (dir > 0 && newDir <= 0) {
+        baseCh++;
+        if (!isClipped) { headCh--; }
+      } else if (dir < 0 && newDir >= 0) {
+        baseCh--;
+        if (!wasClipped) { headCh++; }
+      } else if (dir < 0 && newDir == -1) {
+        baseCh--;
+        headCh++;
+      }
+      for (var line = firstLine; line <= lastLine; line++) {
+        var range = {anchor: new Pos(line, baseCh), head: new Pos(line, headCh)};
+        selections.push(range);
+      }
+      primIndex = head.line == lastLine ? selections.length - 1 : 0;
+      cm.setSelections(selections);
+      selectionEnd.ch = headCh;
+      base.ch = baseCh;
+      return base;
+    }
+    function selectForInsert(cm, head, height) {
+      var sel = [];
+      for (var i = 0; i < height; i++) {
+        var lineHead = offsetCursor(head, i, 0);
+        sel.push({anchor: lineHead, head: lineHead});
+      }
+      cm.setSelections(sel, 0);
+    }
+    function getIndex(ranges, cursor, end) {
+      for (var i = 0; i < ranges.length; i++) {
+        var atAnchor = end != 'head' && cursorEqual(ranges[i].anchor, cursor);
+        var atHead = end != 'anchor' && cursorEqual(ranges[i].head, cursor);
+        if (atAnchor || atHead) {
+          return i;
+        }
+      }
+      return -1;
+    }
+    function getSelectedAreaRange(cm, vim) {
+      var lastSelection = vim.lastSelection;
+      var getCurrentSelectedAreaRange = function() {
+        var selections = cm.listSelections();
+        var start =  selections[0];
+        var end = selections[selections.length-1];
+        var selectionStart = cursorIsBefore(start.anchor, start.head) ? start.anchor : start.head;
+        var selectionEnd = cursorIsBefore(end.anchor, end.head) ? end.head : end.anchor;
+        return [selectionStart, selectionEnd];
+      };
+      var getLastSelectedAreaRange = function() {
+        var selectionStart = cm.getCursor();
+        var selectionEnd = cm.getCursor();
+        var block = lastSelection.visualBlock;
+        if (block) {
+          var width = block.width;
+          var height = block.height;
+          selectionEnd = Pos(selectionStart.line + height, selectionStart.ch + width);
+          var selections = [];
+          for (var i = selectionStart.line; i < selectionEnd.line; i++) {
+            var anchor = Pos(i, selectionStart.ch);
+            var head = Pos(i, selectionEnd.ch);
+            var range = {anchor: anchor, head: head};
+            selections.push(range);
+          }
+          cm.setSelections(selections);
+        } else {
+          var start = lastSelection.anchorMark.find();
+          var end = lastSelection.headMark.find();
+          var line = end.line - start.line;
+          var ch = end.ch - start.ch;
+          selectionEnd = {line: selectionEnd.line + line, ch: line ? selectionEnd.ch : ch + selectionEnd.ch};
+          if (lastSelection.visualLine) {
+            selectionStart = Pos(selectionStart.line, 0);
+            selectionEnd = Pos(selectionEnd.line, lineLength(cm, selectionEnd.line));
+          }
+          cm.setSelection(selectionStart, selectionEnd);
+        }
+        return [selectionStart, selectionEnd];
+      };
+      if (!vim.visualMode) {
+        return getLastSelectedAreaRange();
+      } else {
+        return getCurrentSelectedAreaRange();
+      }
+    }
+    function updateLastSelection(cm, vim) {
+      var anchor = vim.sel.anchor;
+      var head = vim.sel.head;
+      if (vim.lastPastedText) {
+        head = cm.posFromIndex(cm.indexFromPos(anchor) + vim.lastPastedText.length);
+        vim.lastPastedText = null;
+      }
+      vim.lastSelection = {'anchorMark': cm.setBookmark(anchor),
+                           'headMark': cm.setBookmark(head),
+                           'anchor': copyCursor(anchor),
+                           'head': copyCursor(head),
+                           'visualMode': vim.visualMode,
+                           'visualLine': vim.visualLine,
+                           'visualBlock': vim.visualBlock};
+    }
+    function expandSelection(cm, start, end) {
+      var sel = cm.state.vim.sel;
+      var head = sel.head;
+      var anchor = sel.anchor;
+      var tmp;
+      if (cursorIsBefore(end, start)) {
+        tmp = end;
+        end = start;
+        start = tmp;
+      }
+      if (cursorIsBefore(head, anchor)) {
+        head = cursorMin(start, head);
+        anchor = cursorMax(anchor, end);
+      } else {
+        anchor = cursorMin(start, anchor);
+        head = cursorMax(head, end);
+        head = offsetCursor(head, 0, -1);
+        if (head.ch == -1 && head.line != cm.firstLine()) {
+          head = Pos(head.line - 1, lineLength(cm, head.line - 1));
+        }
+      }
+      return [anchor, head];
+    }
+    function updateCmSelection(cm, sel, mode) {
+      var vim = cm.state.vim;
+      sel = sel || vim.sel;
+      var mode = mode ||
+        vim.visualLine ? 'line' : vim.visualBlock ? 'block' : 'char';
+      var cmSel = makeCmSelection(cm, sel, mode);
+      cm.setSelections(cmSel.ranges, cmSel.primary);
+      updateFakeCursor(cm);
+    }
+    function makeCmSelection(cm, sel, mode, exclusive) {
+      var head = copyCursor(sel.head);
+      var anchor = copyCursor(sel.anchor);
+      if (mode == 'char') {
+        var headOffset = !exclusive && !cursorIsBefore(sel.head, sel.anchor) ? 1 : 0;
+        var anchorOffset = cursorIsBefore(sel.head, sel.anchor) ? 1 : 0;
+        head = offsetCursor(sel.head, 0, headOffset);
+        anchor = offsetCursor(sel.anchor, 0, anchorOffset);
+        return {
+          ranges: [{anchor: anchor, head: head}],
+          primary: 0
+        };
+      } else if (mode == 'line') {
+        if (!cursorIsBefore(sel.head, sel.anchor)) {
+          anchor.ch = 0;
+
+          var lastLine = cm.lastLine();
+          if (head.line > lastLine) {
+            head.line = lastLine;
+          }
+          head.ch = lineLength(cm, head.line);
+        } else {
+          head.ch = 0;
+          anchor.ch = lineLength(cm, anchor.line);
+        }
+        return {
+          ranges: [{anchor: anchor, head: head}],
+          primary: 0
+        };
+      } else if (mode == 'block') {
+        var top = Math.min(anchor.line, head.line),
+            left = Math.min(anchor.ch, head.ch),
+            bottom = Math.max(anchor.line, head.line),
+            right = Math.max(anchor.ch, head.ch) + 1;
+        var height = bottom - top + 1;
+        var primary = head.line == top ? 0 : height - 1;
+        var ranges = [];
+        for (var i = 0; i < height; i++) {
+          ranges.push({
+            anchor: Pos(top + i, left),
+            head: Pos(top + i, right)
+          });
+        }
+        return {
+          ranges: ranges,
+          primary: primary
+        };
+      }
+    }
+    function getHead(cm) {
+      var cur = cm.getCursor('head');
+      if (cm.getSelection().length == 1) {
+        cur = cursorMin(cur, cm.getCursor('anchor'));
+      }
+      return cur;
+    }
+    function exitVisualMode(cm, moveHead) {
+      var vim = cm.state.vim;
+      if (moveHead !== false) {
+        cm.setCursor(clipCursorToContent(cm, vim.sel.head));
+      }
+      updateLastSelection(cm, vim);
+      vim.visualMode = false;
+      vim.visualLine = false;
+      vim.visualBlock = false;
+      CodeMirror.signal(cm, "vim-mode-change", {mode: "normal"});
+      if (vim.fakeCursor) {
+        vim.fakeCursor.clear();
+      }
+    }
+    function clipToLine(cm, curStart, curEnd) {
+      var selection = cm.getRange(curStart, curEnd);
+      if (/\n\s*$/.test(selection)) {
+        var lines = selection.split('\n');
+        lines.pop();
+        var line;
+        for (var line = lines.pop(); lines.length > 0 && line && isWhiteSpaceString(line); line = lines.pop()) {
+          curEnd.line--;
+          curEnd.ch = 0;
+        }
+        if (line) {
+          curEnd.line--;
+          curEnd.ch = lineLength(cm, curEnd.line);
+        } else {
+          curEnd.ch = 0;
+        }
+      }
+    }
+    function expandSelectionToLine(_cm, curStart, curEnd) {
+      curStart.ch = 0;
+      curEnd.ch = 0;
+      curEnd.line++;
+    }
+
+    function findFirstNonWhiteSpaceCharacter(text) {
+      if (!text) {
+        return 0;
+      }
+      var firstNonWS = text.search(/\S/);
+      return firstNonWS == -1 ? text.length : firstNonWS;
+    }
+
+    function expandWordUnderCursor(cm, inclusive, _forward, bigWord, noSymbol) {
+      var cur = getHead(cm);
+      var line = cm.getLine(cur.line);
+      var idx = cur.ch;
+      var test = noSymbol ? wordCharTest[0] : bigWordCharTest [0];
+      while (!test(line.charAt(idx))) {
+        idx++;
+        if (idx >= line.length) { return null; }
+      }
+
+      if (bigWord) {
+        test = bigWordCharTest[0];
+      } else {
+        test = wordCharTest[0];
+        if (!test(line.charAt(idx))) {
+          test = wordCharTest[1];
+        }
+      }
+
+      var end = idx, start = idx;
+      while (test(line.charAt(end)) && end < line.length) { end++; }
+      while (test(line.charAt(start)) && start >= 0) { start--; }
+      start++;
+
+      if (inclusive) {
+        var wordEnd = end;
+        while (/\s/.test(line.charAt(end)) && end < line.length) { end++; }
+        if (wordEnd == end) {
+          var wordStart = start;
+          while (/\s/.test(line.charAt(start - 1)) && start > 0) { start--; }
+          if (!start) { start = wordStart; }
+        }
+      }
+      return { start: Pos(cur.line, start), end: Pos(cur.line, end) };
+    }
+
+    function recordJumpPosition(cm, oldCur, newCur) {
+      if (!cursorEqual(oldCur, newCur)) {
+        vimGlobalState.jumpList.add(cm, oldCur, newCur);
+      }
+    }
+
+    function recordLastCharacterSearch(increment, args) {
+        vimGlobalState.lastChararacterSearch.increment = increment;
+        vimGlobalState.lastChararacterSearch.forward = args.forward;
+        vimGlobalState.lastChararacterSearch.selectedCharacter = args.selectedCharacter;
+    }
+
+    var symbolToMode = {
+        '(': 'bracket', ')': 'bracket', '{': 'bracket', '}': 'bracket',
+        '[': 'section', ']': 'section',
+        '*': 'comment', '/': 'comment',
+        'm': 'method', 'M': 'method',
+        '#': 'preprocess'
+    };
+    var findSymbolModes = {
+      bracket: {
+        isComplete: function(state) {
+          if (state.nextCh === state.symb) {
+            state.depth++;
+            if (state.depth >= 1)return true;
+          } else if (state.nextCh === state.reverseSymb) {
+            state.depth--;
+          }
+          return false;
+        }
+      },
+      section: {
+        init: function(state) {
+          state.curMoveThrough = true;
+          state.symb = (state.forward ? ']' : '[') === state.symb ? '{' : '}';
+        },
+        isComplete: function(state) {
+          return state.index === 0 && state.nextCh === state.symb;
+        }
+      },
+      comment: {
+        isComplete: function(state) {
+          var found = state.lastCh === '*' && state.nextCh === '/';
+          state.lastCh = state.nextCh;
+          return found;
+        }
+      },
+      method: {
+        init: function(state) {
+          state.symb = (state.symb === 'm' ? '{' : '}');
+          state.reverseSymb = state.symb === '{' ? '}' : '{';
+        },
+        isComplete: function(state) {
+          if (state.nextCh === state.symb)return true;
+          return false;
+        }
+      },
+      preprocess: {
+        init: function(state) {
+          state.index = 0;
+        },
+        isComplete: function(state) {
+          if (state.nextCh === '#') {
+            var token = state.lineText.match(/#(\w+)/)[1];
+            if (token === 'endif') {
+              if (state.forward && state.depth === 0) {
+                return true;
+              }
+              state.depth++;
+            } else if (token === 'if') {
+              if (!state.forward && state.depth === 0) {
+                return true;
+              }
+              state.depth--;
+            }
+            if (token === 'else' && state.depth === 0)return true;
+          }
+          return false;
+        }
+      }
+    };
+    function findSymbol(cm, repeat, forward, symb) {
+      var cur = copyCursor(cm.getCursor());
+      var increment = forward ? 1 : -1;
+      var endLine = forward ? cm.lineCount() : -1;
+      var curCh = cur.ch;
+      var line = cur.line;
+      var lineText = cm.getLine(line);
+      var state = {
+        lineText: lineText,
+        nextCh: lineText.charAt(curCh),
+        lastCh: null,
+        index: curCh,
+        symb: symb,
+        reverseSymb: (forward ?  { ')': '(', '}': '{' } : { '(': ')', '{': '}' })[symb],
+        forward: forward,
+        depth: 0,
+        curMoveThrough: false
+      };
+      var mode = symbolToMode[symb];
+      if (!mode)return cur;
+      var init = findSymbolModes[mode].init;
+      var isComplete = findSymbolModes[mode].isComplete;
+      if (init) { init(state); }
+      while (line !== endLine && repeat) {
+        state.index += increment;
+        state.nextCh = state.lineText.charAt(state.index);
+        if (!state.nextCh) {
+          line += increment;
+          state.lineText = cm.getLine(line) || '';
+          if (increment > 0) {
+            state.index = 0;
+          } else {
+            var lineLen = state.lineText.length;
+            state.index = (lineLen > 0) ? (lineLen-1) : 0;
+          }
+          state.nextCh = state.lineText.charAt(state.index);
+        }
+        if (isComplete(state)) {
+          cur.line = line;
+          cur.ch = state.index;
+          repeat--;
+        }
+      }
+      if (state.nextCh || state.curMoveThrough) {
+        return Pos(line, state.index);
+      }
+      return cur;
+    }
+    function findWord(cm, cur, forward, bigWord, emptyLineIsWord) {
+      var lineNum = cur.line;
+      var pos = cur.ch;
+      var line = cm.getLine(lineNum);
+      var dir = forward ? 1 : -1;
+      var charTests = bigWord ? bigWordCharTest: wordCharTest;
+
+      if (emptyLineIsWord && line == '') {
+        lineNum += dir;
+        line = cm.getLine(lineNum);
+        if (!isLine(cm, lineNum)) {
+          return null;
+        }
+        pos = (forward) ? 0 : line.length;
+      }
+
+      while (true) {
+        if (emptyLineIsWord && line == '') {
+          return { from: 0, to: 0, line: lineNum };
+        }
+        var stop = (dir > 0) ? line.length : -1;
+        var wordStart = stop, wordEnd = stop;
+        while (pos != stop) {
+          var foundWord = false;
+          for (var i = 0; i < charTests.length && !foundWord; ++i) {
+            if (charTests[i](line.charAt(pos))) {
+              wordStart = pos;
+              while (pos != stop && charTests[i](line.charAt(pos))) {
+                pos += dir;
+              }
+              wordEnd = pos;
+              foundWord = wordStart != wordEnd;
+              if (wordStart == cur.ch && lineNum == cur.line &&
+                  wordEnd == wordStart + dir) {
+                continue;
+              } else {
+                return {
+                  from: Math.min(wordStart, wordEnd + 1),
+                  to: Math.max(wordStart, wordEnd),
+                  line: lineNum };
+              }
+            }
+          }
+          if (!foundWord) {
+            pos += dir;
+          }
+        }
+        lineNum += dir;
+        if (!isLine(cm, lineNum)) {
+          return null;
+        }
+        line = cm.getLine(lineNum);
+        pos = (dir > 0) ? 0 : line.length;
+      }
+      throw new Error('The impossible happened.');
+    }
+    function moveToWord(cm, cur, repeat, forward, wordEnd, bigWord) {
+      var curStart = copyCursor(cur);
+      var words = [];
+      if (forward && !wordEnd || !forward && wordEnd) {
+        repeat++;
+      }
+      var emptyLineIsWord = !(forward && wordEnd);
+      for (var i = 0; i < repeat; i++) {
+        var word = findWord(cm, cur, forward, bigWord, emptyLineIsWord);
+        if (!word) {
+          var eodCh = lineLength(cm, cm.lastLine());
+          words.push(forward
+              ? {line: cm.lastLine(), from: eodCh, to: eodCh}
+              : {line: 0, from: 0, to: 0});
+          break;
+        }
+        words.push(word);
+        cur = Pos(word.line, forward ? (word.to - 1) : word.from);
+      }
+      var shortCircuit = words.length != repeat;
+      var firstWord = words[0];
+      var lastWord = words.pop();
+      if (forward && !wordEnd) {
+        if (!shortCircuit && (firstWord.from != curStart.ch || firstWord.line != curStart.line)) {
+          lastWord = words.pop();
+        }
+        return Pos(lastWord.line, lastWord.from);
+      } else if (forward && wordEnd) {
+        return Pos(lastWord.line, lastWord.to - 1);
+      } else if (!forward && wordEnd) {
+        if (!shortCircuit && (firstWord.to != curStart.ch || firstWord.line != curStart.line)) {
+          lastWord = words.pop();
+        }
+        return Pos(lastWord.line, lastWord.to);
+      } else {
+        return Pos(lastWord.line, lastWord.from);
+      }
+    }
+
+    function moveToCharacter(cm, repeat, forward, character) {
+      var cur = cm.getCursor();
+      var start = cur.ch;
+      var idx;
+      for (var i = 0; i < repeat; i ++) {
+        var line = cm.getLine(cur.line);
+        idx = charIdxInLine(start, line, character, forward, true);
+        if (idx == -1) {
+          return null;
+        }
+        start = idx;
+      }
+      return Pos(cm.getCursor().line, idx);
+    }
+
+    function moveToColumn(cm, repeat) {
+      var line = cm.getCursor().line;
+      return clipCursorToContent(cm, Pos(line, repeat - 1));
+    }
+
+    function updateMark(cm, vim, markName, pos) {
+      if (!inArray(markName, validMarks)) {
+        return;
+      }
+      if (vim.marks[markName]) {
+        vim.marks[markName].clear();
+      }
+      vim.marks[markName] = cm.setBookmark(pos);
+    }
+
+    function charIdxInLine(start, line, character, forward, includeChar) {
+      var idx;
+      if (forward) {
+        idx = line.indexOf(character, start + 1);
+        if (idx != -1 && !includeChar) {
+          idx -= 1;
+        }
+      } else {
+        idx = line.lastIndexOf(character, start - 1);
+        if (idx != -1 && !includeChar) {
+          idx += 1;
+        }
+      }
+      return idx;
+    }
+
+    function findParagraph(cm, head, repeat, dir, inclusive) {
+      var line = head.line;
+      var min = cm.firstLine();
+      var max = cm.lastLine();
+      var start, end, i = line;
+      function isEmpty(i) { return !/\S/.test(cm.getLine(i)); } // ace_patch
+      function isBoundary(i, dir, any) {
+        if (any) { return isEmpty(i) != isEmpty(i + dir); }
+        return !isEmpty(i) && isEmpty(i + dir);
+      }
+      if (dir) {
+        while (min <= i && i <= max && repeat > 0) {
+          if (isBoundary(i, dir)) { repeat--; }
+          i += dir;
+        }
+        return new Pos(i, 0);
+      }
+
+      var vim = cm.state.vim;
+      if (vim.visualLine && isBoundary(line, 1, true)) {
+        var anchor = vim.sel.anchor;
+        if (isBoundary(anchor.line, -1, true)) {
+          if (!inclusive || anchor.line != line) {
+            line += 1;
+          }
+        }
+      }
+      var startState = isEmpty(line);
+      for (i = line; i <= max && repeat; i++) {
+        if (isBoundary(i, 1, true)) {
+          if (!inclusive || isEmpty(i) != startState) {
+            repeat--;
+          }
+        }
+      }
+      end = new Pos(i, 0);
+      if (i > max && !startState) { startState = true; }
+      else { inclusive = false; }
+      for (i = line; i > min; i--) {
+        if (!inclusive || isEmpty(i) == startState || i == line) {
+          if (isBoundary(i, -1, true)) { break; }
+        }
+      }
+      start = new Pos(i, 0);
+      return { start: start, end: end };
+    }
+    function selectCompanionObject(cm, head, symb, inclusive) {
+      var cur = head, start, end;
+
+      var bracketRegexp = ({
+        '(': /[()]/, ')': /[()]/,
+        '[': /[[\]]/, ']': /[[\]]/,
+        '{': /[{}]/, '}': /[{}]/})[symb];
+      var openSym = ({
+        '(': '(', ')': '(',
+        '[': '[', ']': '[',
+        '{': '{', '}': '{'})[symb];
+      var curChar = cm.getLine(cur.line).charAt(cur.ch);
+      var offset = curChar === openSym ? 1 : 0;
+
+      start = cm.scanForBracket(Pos(cur.line, cur.ch + offset), -1, null, {'bracketRegex': bracketRegexp});
+      end = cm.scanForBracket(Pos(cur.line, cur.ch + offset), 1, null, {'bracketRegex': bracketRegexp});
+
+      if (!start || !end) {
+        return { start: cur, end: cur };
+      }
+
+      start = start.pos;
+      end = end.pos;
+
+      if ((start.line == end.line && start.ch > end.ch)
+          || (start.line > end.line)) {
+        var tmp = start;
+        start = end;
+        end = tmp;
+      }
+
+      if (inclusive) {
+        end.ch += 1;
+      } else {
+        start.ch += 1;
+      }
+
+      return { start: start, end: end };
+    }
+    function findBeginningAndEnd(cm, head, symb, inclusive) {
+      var cur = copyCursor(head);
+      var line = cm.getLine(cur.line);
+      var chars = line.split('');
+      var start, end, i, len;
+      var firstIndex = chars.indexOf(symb);
+      if (cur.ch < firstIndex) {
+        cur.ch = firstIndex;
+      }
+      else if (firstIndex < cur.ch && chars[cur.ch] == symb) {
+        end = cur.ch; // assign end to the current cursor
+        --cur.ch; // make sure to look backwards
+      }
+      if (chars[cur.ch] == symb && !end) {
+        start = cur.ch + 1; // assign start to ahead of the cursor
+      } else {
+        for (i = cur.ch; i > -1 && !start; i--) {
+          if (chars[i] == symb) {
+            start = i + 1;
+          }
+        }
+      }
+      if (start && !end) {
+        for (i = start, len = chars.length; i < len && !end; i++) {
+          if (chars[i] == symb) {
+            end = i;
+          }
+        }
+      }
+      if (!start || !end) {
+        return { start: cur, end: cur };
+      }
+      if (inclusive) {
+        --start; ++end;
+      }
+
+      return {
+        start: Pos(cur.line, start),
+        end: Pos(cur.line, end)
+      };
+    }
+    defineOption('pcre', true, 'boolean');
+    function SearchState() {}
+    SearchState.prototype = {
+      getQuery: function() {
+        return vimGlobalState.query;
+      },
+      setQuery: function(query) {
+        vimGlobalState.query = query;
+      },
+      getOverlay: function() {
+        return this.searchOverlay;
+      },
+      setOverlay: function(overlay) {
+        this.searchOverlay = overlay;
+      },
+      isReversed: function() {
+        return vimGlobalState.isReversed;
+      },
+      setReversed: function(reversed) {
+        vimGlobalState.isReversed = reversed;
+      },
+      getScrollbarAnnotate: function() {
+        return this.annotate;
+      },
+      setScrollbarAnnotate: function(annotate) {
+        this.annotate = annotate;
+      }
+    };
+    function getSearchState(cm) {
+      var vim = cm.state.vim;
+      return vim.searchState_ || (vim.searchState_ = new SearchState());
+    }
+    function dialog(cm, template, shortText, onClose, options) {
+      if (cm.openDialog) {
+        cm.openDialog(template, onClose, { bottom: true, value: options.value,
+            onKeyDown: options.onKeyDown, onKeyUp: options.onKeyUp,
+            selectValueOnOpen: false});
+      }
+      else {
+        onClose(prompt(shortText, ''));
+      }
+    }
+    function splitBySlash(argString) {
+      var slashes = findUnescapedSlashes(argString) || [];
+      if (!slashes.length) return [];
+      var tokens = [];
+      if (slashes[0] !== 0) return;
+      for (var i = 0; i < slashes.length; i++) {
+        if (typeof slashes[i] == 'number')
+          tokens.push(argString.substring(slashes[i] + 1, slashes[i+1]));
+      }
+      return tokens;
+    }
+
+    function findUnescapedSlashes(str) {
+      var escapeNextChar = false;
+      var slashes = [];
+      for (var i = 0; i < str.length; i++) {
+        var c = str.charAt(i);
+        if (!escapeNextChar && c == '/') {
+          slashes.push(i);
+        }
+        escapeNextChar = !escapeNextChar && (c == '\\');
+      }
+      return slashes;
+    }
+    function translateRegex(str) {
+      var specials = '|(){';
+      var unescape = '}';
+      var escapeNextChar = false;
+      var out = [];
+      for (var i = -1; i < str.length; i++) {
+        var c = str.charAt(i) || '';
+        var n = str.charAt(i+1) || '';
+        var specialComesNext = (n && specials.indexOf(n) != -1);
+        if (escapeNextChar) {
+          if (c !== '\\' || !specialComesNext) {
+            out.push(c);
+          }
+          escapeNextChar = false;
+        } else {
+          if (c === '\\') {
+            escapeNextChar = true;
+            if (n && unescape.indexOf(n) != -1) {
+              specialComesNext = true;
+            }
+            if (!specialComesNext || n === '\\') {
+              out.push(c);
+            }
+          } else {
+            out.push(c);
+            if (specialComesNext && n !== '\\') {
+              out.push('\\');
+            }
+          }
+        }
+      }
+      return out.join('');
+    }
+    var charUnescapes = {'\\n': '\n', '\\r': '\r', '\\t': '\t'};
+    function translateRegexReplace(str) {
+      var escapeNextChar = false;
+      var out = [];
+      for (var i = -1; i < str.length; i++) {
+        var c = str.charAt(i) || '';
+        var n = str.charAt(i+1) || '';
+        if (charUnescapes[c + n]) {
+          out.push(charUnescapes[c+n]);
+          i++;
+        } else if (escapeNextChar) {
+          out.push(c);
+          escapeNextChar = false;
+        } else {
+          if (c === '\\') {
+            escapeNextChar = true;
+            if ((isNumber(n) || n === '$')) {
+              out.push('$');
+            } else if (n !== '/' && n !== '\\') {
+              out.push('\\');
+            }
+          } else {
+            if (c === '$') {
+              out.push('$');
+            }
+            out.push(c);
+            if (n === '/') {
+              out.push('\\');
+            }
+          }
+        }
+      }
+      return out.join('');
+    }
+    var unescapes = {'\\/': '/', '\\\\': '\\', '\\n': '\n', '\\r': '\r', '\\t': '\t'};
+    function unescapeRegexReplace(str) {
+      var stream = new CodeMirror.StringStream(str);
+      var output = [];
+      while (!stream.eol()) {
+        while (stream.peek() && stream.peek() != '\\') {
+          output.push(stream.next());
+        }
+        var matched = false;
+        for (var matcher in unescapes) {
+          if (stream.match(matcher, true)) {
+            matched = true;
+            output.push(unescapes[matcher]);
+            break;
+          }
+        }
+        if (!matched) {
+          output.push(stream.next());
+        }
+      }
+      return output.join('');
+    }
+    function parseQuery(query, ignoreCase, smartCase) {
+      var lastSearchRegister = vimGlobalState.registerController.getRegister('/');
+      lastSearchRegister.setText(query);
+      if (query instanceof RegExp) { return query; }
+      var slashes = findUnescapedSlashes(query);
+      var regexPart;
+      var forceIgnoreCase;
+      if (!slashes.length) {
+        regexPart = query;
+      } else {
+        regexPart = query.substring(0, slashes[0]);
+        var flagsPart = query.substring(slashes[0]);
+        forceIgnoreCase = (flagsPart.indexOf('i') != -1);
+      }
+      if (!regexPart) {
+        return null;
+      }
+      if (!getOption('pcre')) {
+        regexPart = translateRegex(regexPart);
+      }
+      if (smartCase) {
+        ignoreCase = (/^[^A-Z]*$/).test(regexPart);
+      }
+      var regexp = new RegExp(regexPart,
+          (ignoreCase || forceIgnoreCase) ? 'i' : undefined);
+      return regexp;
+    }
+    function showConfirm(cm, text) {
+      if (cm.openNotification) {
+        cm.openNotification('<span style="color: red">' + text + '</span>',
+                            {bottom: true, duration: 5000});
+      } else {
+        alert(text);
+      }
+    }
+    function makePrompt(prefix, desc) {
+      var raw = '';
+      if (prefix) {
+        raw += '<span style="font-family: monospace">' + prefix + '</span>';
+      }
+      raw += '<input type="text"/> ' +
+          '<span style="color: #888">';
+      if (desc) {
+        raw += '<span style="color: #888">';
+        raw += desc;
+        raw += '</span>';
+      }
+      return raw;
+    }
+    var searchPromptDesc = '(Javascript regexp)';
+    function showPrompt(cm, options) {
+      var shortText = (options.prefix || '') + ' ' + (options.desc || '');
+      var prompt = makePrompt(options.prefix, options.desc);
+      dialog(cm, prompt, shortText, options.onClose, options);
+    }
+    function regexEqual(r1, r2) {
+      if (r1 instanceof RegExp && r2 instanceof RegExp) {
+          var props = ['global', 'multiline', 'ignoreCase', 'source'];
+          for (var i = 0; i < props.length; i++) {
+              var prop = props[i];
+              if (r1[prop] !== r2[prop]) {
+                  return false;
+              }
+          }
+          return true;
+      }
+      return false;
+    }
+    function updateSearchQuery(cm, rawQuery, ignoreCase, smartCase) {
+      if (!rawQuery) {
+        return;
+      }
+      var state = getSearchState(cm);
+      var query = parseQuery(rawQuery, !!ignoreCase, !!smartCase);
+      if (!query) {
+        return;
+      }
+      highlightSearchMatches(cm, query);
+      if (regexEqual(query, state.getQuery())) {
+        return query;
+      }
+      state.setQuery(query);
+      return query;
+    }
+    function searchOverlay(query) {
+      if (query.source.charAt(0) == '^') {
+        var matchSol = true;
+      }
+      return {
+        token: function(stream) {
+          if (matchSol && !stream.sol()) {
+            stream.skipToEnd();
+            return;
+          }
+          var match = stream.match(query, false);
+          if (match) {
+            if (match[0].length == 0) {
+              stream.next();
+              return 'searching';
+            }
+            if (!stream.sol()) {
+              stream.backUp(1);
+              if (!query.exec(stream.next() + match[0])) {
+                stream.next();
+                return null;
+              }
+            }
+            stream.match(query);
+            return 'searching';
+          }
+          while (!stream.eol()) {
+            stream.next();
+            if (stream.match(query, false)) break;
+          }
+        },
+        query: query
+      };
+    }
+    function highlightSearchMatches(cm, query) {
+      var searchState = getSearchState(cm);
+      var overlay = searchState.getOverlay();
+      if (!overlay || query != overlay.query) {
+        if (overlay) {
+          cm.removeOverlay(overlay);
+        }
+        overlay = searchOverlay(query);
+        cm.addOverlay(overlay);
+        if (cm.showMatchesOnScrollbar) {
+          if (searchState.getScrollbarAnnotate()) {
+            searchState.getScrollbarAnnotate().clear();
+          }
+          searchState.setScrollbarAnnotate(cm.showMatchesOnScrollbar(query));
+        }
+        searchState.setOverlay(overlay);
+      }
+    }
+    function findNext(cm, prev, query, repeat) {
+      if (repeat === undefined) { repeat = 1; }
+      return cm.operation(function() {
+        var pos = cm.getCursor();
+        var cursor = cm.getSearchCursor(query, pos);
+        for (var i = 0; i < repeat; i++) {
+          var found = cursor.find(prev);
+          if (i == 0 && found && cursorEqual(cursor.from(), pos)) { found = cursor.find(prev); }
+          if (!found) {
+            cursor = cm.getSearchCursor(query,
+                (prev) ? Pos(cm.lastLine()) : Pos(cm.firstLine(), 0) );
+            if (!cursor.find(prev)) {
+              return;
+            }
+          }
+        }
+        return cursor.from();
+      });
+    }
+    function clearSearchHighlight(cm) {
+      var state = getSearchState(cm);
+      cm.removeOverlay(getSearchState(cm).getOverlay());
+      state.setOverlay(null);
+      if (state.getScrollbarAnnotate()) {
+        state.getScrollbarAnnotate().clear();
+        state.setScrollbarAnnotate(null);
+      }
+    }
+    function isInRange(pos, start, end) {
+      if (typeof pos != 'number') {
+        pos = pos.line;
+      }
+      if (start instanceof Array) {
+        return inArray(pos, start);
+      } else {
+        if (end) {
+          return (pos >= start && pos <= end);
+        } else {
+          return pos == start;
+        }
+      }
+    }
+    function getUserVisibleLines(cm) {
+      var renderer = cm.ace.renderer;
+      return {
+        top: renderer.getFirstFullyVisibleRow(),
+        bottom: renderer.getLastFullyVisibleRow()
+      }
+    }
+
+    var ExCommandDispatcher = function() {
+      this.buildCommandMap_();
+    };
+    ExCommandDispatcher.prototype = {
+      processCommand: function(cm, input, opt_params) {
+        var that = this;
+        cm.operation(function () {
+          cm.curOp.isVimOp = true;
+          that._processCommand(cm, input, opt_params);
+        });
+      },
+      _processCommand: function(cm, input, opt_params) {
+        var vim = cm.state.vim;
+        var commandHistoryRegister = vimGlobalState.registerController.getRegister(':');
+        var previousCommand = commandHistoryRegister.toString();
+        if (vim.visualMode) {
+          exitVisualMode(cm);
+        }
+        var inputStream = new CodeMirror.StringStream(input);
+        commandHistoryRegister.setText(input);
+        var params = opt_params || {};
+        params.input = input;
+        try {
+          this.parseInput_(cm, inputStream, params);
+        } catch(e) {
+          showConfirm(cm, e);
+          throw e;
+        }
+        var command;
+        var commandName;
+        if (!params.commandName) {
+          if (params.line !== undefined) {
+            commandName = 'move';
+          }
+        } else {
+          command = this.matchCommand_(params.commandName);
+          if (command) {
+            commandName = command.name;
+            if (command.excludeFromCommandHistory) {
+              commandHistoryRegister.setText(previousCommand);
+            }
+            this.parseCommandArgs_(inputStream, params, command);
+            if (command.type == 'exToKey') {
+              for (var i = 0; i < command.toKeys.length; i++) {
+                CodeMirror.Vim.handleKey(cm, command.toKeys[i], 'mapping');
+              }
+              return;
+            } else if (command.type == 'exToEx') {
+              this.processCommand(cm, command.toInput);
+              return;
+            }
+          }
+        }
+        if (!commandName) {
+          showConfirm(cm, 'Not an editor command ":' + input + '"');
+          return;
+        }
+        try {
+          exCommands[commandName](cm, params);
+          if ((!command || !command.possiblyAsync) && params.callback) {
+            params.callback();
+          }
+        } catch(e) {
+          showConfirm(cm, e);
+          throw e;
+        }
+      },
+      parseInput_: function(cm, inputStream, result) {
+        inputStream.eatWhile(':');
+        if (inputStream.eat('%')) {
+          result.line = cm.firstLine();
+          result.lineEnd = cm.lastLine();
+        } else {
+          result.line = this.parseLineSpec_(cm, inputStream);
+          if (result.line !== undefined && inputStream.eat(',')) {
+            result.lineEnd = this.parseLineSpec_(cm, inputStream);
+          }
+        }
+        var commandMatch = inputStream.match(/^(\w+)/);
+        if (commandMatch) {
+          result.commandName = commandMatch[1];
+        } else {
+          result.commandName = inputStream.match(/.*/)[0];
+        }
+
+        return result;
+      },
+      parseLineSpec_: function(cm, inputStream) {
+        var numberMatch = inputStream.match(/^(\d+)/);
+        if (numberMatch) {
+          return parseInt(numberMatch[1], 10) - 1;
+        }
+        switch (inputStream.next()) {
+          case '.':
+            return cm.getCursor().line;
+          case '$':
+            return cm.lastLine();
+          case '\'':
+            var mark = cm.state.vim.marks[inputStream.next()];
+            if (mark && mark.find()) {
+              return mark.find().line;
+            }
+            throw new Error('Mark not set');
+          default:
+            inputStream.backUp(1);
+            return undefined;
+        }
+      },
+      parseCommandArgs_: function(inputStream, params, command) {
+        if (inputStream.eol()) {
+          return;
+        }
+        params.argString = inputStream.match(/.*/)[0];
+        var delim = command.argDelimiter || /\s+/;
+        var args = trim(params.argString).split(delim);
+        if (args.length && args[0]) {
+          params.args = args;
+        }
+      },
+      matchCommand_: function(commandName) {
+        for (var i = commandName.length; i > 0; i--) {
+          var prefix = commandName.substring(0, i);
+          if (this.commandMap_[prefix]) {
+            var command = this.commandMap_[prefix];
+            if (command.name.indexOf(commandName) === 0) {
+              return command;
+            }
+          }
+        }
+        return null;
+      },
+      buildCommandMap_: function() {
+        this.commandMap_ = {};
+        for (var i = 0; i < defaultExCommandMap.length; i++) {
+          var command = defaultExCommandMap[i];
+          var key = command.shortName || command.name;
+          this.commandMap_[key] = command;
+        }
+      },
+      map: function(lhs, rhs, ctx) {
+        if (lhs != ':' && lhs.charAt(0) == ':') {
+          if (ctx) { throw Error('Mode not supported for ex mappings'); }
+          var commandName = lhs.substring(1);
+          if (rhs != ':' && rhs.charAt(0) == ':') {
+            this.commandMap_[commandName] = {
+              name: commandName,
+              type: 'exToEx',
+              toInput: rhs.substring(1),
+              user: true
+            };
+          } else {
+            this.commandMap_[commandName] = {
+              name: commandName,
+              type: 'exToKey',
+              toKeys: rhs,
+              user: true
+            };
+          }
+        } else {
+          if (rhs != ':' && rhs.charAt(0) == ':') {
+            var mapping = {
+              keys: lhs,
+              type: 'keyToEx',
+              exArgs: { input: rhs.substring(1) },
+              user: true};
+            if (ctx) { mapping.context = ctx; }
+            defaultKeymap.unshift(mapping);
+          } else {
+            var mapping = {
+              keys: lhs,
+              type: 'keyToKey',
+              toKeys: rhs,
+              user: true
+            };
+            if (ctx) { mapping.context = ctx; }
+            defaultKeymap.unshift(mapping);
+          }
+        }
+      },
+      unmap: function(lhs, ctx) {
+        if (lhs != ':' && lhs.charAt(0) == ':') {
+          if (ctx) { throw Error('Mode not supported for ex mappings'); }
+          var commandName = lhs.substring(1);
+          if (this.commandMap_[commandName] && this.commandMap_[commandName].user) {
+            delete this.commandMap_[commandName];
+            return;
+          }
+        } else {
+          var keys = lhs;
+          for (var i = 0; i < defaultKeymap.length; i++) {
+            if (keys == defaultKeymap[i].keys
+                && defaultKeymap[i].context === ctx
+                && defaultKeymap[i].user) {
+              defaultKeymap.splice(i, 1);
+              return;
+            }
+          }
+        }
+        throw Error('No such mapping.');
+      }
+    };
+
+    var exCommands = {
+      colorscheme: function(cm, params) {
+        if (!params.args || params.args.length < 1) {
+          showConfirm(cm, cm.getOption('theme'));
+          return;
+        }
+        cm.setOption('theme', params.args[0]);
+      },
+      map: function(cm, params, ctx) {
+        var mapArgs = params.args;
+        if (!mapArgs || mapArgs.length < 2) {
+          if (cm) {
+            showConfirm(cm, 'Invalid mapping: ' + params.input);
+          }
+          return;
+        }
+        exCommandDispatcher.map(mapArgs[0], mapArgs[1], ctx);
+      },
+      imap: function(cm, params) { this.map(cm, params, 'insert'); },
+      nmap: function(cm, params) { this.map(cm, params, 'normal'); },
+      vmap: function(cm, params) { this.map(cm, params, 'visual'); },
+      unmap: function(cm, params, ctx) {
+        var mapArgs = params.args;
+        if (!mapArgs || mapArgs.length < 1) {
+          if (cm) {
+            showConfirm(cm, 'No such mapping: ' + params.input);
+          }
+          return;
+        }
+        exCommandDispatcher.unmap(mapArgs[0], ctx);
+      },
+      move: function(cm, params) {
+        commandDispatcher.processCommand(cm, cm.state.vim, {
+            type: 'motion',
+            motion: 'moveToLineOrEdgeOfDocument',
+            motionArgs: { forward: false, explicitRepeat: true,
+              linewise: true },
+            repeatOverride: params.line+1});
+      },
+      set: function(cm, params) {
+        var setArgs = params.args;
+        var setCfg = params.setCfg || {};
+        if (!setArgs || setArgs.length < 1) {
+          if (cm) {
+            showConfirm(cm, 'Invalid mapping: ' + params.input);
+          }
+          return;
+        }
+        var expr = setArgs[0].split('=');
+        var optionName = expr[0];
+        var value = expr[1];
+        var forceGet = false;
+
+        if (optionName.charAt(optionName.length - 1) == '?') {
+          if (value) { throw Error('Trailing characters: ' + params.argString); }
+          optionName = optionName.substring(0, optionName.length - 1);
+          forceGet = true;
+        }
+        if (value === undefined && optionName.substring(0, 2) == 'no') {
+          optionName = optionName.substring(2);
+          value = false;
+        }
+
+        var optionIsBoolean = options[optionName] && options[optionName].type == 'boolean';
+        if (optionIsBoolean && value == undefined) {
+          value = true;
+        }
+        if (!optionIsBoolean && value === undefined || forceGet) {
+          var oldValue = getOption(optionName, cm, setCfg);
+          if (oldValue === true || oldValue === false) {
+            showConfirm(cm, ' ' + (oldValue ? '' : 'no') + optionName);
+          } else {
+            showConfirm(cm, '  ' + optionName + '=' + oldValue);
+          }
+        } else {
+          setOption(optionName, value, cm, setCfg);
+        }
+      },
+      setlocal: function (cm, params) {
+        params.setCfg = {scope: 'local'};
+        this.set(cm, params);
+      },
+      setglobal: function (cm, params) {
+        params.setCfg = {scope: 'global'};
+        this.set(cm, params);
+      },
+      registers: function(cm, params) {
+        var regArgs = params.args;
+        var registers = vimGlobalState.registerController.registers;
+        var regInfo = '----------Registers----------<br><br>';
+        if (!regArgs) {
+          for (var registerName in registers) {
+            var text = registers[registerName].toString();
+            if (text.length) {
+              regInfo += '"' + registerName + '    ' + text + '<br>';
+            }
+          }
+        } else {
+          var registerName;
+          regArgs = regArgs.join('');
+          for (var i = 0; i < regArgs.length; i++) {
+            registerName = regArgs.charAt(i);
+            if (!vimGlobalState.registerController.isValidRegister(registerName)) {
+              continue;
+            }
+            var register = registers[registerName] || new Register();
+            regInfo += '"' + registerName + '    ' + register.toString() + '<br>';
+          }
+        }
+        showConfirm(cm, regInfo);
+      },
+      sort: function(cm, params) {
+        var reverse, ignoreCase, unique, number;
+        function parseArgs() {
+          if (params.argString) {
+            var args = new CodeMirror.StringStream(params.argString);
+            if (args.eat('!')) { reverse = true; }
+            if (args.eol()) { return; }
+            if (!args.eatSpace()) { return 'Invalid arguments'; }
+            var opts = args.match(/[a-z]+/);
+            if (opts) {
+              opts = opts[0];
+              ignoreCase = opts.indexOf('i') != -1;
+              unique = opts.indexOf('u') != -1;
+              var decimal = opts.indexOf('d') != -1 && 1;
+              var hex = opts.indexOf('x') != -1 && 1;
+              var octal = opts.indexOf('o') != -1 && 1;
+              if (decimal + hex + octal > 1) { return 'Invalid arguments'; }
+              number = decimal && 'decimal' || hex && 'hex' || octal && 'octal';
+            }
+            if (args.eatSpace() && args.match(/\/.*\//)) { 'patterns not supported'; }
+          }
+        }
+        var err = parseArgs();
+        if (err) {
+          showConfirm(cm, err + ': ' + params.argString);
+          return;
+        }
+        var lineStart = params.line || cm.firstLine();
+        var lineEnd = params.lineEnd || params.line || cm.lastLine();
+        if (lineStart == lineEnd) { return; }
+        var curStart = Pos(lineStart, 0);
+        var curEnd = Pos(lineEnd, lineLength(cm, lineEnd));
+        var text = cm.getRange(curStart, curEnd).split('\n');
+        var numberRegex = (number == 'decimal') ? /(-?)([\d]+)/ :
+           (number == 'hex') ? /(-?)(?:0x)?([0-9a-f]+)/i :
+           (number == 'octal') ? /([0-7]+)/ : null;
+        var radix = (number == 'decimal') ? 10 : (number == 'hex') ? 16 : (number == 'octal') ? 8 : null;
+        var numPart = [], textPart = [];
+        if (number) {
+          for (var i = 0; i < text.length; i++) {
+            if (numberRegex.exec(text[i])) {
+              numPart.push(text[i]);
+            } else {
+              textPart.push(text[i]);
+            }
+          }
+        } else {
+          textPart = text;
+        }
+        function compareFn(a, b) {
+          if (reverse) { var tmp; tmp = a; a = b; b = tmp; }
+          if (ignoreCase) { a = a.toLowerCase(); b = b.toLowerCase(); }
+          var anum = number && numberRegex.exec(a);
+          var bnum = number && numberRegex.exec(b);
+          if (!anum) { return a < b ? -1 : 1; }
+          anum = parseInt((anum[1] + anum[2]).toLowerCase(), radix);
+          bnum = parseInt((bnum[1] + bnum[2]).toLowerCase(), radix);
+          return anum - bnum;
+        }
+        numPart.sort(compareFn);
+        textPart.sort(compareFn);
+        text = (!reverse) ? textPart.concat(numPart) : numPart.concat(textPart);
+        if (unique) { // Remove duplicate lines
+          var textOld = text;
+          var lastLine;
+          text = [];
+          for (var i = 0; i < textOld.length; i++) {
+            if (textOld[i] != lastLine) {
+              text.push(textOld[i]);
+            }
+            lastLine = textOld[i];
+          }
+        }
+        cm.replaceRange(text.join('\n'), curStart, curEnd);
+      },
+      global: function(cm, params) {
+        var argString = params.argString;
+        if (!argString) {
+          showConfirm(cm, 'Regular Expression missing from global');
+          return;
+        }
+        var lineStart = (params.line !== undefined) ? params.line : cm.firstLine();
+        var lineEnd = params.lineEnd || params.line || cm.lastLine();
+        var tokens = splitBySlash(argString);
+        var regexPart = argString, cmd;
+        if (tokens.length) {
+          regexPart = tokens[0];
+          cmd = tokens.slice(1, tokens.length).join('/');
+        }
+        if (regexPart) {
+          try {
+           updateSearchQuery(cm, regexPart, true /** ignoreCase */,
+             true /** smartCase */);
+          } catch (e) {
+           showConfirm(cm, 'Invalid regex: ' + regexPart);
+           return;
+          }
+        }
+        var query = getSearchState(cm).getQuery();
+        var matchedLines = [], content = '';
+        for (var i = lineStart; i <= lineEnd; i++) {
+          var matched = query.test(cm.getLine(i));
+          if (matched) {
+            matchedLines.push(i+1);
+            content+= cm.getLine(i) + '<br>';
+          }
+        }
+        if (!cmd) {
+          showConfirm(cm, content);
+          return;
+        }
+        var index = 0;
+        var nextCommand = function() {
+          if (index < matchedLines.length) {
+            var command = matchedLines[index] + cmd;
+            exCommandDispatcher.processCommand(cm, command, {
+              callback: nextCommand
+            });
+          }
+          index++;
+        };
+        nextCommand();
+      },
+      substitute: function(cm, params) {
+        if (!cm.getSearchCursor) {
+          throw new Error('Search feature not available. Requires searchcursor.js or ' +
+              'any other getSearchCursor implementation.');
+        }
+        var argString = params.argString;
+        var tokens = argString ? splitBySlash(argString) : [];
+        var regexPart, replacePart = '', trailing, flagsPart, count;
+        var confirm = false; // Whether to confirm each replace.
+        var global = false; // True to replace all instances on a line, false to replace only 1.
+        if (tokens.length) {
+          regexPart = tokens[0];
+          replacePart = tokens[1];
+          if (replacePart !== undefined) {
+            if (getOption('pcre')) {
+              replacePart = unescapeRegexReplace(replacePart);
+            } else {
+              replacePart = translateRegexReplace(replacePart);
+            }
+            vimGlobalState.lastSubstituteReplacePart = replacePart;
+          }
+          trailing = tokens[2] ? tokens[2].split(' ') : [];
+        } else {
+          if (argString && argString.length) {
+            showConfirm(cm, 'Substitutions should be of the form ' +
+                ':s/pattern/replace/');
+            return;
+          }
+        }
+        if (trailing) {
+          flagsPart = trailing[0];
+          count = parseInt(trailing[1]);
+          if (flagsPart) {
+            if (flagsPart.indexOf('c') != -1) {
+              confirm = true;
+              flagsPart.replace('c', '');
+            }
+            if (flagsPart.indexOf('g') != -1) {
+              global = true;
+              flagsPart.replace('g', '');
+            }
+            regexPart = regexPart + '/' + flagsPart;
+          }
+        }
+        if (regexPart) {
+          try {
+            updateSearchQuery(cm, regexPart, true /** ignoreCase */,
+              true /** smartCase */);
+          } catch (e) {
+            showConfirm(cm, 'Invalid regex: ' + regexPart);
+            return;
+          }
+        }
+        replacePart = replacePart || vimGlobalState.lastSubstituteReplacePart;
+        if (replacePart === undefined) {
+          showConfirm(cm, 'No previous substitute regular expression');
+          return;
+        }
+        var state = getSearchState(cm);
+        var query = state.getQuery();
+        var lineStart = (params.line !== undefined) ? params.line : cm.getCursor().line;
+        var lineEnd = params.lineEnd || lineStart;
+        if (lineStart == cm.firstLine() && lineEnd == cm.lastLine()) {
+          lineEnd = Infinity;
+        }
+        if (count) {
+          lineStart = lineEnd;
+          lineEnd = lineStart + count - 1;
+        }
+        var startPos = clipCursorToContent(cm, Pos(lineStart, 0));
+        var cursor = cm.getSearchCursor(query, startPos);
+        doReplace(cm, confirm, global, lineStart, lineEnd, cursor, query, replacePart, params.callback);
+      },
+      redo: CodeMirror.commands.redo,
+      undo: CodeMirror.commands.undo,
+      write: function(cm) {
+        if (CodeMirror.commands.save) {
+          CodeMirror.commands.save(cm);
+        } else {
+          cm.save();
+        }
+      },
+      nohlsearch: function(cm) {
+        clearSearchHighlight(cm);
+      },
+      delmarks: function(cm, params) {
+        if (!params.argString || !trim(params.argString)) {
+          showConfirm(cm, 'Argument required');
+          return;
+        }
+
+        var state = cm.state.vim;
+        var stream = new CodeMirror.StringStream(trim(params.argString));
+        while (!stream.eol()) {
+          stream.eatSpace();
+          var count = stream.pos;
+
+          if (!stream.match(/[a-zA-Z]/, false)) {
+            showConfirm(cm, 'Invalid argument: ' + params.argString.substring(count));
+            return;
+          }
+
+          var sym = stream.next();
+          if (stream.match('-', true)) {
+            if (!stream.match(/[a-zA-Z]/, false)) {
+              showConfirm(cm, 'Invalid argument: ' + params.argString.substring(count));
+              return;
+            }
+
+            var startMark = sym;
+            var finishMark = stream.next();
+            if (isLowerCase(startMark) && isLowerCase(finishMark) ||
+                isUpperCase(startMark) && isUpperCase(finishMark)) {
+              var start = startMark.charCodeAt(0);
+              var finish = finishMark.charCodeAt(0);
+              if (start >= finish) {
+                showConfirm(cm, 'Invalid argument: ' + params.argString.substring(count));
+                return;
+              }
+              for (var j = 0; j <= finish - start; j++) {
+                var mark = String.fromCharCode(start + j);
+                delete state.marks[mark];
+              }
+            } else {
+              showConfirm(cm, 'Invalid argument: ' + startMark + '-');
+              return;
+            }
+          } else {
+            delete state.marks[sym];
+          }
+        }
+      }
+    };
+
+    var exCommandDispatcher = new ExCommandDispatcher();
+    function doReplace(cm, confirm, global, lineStart, lineEnd, searchCursor, query,
+        replaceWith, callback) {
+      cm.state.vim.exMode = true;
+      var done = false;
+      var lastPos = searchCursor.from();
+      function replaceAll() {
+        cm.operation(function() {
+          while (!done) {
+            replace();
+            next();
+          }
+          stop();
+        });
+      }
+      function replace() {
+        var text = cm.getRange(searchCursor.from(), searchCursor.to());
+        var newText = text.replace(query, replaceWith);
+        searchCursor.replace(newText);
+      }
+      function next() {
+        while(searchCursor.findNext() &&
+              isInRange(searchCursor.from(), lineStart, lineEnd)) {
+          if (!global && lastPos && searchCursor.from().line == lastPos.line) {
+            continue;
+          }
+          cm.scrollIntoView(searchCursor.from(), 30);
+          cm.setSelection(searchCursor.from(), searchCursor.to());
+          lastPos = searchCursor.from();
+          done = false;
+          return;
+        }
+        done = true;
+      }
+      function stop(close) {
+        if (close) { close(); }
+        cm.focus();
+        if (lastPos) {
+          cm.setCursor(lastPos);
+          var vim = cm.state.vim;
+          vim.exMode = false;
+          vim.lastHPos = vim.lastHSPos = lastPos.ch;
+        }
+        if (callback) { callback(); }
+      }
+      function onPromptKeyDown(e, _value, close) {
+        CodeMirror.e_stop(e);
+        var keyName = CodeMirror.keyName(e);
+        switch (keyName) {
+          case 'Y':
+            replace(); next(); break;
+          case 'N':
+            next(); break;
+          case 'A':
+            var savedCallback = callback;
+            callback = undefined;
+            cm.operation(replaceAll);
+            callback = savedCallback;
+            break;
+          case 'L':
+            replace();
+          case 'Q':
+          case 'Esc':
+          case 'Ctrl-C':
+          case 'Ctrl-[':
+            stop(close);
+            break;
+        }
+        if (done) { stop(close); }
+        return true;
+      }
+      next();
+      if (done) {
+        showConfirm(cm, 'No matches for ' + query.source);
+        return;
+      }
+      if (!confirm) {
+        replaceAll();
+        if (callback) { callback(); };
+        return;
+      }
+      showPrompt(cm, {
+        prefix: 'replace with <strong>' + replaceWith + '</strong> (y/n/a/q/l)',
+        onKeyDown: onPromptKeyDown
+      });
+    }
+
+    CodeMirror.keyMap.vim = {
+      attach: attachVimMap,
+      detach: detachVimMap,
+      call: cmKey
+    };
+
+    function exitInsertMode(cm) {
+      var vim = cm.state.vim;
+      var macroModeState = vimGlobalState.macroModeState;
+      var insertModeChangeRegister = vimGlobalState.registerController.getRegister('.');
+      var isPlaying = macroModeState.isPlaying;
+      var lastChange = macroModeState.lastInsertModeChanges;
+      var text = [];
+      if (!isPlaying) {
+        var selLength = lastChange.inVisualBlock ? vim.lastSelection.visualBlock.height : 1;
+        var changes = lastChange.changes;
+        var text = [];
+        var i = 0;
+        while (i < changes.length) {
+          text.push(changes[i]);
+          if (changes[i] instanceof InsertModeKey) {
+             i++;
+          } else {
+             i+= selLength;
+          }
+        }
+        lastChange.changes = text;
+        cm.off('change', onChange);
+        CodeMirror.off(cm.getInputField(), 'keydown', onKeyEventTargetKeyDown);
+      }
+      if (!isPlaying && vim.insertModeRepeat > 1) {
+        repeatLastEdit(cm, vim, vim.insertModeRepeat - 1,
+            true /** repeatForInsert */);
+        vim.lastEditInputState.repeatOverride = vim.insertModeRepeat;
+      }
+      delete vim.insertModeRepeat;
+      vim.insertMode = false;
+      cm.setCursor(cm.getCursor().line, cm.getCursor().ch-1);
+      cm.setOption('keyMap', 'vim');
+      cm.setOption('disableInput', true);
+      cm.toggleOverwrite(false); // exit replace mode if we were in it.
+      insertModeChangeRegister.setText(lastChange.changes.join(''));
+      CodeMirror.signal(cm, "vim-mode-change", {mode: "normal"});
+      if (macroModeState.isRecording) {
+        logInsertModeChange(macroModeState);
+      }
+    }
+
+    function _mapCommand(command) {
+      defaultKeymap.unshift(command);
+    }
+
+    function mapCommand(keys, type, name, args, extra) {
+      var command = {keys: keys, type: type};
+      command[type] = name;
+      command[type + "Args"] = args;
+      for (var key in extra)
+        command[key] = extra[key];
+      _mapCommand(command);
+    }
+    defineOption('insertModeEscKeysTimeout', 200, 'number');
+
+    CodeMirror.keyMap['vim-insert'] = {
+      'Ctrl-N': 'autocomplete',
+      'Ctrl-P': 'autocomplete',
+      'Enter': function(cm) {
+        var fn = CodeMirror.commands.newlineAndIndentContinueComment ||
+            CodeMirror.commands.newlineAndIndent;
+        fn(cm);
+      },
+      fallthrough: ['default'],
+      attach: attachVimMap,
+      detach: detachVimMap,
+      call: cmKey
+    };
+
+    CodeMirror.keyMap['vim-replace'] = {
+      'Backspace': 'goCharLeft',
+      fallthrough: ['vim-insert'],
+      attach: attachVimMap,
+      detach: detachVimMap,
+      call: cmKey
+    };
+
+    function executeMacroRegister(cm, vim, macroModeState, registerName) {
+      var register = vimGlobalState.registerController.getRegister(registerName);
+      if (registerName == ':') {
+        if (register.keyBuffer[0]) {
+          exCommandDispatcher.processCommand(cm, register.keyBuffer[0]);
+        }
+        macroModeState.isPlaying = false;
+        return;
+      }
+      var keyBuffer = register.keyBuffer;
+      var imc = 0;
+      macroModeState.isPlaying = true;
+      macroModeState.replaySearchQueries = register.searchQueries.slice(0);
+      for (var i = 0; i < keyBuffer.length; i++) {
+        var text = keyBuffer[i];
+        var match, key;
+        while (text) {
+          match = (/<\w+-.+?>|<\w+>|./).exec(text);
+          key = match[0];
+          text = text.substring(match.index + key.length);
+          CodeMirror.Vim.handleKey(cm, key, 'macro');
+          if (vim.insertMode) {
+            var changes = register.insertModeChanges[imc++].changes;
+            vimGlobalState.macroModeState.lastInsertModeChanges.changes =
+                changes;
+            repeatInsertModeChanges(cm, changes, 1);
+            exitInsertMode(cm);
+          }
+        }
+      };
+      macroModeState.isPlaying = false;
+    }
+
+    function logKey(macroModeState, key) {
+      if (macroModeState.isPlaying) { return; }
+      var registerName = macroModeState.latestRegister;
+      var register = vimGlobalState.registerController.getRegister(registerName);
+      if (register) {
+        register.pushText(key);
+      }
+    }
+
+    function logInsertModeChange(macroModeState) {
+      if (macroModeState.isPlaying) { return; }
+      var registerName = macroModeState.latestRegister;
+      var register = vimGlobalState.registerController.getRegister(registerName);
+      if (register && register.pushInsertModeChanges) {
+        register.pushInsertModeChanges(macroModeState.lastInsertModeChanges);
+      }
+    }
+
+    function logSearchQuery(macroModeState, query) {
+      if (macroModeState.isPlaying) { return; }
+      var registerName = macroModeState.latestRegister;
+      var register = vimGlobalState.registerController.getRegister(registerName);
+      if (register && register.pushSearchQuery) {
+        register.pushSearchQuery(query);
+      }
+    }
+    function onChange(_cm, changeObj) {
+      var macroModeState = vimGlobalState.macroModeState;
+      var lastChange = macroModeState.lastInsertModeChanges;
+      if (!macroModeState.isPlaying) {
+        while(changeObj) {
+          lastChange.expectCursorActivityForChange = true;
+          if (changeObj.origin == '+input' || changeObj.origin == 'paste'
+              || changeObj.origin === undefined /* only in testing */) {
+            var text = changeObj.text.join('\n');
+            lastChange.changes.push(text);
+          }
+          changeObj = changeObj.next;
+        }
+      }
+    }
+    function onCursorActivity(cm) {
+      var vim = cm.state.vim;
+      if (vim.insertMode) {
+        var macroModeState = vimGlobalState.macroModeState;
+        if (macroModeState.isPlaying) { return; }
+        var lastChange = macroModeState.lastInsertModeChanges;
+        if (lastChange.expectCursorActivityForChange) {
+          lastChange.expectCursorActivityForChange = false;
+        } else {
+          lastChange.changes = [];
+        }
+      } else if (!cm.curOp.isVimOp) {
+        handleExternalSelection(cm, vim);
+      }
+      if (vim.visualMode) {
+        updateFakeCursor(cm);
+      }
+    }
+    function updateFakeCursor(cm) {
+      var vim = cm.state.vim;
+      var from = clipCursorToContent(cm, copyCursor(vim.sel.head));
+      var to = offsetCursor(from, 0, 1);
+      if (vim.fakeCursor) {
+        vim.fakeCursor.clear();
+      }
+      vim.fakeCursor = cm.markText(from, to, {className: 'cm-animate-fat-cursor'});
+    }
+    function handleExternalSelection(cm, vim) {
+      var anchor = cm.getCursor('anchor');
+      var head = cm.getCursor('head');
+      if (vim.visualMode && !cm.somethingSelected()) {
+        exitVisualMode(cm, false);
+      } else if (!vim.visualMode && !vim.insertMode && cm.somethingSelected()) {
+        vim.visualMode = true;
+        vim.visualLine = false;
+        CodeMirror.signal(cm, "vim-mode-change", {mode: "visual"});
+      }
+      if (vim.visualMode) {
+        var headOffset = !cursorIsBefore(head, anchor) ? -1 : 0;
+        var anchorOffset = cursorIsBefore(head, anchor) ? -1 : 0;
+        head = offsetCursor(head, 0, headOffset);
+        anchor = offsetCursor(anchor, 0, anchorOffset);
+        vim.sel = {
+          anchor: anchor,
+          head: head
+        };
+        updateMark(cm, vim, '<', cursorMin(head, anchor));
+        updateMark(cm, vim, '>', cursorMax(head, anchor));
+      } else if (!vim.insertMode) {
+        vim.lastHPos = cm.getCursor().ch;
+      }
+    }
+    function InsertModeKey(keyName) {
+      this.keyName = keyName;
+    }
+    function onKeyEventTargetKeyDown(e) {
+      var macroModeState = vimGlobalState.macroModeState;
+      var lastChange = macroModeState.lastInsertModeChanges;
+      var keyName = CodeMirror.keyName(e);
+      if (!keyName) { return; }
+      function onKeyFound() {
+        lastChange.changes.push(new InsertModeKey(keyName));
+        return true;
+      }
+      if (keyName.indexOf('Delete') != -1 || keyName.indexOf('Backspace') != -1) {
+        CodeMirror.lookupKey(keyName, 'vim-insert', onKeyFound);
+      }
+    }
+    function repeatLastEdit(cm, vim, repeat, repeatForInsert) {
+      var macroModeState = vimGlobalState.macroModeState;
+      macroModeState.isPlaying = true;
+      var isAction = !!vim.lastEditActionCommand;
+      var cachedInputState = vim.inputState;
+      function repeatCommand() {
+        if (isAction) {
+          commandDispatcher.processAction(cm, vim, vim.lastEditActionCommand);
+        } else {
+          commandDispatcher.evalInput(cm, vim);
+        }
+      }
+      function repeatInsert(repeat) {
+        if (macroModeState.lastInsertModeChanges.changes.length > 0) {
+          repeat = !vim.lastEditActionCommand ? 1 : repeat;
+          var changeObject = macroModeState.lastInsertModeChanges;
+          repeatInsertModeChanges(cm, changeObject.changes, repeat);
+        }
+      }
+      vim.inputState = vim.lastEditInputState;
+      if (isAction && vim.lastEditActionCommand.interlaceInsertRepeat) {
+        for (var i = 0; i < repeat; i++) {
+          repeatCommand();
+          repeatInsert(1);
+        }
+      } else {
+        if (!repeatForInsert) {
+          repeatCommand();
+        }
+        repeatInsert(repeat);
+      }
+      vim.inputState = cachedInputState;
+      if (vim.insertMode && !repeatForInsert) {
+        exitInsertMode(cm);
+      }
+      macroModeState.isPlaying = false;
+    };
+
+    function repeatInsertModeChanges(cm, changes, repeat) {
+      function keyHandler(binding) {
+        if (typeof binding == 'string') {
+          CodeMirror.commands[binding](cm);
+        } else {
+          binding(cm);
+        }
+        return true;
+      }
+      var head = cm.getCursor('head');
+      var inVisualBlock = vimGlobalState.macroModeState.lastInsertModeChanges.inVisualBlock;
+      if (inVisualBlock) {
+        var vim = cm.state.vim;
+        var lastSel = vim.lastSelection;
+        var offset = getOffset(lastSel.anchor, lastSel.head);
+        selectForInsert(cm, head, offset.line + 1);
+        repeat = cm.listSelections().length;
+        cm.setCursor(head);
+      }
+      for (var i = 0; i < repeat; i++) {
+        if (inVisualBlock) {
+          cm.setCursor(offsetCursor(head, i, 0));
+        }
+        for (var j = 0; j < changes.length; j++) {
+          var change = changes[j];
+          if (change instanceof InsertModeKey) {
+            CodeMirror.lookupKey(change.keyName, 'vim-insert', keyHandler);
+          } else {
+            var cur = cm.getCursor();
+            cm.replaceRange(change, cur, cur);
+          }
+        }
+      }
+      if (inVisualBlock) {
+        cm.setCursor(offsetCursor(head, 0, 1));
+      }
+    }
+
+    resetVimGlobalState();
+  CodeMirror.Vim = Vim();
+
+  Vim = CodeMirror.Vim;
+
+  var specialKey = {'return':'CR',backspace:'BS','delete':'Del',esc:'Esc',
+    left:'Left',right:'Right',up:'Up',down:'Down',space: 'Space',
+    home:'Home',end:'End',pageup:'PageUp',pagedown:'PageDown', enter: 'CR'
+  };
+  function lookupKey(hashId, key, e) {
+    if (key.length > 1 && key[0] == "n") {
+      key = key.replace("numpad", "");
+    }
+    key = specialKey[key] || key;
+    var name = '';
+    if (e.ctrlKey) { name += 'C-'; }
+    if (e.altKey) { name += 'A-'; }
+    if (e.shiftKey) { name += 'S-'; }
+
+    name += key;
+    if (name.length > 1) { name = '<' + name + '>'; }
+    return name;
+  }
+  var handleKey = Vim.handleKey.bind(Vim);
+  Vim.handleKey = function(cm, key, origin) {
+    return cm.operation(function() {
+      return handleKey(cm, key, origin);
+    }, true);
+  }
+  function cloneVimState(state) {
+    var n = new state.constructor();
+    Object.keys(state).forEach(function(key) {
+      var o = state[key];
+      if (Array.isArray(o))
+        o = o.slice();
+      else if (o && typeof o == "object" && o.constructor != Object)
+        o = cloneVimState(o);
+      n[key] = o;
+    });
+    if (state.sel) {
+      n.sel = {
+        head: state.sel.head && copyCursor(state.sel.head),
+        anchor: state.sel.anchor && copyCursor(state.sel.anchor)
+      };
+    }
+    return n;
+  }
+  function multiSelectHandleKey(cm, key, origin) {
+    var isHandled = false;
+    var vim = Vim.maybeInitVimState_(cm);
+    var visualBlock = vim.visualBlock || vim.wasInVisualBlock;
+    if (vim.wasInVisualBlock && !cm.ace.inMultiSelectMode) {
+      vim.wasInVisualBlock = false;
+    } else if (cm.ace.inMultiSelectMode && vim.visualBlock) {
+       vim.wasInVisualBlock = true;
+    }
+    
+    if (key == '<Esc>' && !vim.insertMode && !vim.visualMode && cm.ace.inMultiSelectMode) {
+      cm.ace.exitMultiSelectMode();
+    } else if (visualBlock || !cm.ace.inMultiSelectMode || cm.ace.inVirtualSelectionMode) {
+      isHandled = Vim.handleKey(cm, key, origin);
+    } else {
+      var old = cloneVimState(vim);
+      cm.operation(function() {
+        cm.ace.forEachSelection(function() {
+          var sel = cm.ace.selection;
+          cm.state.vim.lastHPos = sel.$desiredColumn == null ? sel.lead.column : sel.$desiredColumn;
+          var head = cm.getCursor("head");
+          var anchor = cm.getCursor("anchor");
+          var headOffset = !cursorIsBefore(head, anchor) ? -1 : 0;
+          var anchorOffset = cursorIsBefore(head, anchor) ? -1 : 0;
+          head = offsetCursor(head, 0, headOffset);
+          anchor = offsetCursor(anchor, 0, anchorOffset);
+          cm.state.vim.sel.head = head;
+          cm.state.vim.sel.anchor = anchor;
+          
+          isHandled = handleKey(cm, key, origin);
+          sel.$desiredColumn = cm.state.vim.lastHPos == -1 ? null : cm.state.vim.lastHPos;
+          if (cm.virtualSelectionMode()) {
+            cm.state.vim = cloneVimState(old);
+          }
+        });
+        if (cm.curOp.cursorActivity && !isHandled)
+          cm.curOp.cursorActivity = false;
+      }, true);
+    }
+    return isHandled;
+  }
+  exports.CodeMirror = CodeMirror;
+  var getVim = Vim.maybeInitVimState_;
+  exports.handler = {
+    $id: "ace/keyboard/vim",
+    drawCursor: function(style, pixelPos, config, sel, session) {
+      var vim = this.state.vim || {};
+      var w = config.characterWidth;
+      var h = config.lineHeight;
+      var top = pixelPos.top;
+      var left = pixelPos.left;
+      if (!vim.insertMode) {
+        var isbackwards = !sel.cursor 
+            ? session.selection.isBackwards() || session.selection.isEmpty()
+            : Range.comparePoints(sel.cursor, sel.start) <= 0;
+        if (!isbackwards && left > w)
+          left -= w;
+      }     
+      if (!vim.insertMode && vim.status) {
+        h = h / 2;
+        top += h;
+      }
+      style.left = left + "px";
+      style.top =  top + "px";
+      style.width = w + "px";
+      style.height = h + "px";
+    },
+    handleKeyboard: function(data, hashId, key, keyCode, e) {
+      var editor = data.editor;
+      var cm = editor.state.cm;
+      var vim = getVim(cm);
+      if (keyCode == -1) return;
+      
+      if (key == "c" && hashId == 1) { // key == "ctrl-c"
+        if (!useragent.isMac && editor.getCopyText()) {
+          editor.once("copy", function() {
+            editor.selection.clearSelection();
+          });
+          return {command: "null", passEvent: true};
+        }
+      } else if (!vim.insertMode) {
+        if (useragent.isMac && this.handleMacRepeat(data, hashId, key)) {
+          hashId = -1;
+          key = data.inputChar;
+        }
+      }
+      
+      if (hashId == -1 || hashId & 1 || hashId === 0 && key.length > 1) {
+        var insertMode = vim.insertMode;
+        var name = lookupKey(hashId, key, e || {});
+        if (vim.status == null)
+          vim.status = "";
+        var isHandled = multiSelectHandleKey(cm, name, 'user');
+        vim = getVim(cm); // may be changed by multiSelectHandleKey
+        if (isHandled && vim.status != null)
+          vim.status += name;
+        else if (vim.status == null)
+          vim.status = "";
+        cm._signal("changeStatus");
+        if (!isHandled && (hashId != -1 || insertMode))
+          return;
+        return {command: "null", passEvent: !isHandled};
+      }
+    },
+    attach: function(editor) {
+      if (!editor.state) editor.state = {};
+      var cm = new CodeMirror(editor);
+      editor.state.cm = cm;
+      editor.$vimModeHandler = this;
+      CodeMirror.keyMap.vim.attach(cm);
+      getVim(cm).status = null;
+      cm.on('vim-command-done', function() {
+        if (cm.virtualSelectionMode()) return;
+        getVim(cm).status = null;
+        cm.ace._signal("changeStatus");
+        cm.ace.session.markUndoGroup();
+      });
+      cm.on("changeStatus", function() {
+        cm.ace.renderer.updateCursor();
+        cm.ace._signal("changeStatus");
+      });
+      cm.on("vim-mode-change", function() {
+        if (cm.virtualSelectionMode()) return;
+        cm.ace.renderer.setStyle("normal-mode", !getVim(cm).insertMode);
+        cm._signal("changeStatus");
+      });
+      cm.ace.renderer.setStyle("normal-mode", !getVim(cm).insertMode);
+      editor.renderer.$cursorLayer.drawCursor = this.drawCursor.bind(cm);
+      this.updateMacCompositionHandlers(editor, true);
+    },
+    detach: function(editor) {
+      var cm = editor.state.cm;
+      CodeMirror.keyMap.vim.detach(cm);
+      cm.destroy();
+      editor.state.cm = null;
+      editor.$vimModeHandler = null;
+      editor.renderer.$cursorLayer.drawCursor = null;
+      editor.renderer.setStyle("normal-mode", false);
+      this.updateMacCompositionHandlers(editor, false);
+    },
+    getStatusText: function(editor) {
+      var cm = editor.state.cm;
+      var vim = getVim(cm);
+      if (vim.insertMode)
+        return "INSERT";
+      var status = "";
+      if (vim.visualMode) {
+        status += "VISUAL";
+        if (vim.visualLine)
+          status += " LINE";
+        if (vim.visualBlock)
+          status += " BLOCK";
+      }
+      if (vim.status)
+        status += (status ? " " : "") + vim.status;
+      return status;
+    },
+    handleMacRepeat: function(data, hashId, key) {
+      if (hashId == -1) {
+        data.inputChar = key;
+        data.lastEvent = "input";
+      } else if (data.inputChar && data.$lastHash == hashId && data.$lastKey == key) {
+        if (data.lastEvent == "input") {
+          data.lastEvent = "input1";
+        } else if (data.lastEvent == "input1") {
+          return true;
+        }
+      } else {
+        data.$lastHash = hashId;
+        data.$lastKey = key;
+        data.lastEvent = "keypress";
+      }
     },
     updateMacCompositionHandlers: function(editor, enable) {
-        var onCompositionUpdateOverride = function(text) {
-            if (util.currentMode !== "insert") {
-                var el = this.textInput.getElement();
-                el.blur();
-                el.focus();
-                el.value = text;
-            } else {
-                this.onCompositionUpdateOrig(text);
-            }
-        };
-        var onCompositionStartOverride = function(text) {
-            if (util.currentMode === "insert") {            
-                this.onCompositionStartOrig(text);
-            }
-        };
-        if (enable) {
-            if (!editor.onCompositionUpdateOrig) {
-                editor.onCompositionUpdateOrig = editor.onCompositionUpdate;
-                editor.onCompositionUpdate = onCompositionUpdateOverride;
-                editor.onCompositionStartOrig = editor.onCompositionStart;
-                editor.onCompositionStart = onCompositionStartOverride;
-            }
+      var onCompositionUpdateOverride = function(text) {
+        var cm = editor.state.cm;
+        var vim = getVim(cm);
+        if (!vim.insertMode) {
+          var el = this.textInput.getElement();
+          el.blur();
+          el.focus();
+          el.value = text;
         } else {
-            if (editor.onCompositionUpdateOrig) {
-                editor.onCompositionUpdate = editor.onCompositionUpdateOrig;
-                editor.onCompositionUpdateOrig = null;
-                editor.onCompositionStart = editor.onCompositionStartOrig;
-                editor.onCompositionStartOrig = null;
-            }
+          this.onCompositionUpdateOrig(text);
         }
-    },
-
-    handleKeyboard: function(data, hashId, key, keyCode, e) {
-        if (hashId !== 0 && (!key || keyCode == -1))
-            return null;
-        
-        var editor = data.editor;
-        var vimState = data.vimState || "start";
-        
-        if (hashId == 1)
-            key = "ctrl-" + key;
-        if (key == "ctrl-c") {
-            if (!useragent.isMac && editor.getCopyText()) {
-                editor.once("copy", function() {
-                    if (vimState == "start")
-                        coreCommands.stop.exec(editor);
-                    else
-                        editor.selection.clearSelection();
-                });
-                return {command: "null", passEvent: true};
-            }
-            return {command: coreCommands.stop};
-        } else if ((key == "esc" && hashId === 0) || key == "ctrl-[") {
-            return {command: coreCommands.stop};
-        } else if (vimState == "start") {
-            if (useragent.isMac && this.handleMacRepeat(data, hashId, key)) {
-                hashId = -1;
-                key = data.inputChar;
-            }
-            
-            if (hashId == -1 || hashId == 1 || hashId === 0 && key.length > 1) {
-                if (cmds.inputBuffer.idle && startCommands[key])
-                    return startCommands[key];
-                var isHandled = cmds.inputBuffer.push(editor, key);
-                if (!isHandled && hashId !== -1)
-                    return;
-                return {command: "null", passEvent: !isHandled}; 
-            } else if (key == "esc" && hashId === 0) {
-                return {command: coreCommands.stop};
-            }
-            else if (hashId === 0 || hashId == 4) {
-                return {command: "null", passEvent: true};
-            } 
-        } else {
-            if (key == "ctrl-w") {
-                return {command: "removewordleft"};
-            }
+      };
+      var onCompositionStartOverride = function(text) {
+        var cm = editor.state.cm;
+        var vim = getVim(cm);
+        if (!vim.insertMode) {
+          this.onCompositionStartOrig(text);
         }
-    },
-
-    attach: function(editor) {
-        editor.on("click", exports.onCursorMove);
-        if (util.currentMode !== "insert")
-            cmds.coreCommands.stop.exec(editor);
-        editor.$vimModeHandler = this;
-        
-        this.updateMacCompositionHandlers(editor, true);
-    },
-
-    detach: function(editor) {
-        editor.removeListener("click", exports.onCursorMove);
-        util.noMode(editor);
-        util.currentMode = "normal";
-        this.updateMacCompositionHandlers(editor, false);
-    },
-
-    actions: cmds.actions,
-    getStatusText: function() {
-        if (util.currentMode == "insert")
-            return "INSERT";
-        if (util.onVisualMode)
-            return (util.onVisualLineMode ? "VISUAL LINE " : "VISUAL ") + cmds.inputBuffer.status;
-        return cmds.inputBuffer.status;
+      };
+      if (enable) {
+        if (!editor.onCompositionUpdateOrig) {
+          editor.onCompositionUpdateOrig = editor.onCompositionUpdate;
+          editor.onCompositionUpdate = onCompositionUpdateOverride;
+          editor.onCompositionStartOrig = editor.onCompositionStart;
+          editor.onCompositionStart = onCompositionStartOverride;
+        }
+      } else {
+        if (editor.onCompositionUpdateOrig) {
+          editor.onCompositionUpdate = editor.onCompositionUpdateOrig;
+          editor.onCompositionUpdateOrig = null;
+          editor.onCompositionStart = editor.onCompositionStartOrig;
+          editor.onCompositionStartOrig = null;
+        }
+      }
     }
-};
+  };
+  var renderVirtualNumbers = {
+    getText: function(session, row) {
+      return (Math.abs(session.selection.lead.row - row)  || (row + 1 + (row < 9? "\xb7" : "" ))) + "";
+    },
+    getWidth: function(session, lastLineNumber, config) {
+      return session.getLength().toString().length * config.characterWidth;
+    },
+    update: function(e, editor) {
+      editor.renderer.$loop.schedule(editor.renderer.CHANGE_GUTTER);
+    },
+    attach: function(editor) {
+      editor.renderer.$gutterLayer.$renderer = this;
+      editor.on("changeSelection", this.update);
+    },
+    detach: function(editor) {
+      editor.renderer.$gutterLayer.$renderer = null;
+      editor.off("changeSelection", this.update);
+    }
+  };
+  Vim.defineOption({
+    name: "wrap",
+    set: function(value, cm) {
+      if (cm) {cm.ace.setOption("wrap", value)}
+    },
+    type: "boolean"
+  }, false);
+  Vim.defineEx('write', 'w', function() {
+    console.log(':write is not implemented')
+  });
+  defaultKeymap.push(
+    { keys: 'zc', type: 'action', action: 'fold', actionArgs: { open: false } },
+    { keys: 'zC', type: 'action', action: 'fold', actionArgs: { open: false, all: true } },
+    { keys: 'zo', type: 'action', action: 'fold', actionArgs: { open: true, } },
+    { keys: 'zO', type: 'action', action: 'fold', actionArgs: { open: true, all: true } },
+    { keys: 'za', type: 'action', action: 'fold', actionArgs: { toggle: true } },
+    { keys: 'zA', type: 'action', action: 'fold', actionArgs: { toggle: true, all: true } },
+    { keys: 'zf', type: 'action', action: 'fold', actionArgs: { open: true, all: true } },
+    { keys: 'zd', type: 'action', action: 'fold', actionArgs: { open: true, all: true } },
+    
+    { keys: '<C-A-k>', type: 'action', action: 'aceCommand', actionArgs: { name: "addCursorAbove" } },
+    { keys: '<C-A-j>', type: 'action', action: 'aceCommand', actionArgs: { name: "addCursorBelow" } },
+    { keys: '<C-A-S-k>', type: 'action', action: 'aceCommand', actionArgs: { name: "addCursorAboveSkipCurrent" } },
+    { keys: '<C-A-S-j>', type: 'action', action: 'aceCommand', actionArgs: { name: "addCursorBelowSkipCurrent" } },
+    { keys: '<C-A-h>', type: 'action', action: 'aceCommand', actionArgs: { name: "selectMoreBefore" } },
+    { keys: '<C-A-l>', type: 'action', action: 'aceCommand', actionArgs: { name: "selectMoreAfter" } },
+    { keys: '<C-A-S-h>', type: 'action', action: 'aceCommand', actionArgs: { name: "selectNextBefore" } },
+    { keys: '<C-A-S-l>', type: 'action', action: 'aceCommand', actionArgs: { name: "selectNextAfter" } }
+  );
+  actions.aceCommand = function(cm, actionArgs, vim) {
+    cm.vimCmd = actionArgs;
+    if (cm.ace.inVirtualSelectionMode)
+      cm.ace.on("beforeEndOperation", delayedExecAceCommand);
+    else
+      delayedExecAceCommand(null, cm.ace);
+  };
+  function delayedExecAceCommand(op, ace) {
+    ace.off("beforeEndOperation", delayedExecAceCommand);
+    var cmd = ace.state.cm.vimCmd;
+    if (cmd) {
+      ace.execCommand(cmd.exec ? cmd : cmd.name, cmd.args);
+    }
+    ace.curOp = ace.prevOp;
+  }
+  actions.fold = function(cm, actionArgs, vim) {
+    cm.ace.execCommand(['toggleFoldWidget', 'toggleFoldWidget', 'foldOther', 'unfoldall'
+      ][(actionArgs.all ? 2 : 0) + (actionArgs.open ? 1 : 0)]);
+  },
 
-
-exports.onCursorMove = function(e) {
-    cmds.onCursorMove(e.editor, e);
-    exports.onCursorMove.scheduled = false;
-};
-
+  exports.handler.defaultKeymap = defaultKeymap;
+  exports.handler.actions = actions;
+  exports.Vim = Vim;
+  
+  Vim.map("Y", "yy", "normal");
 });
 ace.define("ace/mode/clojure_highlight_rules",["require","exports","module","ace/lib/oop","ace/mode/text_highlight_rules"], function(require, exports, module) {
 "use strict";
@@ -23698,7 +27700,7 @@ var ShHighlightRules = function() {
             token : "keyword.operator"
         }, {
             stateName: "heredoc",
-            regex : "(<<)(\\s*)(['\"`]?)([\\w\\-]+)(['\"`]?)",
+            regex : "(<<-?)(\\s*)(['\"`]?)([\\w\\-]+)(['\"`]?)",
             onMatch : function(value, currentState, stack) {
                 var next = value[2] == '-' ? "indentedHeredoc" : "heredoc";
                 var tokens = value.split(this.splitRegex);
@@ -23816,12 +27818,35 @@ var FoldMode = exports.FoldMode = function(commentRegex) {
 oop.inherits(FoldMode, BaseFoldMode);
 
 (function() {
-
+    
     this.foldingStartMarker = /(\{|\[)[^\}\]]*$|^\s*(\/\*)/;
     this.foldingStopMarker = /^[^\[\{]*(\}|\])|^[\s\*]*(\*\/)/;
+    this.singleLineBlockCommentRe= /^\s*(\/\*).*\*\/\s*$/;
+    this.tripleStarBlockCommentRe = /^\s*(\/\*\*\*).*\*\/\s*$/;
+    this.startRegionRe = /^\s*(\/\*|\/\/)#?region\b/;
+    this._getFoldWidgetBase = this.getFoldWidget;
+    this.getFoldWidget = function(session, foldStyle, row) {
+        var line = session.getLine(row);
+    
+        if (this.singleLineBlockCommentRe.test(line)) {
+            if (!this.startRegionRe.test(line) && !this.tripleStarBlockCommentRe.test(line))
+                return "";
+        }
+    
+        var fw = this._getFoldWidgetBase(session, foldStyle, row);
+    
+        if (!fw && this.startRegionRe.test(line))
+            return "start"; // lineCommentRegionStart
+    
+        return fw;
+    };
 
     this.getFoldWidgetRange = function(session, foldStyle, row, forceMultiline) {
         var line = session.getLine(row);
+        
+        if (this.startRegionRe.test(line))
+            return this.getCommentRegionBlock(session, line, row);
+        
         var match = line.match(this.foldingStartMarker);
         if (match) {
             var i = match.index;
@@ -23886,6 +27911,28 @@ oop.inherits(FoldMode, BaseFoldMode);
         
         return new Range(startRow, startColumn, endRow, session.getLine(endRow).length);
     };
+    this.getCommentRegionBlock = function(session, line, row) {
+        var startColumn = line.search(/\s*$/);
+        var maxRow = session.getLength();
+        var startRow = row;
+        
+        var re = /^\s*(?:\/\*|\/\/|--)#?(end)?region\b/;
+        var depth = 1;
+        while (++row < maxRow) {
+            line = session.getLine(row);
+            var m = re.exec(line);
+            if (!m) continue;
+            if (m[1]) depth--;
+            else depth++;
+
+            if (!depth) break;
+        }
+
+        var endRow = row;
+        if (endRow > startRow) {
+            return new Range(startRow, startColumn, endRow, line.length);
+        }
+    };
 
 }).call(FoldMode.prototype);
 
@@ -23905,11 +27952,11 @@ var SAFE_INSERT_BEFORE_TOKENS =
     ["text", "paren.rparen", "punctuation.operator", "comment"];
 
 var context;
-var contextCache = {}
+var contextCache = {};
 var initContext = function(editor) {
     var id = -1;
     if (editor.multiSelect) {
-        id = editor.selection.id;
+        id = editor.selection.index;
         if (contextCache.rangeCount != editor.multiSelect.rangeCount)
             contextCache = {rangeCount: editor.multiSelect.rangeCount};
     }
@@ -23926,6 +27973,19 @@ var initContext = function(editor) {
     };
 };
 
+var getWrapped = function(selection, selected, opening, closing) {
+    var rowDiff = selection.end.row - selection.start.row;
+    return {
+        text: opening + selected + closing,
+        selection: [
+                0,
+                selection.start.column + 1,
+                rowDiff,
+                selection.end.column + (rowDiff ? 0 : 1)
+            ]
+    };
+};
+
 var CstyleBehaviour = function() {
     this.add("braces", "insertion", function(state, action, editor, session, text) {
         var cursor = editor.getCursorPosition();
@@ -23935,10 +27995,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && selected !== "{" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '{' + selected + '}',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '{', '}');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 if (/[\]\}\)]/.test(line[cursor.column]) || editor.inMultiSelectMode) {
                     CstyleBehaviour.recordAutoInsert(editor, session, "}");
@@ -24018,10 +28075,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '(' + selected + ')',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '(', ')');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 CstyleBehaviour.recordAutoInsert(editor, session, ")");
                 return {
@@ -24066,10 +28120,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '[' + selected + ']',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '[', ']');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 CstyleBehaviour.recordAutoInsert(editor, session, "]");
                 return {
@@ -24115,49 +28166,44 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && selected !== "'" && selected != '"' && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: quote + selected + quote,
-                    selection: false
-                };
-            } else {
+                return getWrapped(selection, selected, quote, quote);
+            } else if (!selected) {
                 var cursor = editor.getCursorPosition();
                 var line = session.doc.getLine(cursor.row);
                 var leftChar = line.substring(cursor.column-1, cursor.column);
-                if (leftChar == '\\') {
+                var rightChar = line.substring(cursor.column, cursor.column + 1);
+                
+                var token = session.getTokenAt(cursor.row, cursor.column);
+                var rightToken = session.getTokenAt(cursor.row, cursor.column + 1);
+                if (leftChar == "\\" && token && /escape/.test(token.type))
                     return null;
+                
+                var stringBefore = token && /string|escape/.test(token.type);
+                var stringAfter = !rightToken || /string|escape/.test(rightToken.type);
+                
+                var pair;
+                if (rightChar == quote) {
+                    pair = stringBefore !== stringAfter;
+                } else {
+                    if (stringBefore && !stringAfter)
+                        return null; // wrap string with different quote
+                    if (stringBefore && stringAfter)
+                        return null; // do not pair quotes inside strings
+                    var wordRe = session.$mode.tokenRe;
+                    wordRe.lastIndex = 0;
+                    var isWordBefore = wordRe.test(leftChar);
+                    wordRe.lastIndex = 0;
+                    var isWordAfter = wordRe.test(leftChar);
+                    if (isWordBefore || isWordAfter)
+                        return null; // before or after alphanumeric
+                    if (rightChar && !/[\s;,.})\]\\]/.test(rightChar))
+                        return null; // there is rightChar and it isn't closing
+                    pair = true;
                 }
-                var tokens = session.getTokens(selection.start.row);
-                var col = 0, token;
-                var quotepos = -1; // Track whether we're inside an open quote.
-
-                for (var x = 0; x < tokens.length; x++) {
-                    token = tokens[x];
-                    if (token.type == "string") {
-                      quotepos = -1;
-                    } else if (quotepos < 0) {
-                      quotepos = token.value.indexOf(quote);
-                    }
-                    if ((token.value.length + col) > selection.start.column) {
-                        break;
-                    }
-                    col += tokens[x].value.length;
-                }
-                if (!token || (quotepos < 0 && token.type !== "comment" && (token.type !== "string" || ((selection.start.column !== token.value.length+col-1) && token.value.lastIndexOf(quote) === token.value.length-1)))) {
-                    if (!CstyleBehaviour.isSaneInsertion(editor, session))
-                        return;
-                    return {
-                        text: quote + quote,
-                        selection: [1,1]
-                    };
-                } else if (token && token.type === "string") {
-                    var rightChar = line.substring(cursor.column, cursor.column + 1);
-                    if (rightChar == quote) {
-                        return {
-                            text: '',
-                            selection: [1, 1]
-                        };
-                    }
-                }
+                return {
+                    text: pair ? quote + quote : "",
+                    selection: [1,1]
+                };
             }
         }
     });
@@ -24346,7 +28392,7 @@ var DockerfileHighlightRules = function() {
         if (startRules[i].token == "variable.language") {
             startRules.splice(i, 0, {
                 token: "constant.language",
-                regex: "(?:^(?:FROM|MAINTAINER|RUN|CMD|EXPOSE|ENV|ADD|ENTRYPOINT|VOLUME|USER|WORKDIR|ONBUILD|COPY)\\b)",
+                regex: "(?:^(?:FROM|MAINTAINER|RUN|CMD|EXPOSE|ENV|ADD|ENTRYPOINT|VOLUME|USER|WORKDIR|ONBUILD|COPY|LABEL)\\b)",
                 caseInsensitive: true
             });
             break;
@@ -24392,7 +28438,7 @@ var supportType = exports.supportType = "animation-fill-mode|alignment-adjust|al
 var supportFunction = exports.supportFunction = "rgb|rgba|url|attr|counter|counters";
 var supportConstant = exports.supportConstant = "absolute|after-edge|after|all-scroll|all|alphabetic|always|antialiased|armenian|auto|avoid-column|avoid-page|avoid|balance|baseline|before-edge|before|below|bidi-override|block-line-height|block|bold|bolder|border-box|both|bottom|box|break-all|break-word|capitalize|caps-height|caption|center|central|char|circle|cjk-ideographic|clone|close-quote|col-resize|collapse|column|consider-shifts|contain|content-box|cover|crosshair|cubic-bezier|dashed|decimal-leading-zero|decimal|default|disabled|disc|disregard-shifts|distribute-all-lines|distribute-letter|distribute-space|distribute|dotted|double|e-resize|ease-in|ease-in-out|ease-out|ease|ellipsis|end|exclude-ruby|fill|fixed|georgian|glyphs|grid-height|groove|hand|hanging|hebrew|help|hidden|hiragana-iroha|hiragana|horizontal|icon|ideograph-alpha|ideograph-numeric|ideograph-parenthesis|ideograph-space|ideographic|inactive|include-ruby|inherit|initial|inline-block|inline-box|inline-line-height|inline-table|inline|inset|inside|inter-ideograph|inter-word|invert|italic|justify|katakana-iroha|katakana|keep-all|last|left|lighter|line-edge|line-through|line|linear|list-item|local|loose|lower-alpha|lower-greek|lower-latin|lower-roman|lowercase|lr-tb|ltr|mathematical|max-height|max-size|medium|menu|message-box|middle|move|n-resize|ne-resize|newspaper|no-change|no-close-quote|no-drop|no-open-quote|no-repeat|none|normal|not-allowed|nowrap|nw-resize|oblique|open-quote|outset|outside|overline|padding-box|page|pointer|pre-line|pre-wrap|pre|preserve-3d|progress|relative|repeat-x|repeat-y|repeat|replaced|reset-size|ridge|right|round|row-resize|rtl|s-resize|scroll|se-resize|separate|slice|small-caps|small-caption|solid|space|square|start|static|status-bar|step-end|step-start|steps|stretch|strict|sub|super|sw-resize|table-caption|table-cell|table-column-group|table-column|table-footer-group|table-header-group|table-row-group|table-row|table|tb-rl|text-after-edge|text-before-edge|text-bottom|text-size|text-top|text|thick|thin|transparent|underline|upper-alpha|upper-latin|upper-roman|uppercase|use-script|vertical-ideographic|vertical-text|visible|w-resize|wait|whitespace|z-index|zero";
 var supportConstantColor = exports.supportConstantColor = "aqua|black|blue|fuchsia|gray|green|lime|maroon|navy|olive|orange|purple|red|silver|teal|white|yellow";
-var supportConstantFonts = exports.supportConstantFonts = "arial|century|comic|courier|garamond|georgia|helvetica|impact|lucida|symbol|system|tahoma|times|trebuchet|utopia|verdana|webdings|sans-serif|serif|monospace";
+var supportConstantFonts = exports.supportConstantFonts = "arial|century|comic|courier|cursive|fantasy|garamond|georgia|helvetica|impact|lucida|symbol|system|tahoma|times|trebuchet|utopia|verdana|webdings|sans-serif|serif|monospace";
 
 var numRe = exports.numRe = "\\-?(?:(?:[0-9]+)|(?:[0-9]*\\.[0-9]+))";
 var pseudoElements = exports.pseudoElements = "(\\:+)\\b(after|before|first-letter|first-line|moz-selection|selection)\\b";
@@ -24580,11 +28626,11 @@ var SAFE_INSERT_BEFORE_TOKENS =
     ["text", "paren.rparen", "punctuation.operator", "comment"];
 
 var context;
-var contextCache = {}
+var contextCache = {};
 var initContext = function(editor) {
     var id = -1;
     if (editor.multiSelect) {
-        id = editor.selection.id;
+        id = editor.selection.index;
         if (contextCache.rangeCount != editor.multiSelect.rangeCount)
             contextCache = {rangeCount: editor.multiSelect.rangeCount};
     }
@@ -24601,6 +28647,19 @@ var initContext = function(editor) {
     };
 };
 
+var getWrapped = function(selection, selected, opening, closing) {
+    var rowDiff = selection.end.row - selection.start.row;
+    return {
+        text: opening + selected + closing,
+        selection: [
+                0,
+                selection.start.column + 1,
+                rowDiff,
+                selection.end.column + (rowDiff ? 0 : 1)
+            ]
+    };
+};
+
 var CstyleBehaviour = function() {
     this.add("braces", "insertion", function(state, action, editor, session, text) {
         var cursor = editor.getCursorPosition();
@@ -24610,10 +28669,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && selected !== "{" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '{' + selected + '}',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '{', '}');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 if (/[\]\}\)]/.test(line[cursor.column]) || editor.inMultiSelectMode) {
                     CstyleBehaviour.recordAutoInsert(editor, session, "}");
@@ -24693,10 +28749,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '(' + selected + ')',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '(', ')');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 CstyleBehaviour.recordAutoInsert(editor, session, ")");
                 return {
@@ -24741,10 +28794,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '[' + selected + ']',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '[', ']');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 CstyleBehaviour.recordAutoInsert(editor, session, "]");
                 return {
@@ -24790,49 +28840,44 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && selected !== "'" && selected != '"' && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: quote + selected + quote,
-                    selection: false
-                };
-            } else {
+                return getWrapped(selection, selected, quote, quote);
+            } else if (!selected) {
                 var cursor = editor.getCursorPosition();
                 var line = session.doc.getLine(cursor.row);
                 var leftChar = line.substring(cursor.column-1, cursor.column);
-                if (leftChar == '\\') {
+                var rightChar = line.substring(cursor.column, cursor.column + 1);
+                
+                var token = session.getTokenAt(cursor.row, cursor.column);
+                var rightToken = session.getTokenAt(cursor.row, cursor.column + 1);
+                if (leftChar == "\\" && token && /escape/.test(token.type))
                     return null;
+                
+                var stringBefore = token && /string|escape/.test(token.type);
+                var stringAfter = !rightToken || /string|escape/.test(rightToken.type);
+                
+                var pair;
+                if (rightChar == quote) {
+                    pair = stringBefore !== stringAfter;
+                } else {
+                    if (stringBefore && !stringAfter)
+                        return null; // wrap string with different quote
+                    if (stringBefore && stringAfter)
+                        return null; // do not pair quotes inside strings
+                    var wordRe = session.$mode.tokenRe;
+                    wordRe.lastIndex = 0;
+                    var isWordBefore = wordRe.test(leftChar);
+                    wordRe.lastIndex = 0;
+                    var isWordAfter = wordRe.test(leftChar);
+                    if (isWordBefore || isWordAfter)
+                        return null; // before or after alphanumeric
+                    if (rightChar && !/[\s;,.})\]\\]/.test(rightChar))
+                        return null; // there is rightChar and it isn't closing
+                    pair = true;
                 }
-                var tokens = session.getTokens(selection.start.row);
-                var col = 0, token;
-                var quotepos = -1; // Track whether we're inside an open quote.
-
-                for (var x = 0; x < tokens.length; x++) {
-                    token = tokens[x];
-                    if (token.type == "string") {
-                      quotepos = -1;
-                    } else if (quotepos < 0) {
-                      quotepos = token.value.indexOf(quote);
-                    }
-                    if ((token.value.length + col) > selection.start.column) {
-                        break;
-                    }
-                    col += tokens[x].value.length;
-                }
-                if (!token || (quotepos < 0 && token.type !== "comment" && (token.type !== "string" || ((selection.start.column !== token.value.length+col-1) && token.value.lastIndexOf(quote) === token.value.length-1)))) {
-                    if (!CstyleBehaviour.isSaneInsertion(editor, session))
-                        return;
-                    return {
-                        text: quote + quote,
-                        selection: [1,1]
-                    };
-                } else if (token && token.type === "string") {
-                    var rightChar = line.substring(cursor.column, cursor.column + 1);
-                    if (rightChar == quote) {
-                        return {
-                            text: '',
-                            selection: [1, 1]
-                        };
-                    }
-                }
+                return {
+                    text: pair ? quote + quote : "",
+                    selection: [1,1]
+                };
             }
         }
     });
@@ -25023,12 +29068,35 @@ var FoldMode = exports.FoldMode = function(commentRegex) {
 oop.inherits(FoldMode, BaseFoldMode);
 
 (function() {
-
+    
     this.foldingStartMarker = /(\{|\[)[^\}\]]*$|^\s*(\/\*)/;
     this.foldingStopMarker = /^[^\[\{]*(\}|\])|^[\s\*]*(\*\/)/;
+    this.singleLineBlockCommentRe= /^\s*(\/\*).*\*\/\s*$/;
+    this.tripleStarBlockCommentRe = /^\s*(\/\*\*\*).*\*\/\s*$/;
+    this.startRegionRe = /^\s*(\/\*|\/\/)#?region\b/;
+    this._getFoldWidgetBase = this.getFoldWidget;
+    this.getFoldWidget = function(session, foldStyle, row) {
+        var line = session.getLine(row);
+    
+        if (this.singleLineBlockCommentRe.test(line)) {
+            if (!this.startRegionRe.test(line) && !this.tripleStarBlockCommentRe.test(line))
+                return "";
+        }
+    
+        var fw = this._getFoldWidgetBase(session, foldStyle, row);
+    
+        if (!fw && this.startRegionRe.test(line))
+            return "start"; // lineCommentRegionStart
+    
+        return fw;
+    };
 
     this.getFoldWidgetRange = function(session, foldStyle, row, forceMultiline) {
         var line = session.getLine(row);
+        
+        if (this.startRegionRe.test(line))
+            return this.getCommentRegionBlock(session, line, row);
+        
         var match = line.match(this.foldingStartMarker);
         if (match) {
             var i = match.index;
@@ -25093,6 +29161,28 @@ oop.inherits(FoldMode, BaseFoldMode);
         
         return new Range(startRow, startColumn, endRow, session.getLine(endRow).length);
     };
+    this.getCommentRegionBlock = function(session, line, row) {
+        var startColumn = line.search(/\s*$/);
+        var maxRow = session.getLength();
+        var startRow = row;
+        
+        var re = /^\s*(?:\/\*|\/\/|--)#?(end)?region\b/;
+        var depth = 1;
+        while (++row < maxRow) {
+            line = session.getLine(row);
+            var m = re.exec(line);
+            if (!m) continue;
+            if (m[1]) depth--;
+            else depth++;
+
+            if (!depth) break;
+        }
+
+        var endRow = row;
+        if (endRow > startRow) {
+            return new Range(startRow, startColumn, endRow, line.length);
+        }
+    };
 
 }).call(FoldMode.prototype);
 
@@ -25149,7 +29239,7 @@ oop.inherits(Mode, TextMode);
         var worker = new WorkerClient(["ace"], "ace/mode/css_worker", "Worker");
         worker.attachToDocument(session.getDocument());
 
-        worker.on("csslint", function(e) {
+        worker.on("annotate", function(e) {
             session.setAnnotations(e.data);
         });
 
@@ -25172,7 +29262,7 @@ ace.define("ace/mode/diff_highlight_rules",["require","exports","module","ace/li
 var oop = require("../lib/oop");
 var TextHighlightRules = require("./text_highlight_rules").TextHighlightRules;
 
-var DiffHighlightRules = function() {
+var DiffHighlightRules = function() {
 
     this.$rules = {
         "start" : [{
@@ -25483,7 +29573,7 @@ var JavaScriptHighlightRules = function(options) {
                 regex : /(\.)(s(?:h(?:ift|ow(?:Mod(?:elessDialog|alDialog)|Help))|croll(?:X|By(?:Pages|Lines)?|Y|To)?|t(?:op|rike)|i(?:n|zeToContent|debar|gnText)|ort|u(?:p|b(?:str(?:ing)?)?)|pli(?:ce|t)|e(?:nd|t(?:Re(?:sizable|questHeader)|M(?:i(?:nutes|lliseconds)|onth)|Seconds|Ho(?:tKeys|urs)|Year|Cursor|Time(?:out)?|Interval|ZOptions|Date|UTC(?:M(?:i(?:nutes|lliseconds)|onth)|Seconds|Hours|Date|FullYear)|FullYear|Active)|arch)|qrt|lice|avePreferences|mall)|h(?:ome|andleEvent)|navigate|c(?:har(?:CodeAt|At)|o(?:s|n(?:cat|textual|firm)|mpile)|eil|lear(?:Timeout|Interval)?|a(?:ptureEvents|ll)|reate(?:StyleSheet|Popup|EventObject))|t(?:o(?:GMTString|S(?:tring|ource)|U(?:TCString|pperCase)|Lo(?:caleString|werCase))|est|a(?:n|int(?:Enabled)?))|i(?:s(?:NaN|Finite)|ndexOf|talics)|d(?:isableExternalCapture|ump|etachEvent)|u(?:n(?:shift|taint|escape|watch)|pdateCommands)|j(?:oin|avaEnabled)|p(?:o(?:p|w)|ush|lugins.refresh|a(?:ddings|rse(?:Int|Float)?)|r(?:int|ompt|eference))|e(?:scape|nableExternalCapture|val|lementFromPoint|x(?:p|ec(?:Script|Command)?))|valueOf|UTC|queryCommand(?:State|Indeterm|Enabled|Value)|f(?:i(?:nd|le(?:ModifiedDate|Size|CreatedDate|UpdatedDate)|xed)|o(?:nt(?:size|color)|rward)|loor|romCharCode)|watch|l(?:ink|o(?:ad|g)|astIndexOf)|a(?:sin|nchor|cos|t(?:tachEvent|ob|an(?:2)?)|pply|lert|b(?:s|ort))|r(?:ou(?:nd|teEvents)|e(?:size(?:By|To)|calc|turnValue|place|verse|l(?:oad|ease(?:Capture|Events)))|andom)|g(?:o|et(?:ResponseHeader|M(?:i(?:nutes|lliseconds)|onth)|Se(?:conds|lection)|Hours|Year|Time(?:zoneOffset)?|Da(?:y|te)|UTC(?:M(?:i(?:nutes|lliseconds)|onth)|Seconds|Hours|Da(?:y|te)|FullYear)|FullYear|A(?:ttention|llResponseHeaders)))|m(?:in|ove(?:B(?:y|elow)|To(?:Absolute)?|Above)|ergeAttributes|a(?:tch|rgins|x))|b(?:toa|ig|o(?:ld|rderWidths)|link|ack))\b(?=\()/
             }, {
                 token : ["punctuation.operator", "support.function.dom"],
-                regex : /(\.)(s(?:ub(?:stringData|mit)|plitText|e(?:t(?:NamedItem|Attribute(?:Node)?)|lect))|has(?:ChildNodes|Feature)|namedItem|c(?:l(?:ick|o(?:se|neNode))|reate(?:C(?:omment|DATASection|aption)|T(?:Head|extNode|Foot)|DocumentFragment|ProcessingInstruction|E(?:ntityReference|lement)|Attribute))|tabIndex|i(?:nsert(?:Row|Before|Cell|Data)|tem)|open|delete(?:Row|C(?:ell|aption)|T(?:Head|Foot)|Data)|focus|write(?:ln)?|a(?:dd|ppend(?:Child|Data))|re(?:set|place(?:Child|Data)|move(?:NamedItem|Child|Attribute(?:Node)?)?)|get(?:NamedItem|Element(?:sBy(?:Name|TagName)|ById)|Attribute(?:Node)?)|blur)\b(?=\()/
+                regex : /(\.)(s(?:ub(?:stringData|mit)|plitText|e(?:t(?:NamedItem|Attribute(?:Node)?)|lect))|has(?:ChildNodes|Feature)|namedItem|c(?:l(?:ick|o(?:se|neNode))|reate(?:C(?:omment|DATASection|aption)|T(?:Head|extNode|Foot)|DocumentFragment|ProcessingInstruction|E(?:ntityReference|lement)|Attribute))|tabIndex|i(?:nsert(?:Row|Before|Cell|Data)|tem)|open|delete(?:Row|C(?:ell|aption)|T(?:Head|Foot)|Data)|focus|write(?:ln)?|a(?:dd|ppend(?:Child|Data))|re(?:set|place(?:Child|Data)|move(?:NamedItem|Child|Attribute(?:Node)?)?)|get(?:NamedItem|Element(?:sBy(?:Name|TagName|ClassName)|ById)|Attribute(?:Node)?)|blur)\b(?=\()/
             }, {
                 token : ["punctuation.operator", "support.constant"],
                 regex : /(\.)(s(?:ystemLanguage|cr(?:ipts|ollbars|een(?:X|Y|Top|Left))|t(?:yle(?:Sheets)?|atus(?:Text|bar)?)|ibling(?:Below|Above)|ource|uffixes|e(?:curity(?:Policy)?|l(?:ection|f)))|h(?:istory|ost(?:name)?|as(?:h|Focus))|y|X(?:MLDocument|SLDocument)|n(?:ext|ame(?:space(?:s|URI)|Prop))|M(?:IN_VALUE|AX_VALUE)|c(?:haracterSet|o(?:n(?:structor|trollers)|okieEnabled|lorDepth|mp(?:onents|lete))|urrent|puClass|l(?:i(?:p(?:boardData)?|entInformation)|osed|asses)|alle(?:e|r)|rypto)|t(?:o(?:olbar|p)|ext(?:Transform|Indent|Decoration|Align)|ags)|SQRT(?:1_2|2)|i(?:n(?:ner(?:Height|Width)|put)|ds|gnoreCase)|zIndex|o(?:scpu|n(?:readystatechange|Line)|uter(?:Height|Width)|p(?:sProfile|ener)|ffscreenBuffering)|NEGATIVE_INFINITY|d(?:i(?:splay|alog(?:Height|Top|Width|Left|Arguments)|rectories)|e(?:scription|fault(?:Status|Ch(?:ecked|arset)|View)))|u(?:ser(?:Profile|Language|Agent)|n(?:iqueID|defined)|pdateInterval)|_content|p(?:ixelDepth|ort|ersonalbar|kcs11|l(?:ugins|atform)|a(?:thname|dding(?:Right|Bottom|Top|Left)|rent(?:Window|Layer)?|ge(?:X(?:Offset)?|Y(?:Offset)?))|r(?:o(?:to(?:col|type)|duct(?:Sub)?|mpter)|e(?:vious|fix)))|e(?:n(?:coding|abledPlugin)|x(?:ternal|pando)|mbeds)|v(?:isibility|endor(?:Sub)?|Linkcolor)|URLUnencoded|P(?:I|OSITIVE_INFINITY)|f(?:ilename|o(?:nt(?:Size|Family|Weight)|rmName)|rame(?:s|Element)|gColor)|E|whiteSpace|l(?:i(?:stStyleType|n(?:eHeight|kColor))|o(?:ca(?:tion(?:bar)?|lName)|wsrc)|e(?:ngth|ft(?:Context)?)|a(?:st(?:M(?:odified|atch)|Index|Paren)|yer(?:s|X)|nguage))|a(?:pp(?:MinorVersion|Name|Co(?:deName|re)|Version)|vail(?:Height|Top|Width|Left)|ll|r(?:ity|guments)|Linkcolor|bove)|r(?:ight(?:Context)?|e(?:sponse(?:XML|Text)|adyState))|global|x|m(?:imeTypes|ultiline|enubar|argin(?:Right|Bottom|Top|Left))|L(?:N(?:10|2)|OG(?:10E|2E))|b(?:o(?:ttom|rder(?:Width|RightWidth|BottomWidth|Style|Color|TopWidth|LeftWidth))|ufferDepth|elow|ackground(?:Color|Image)))\b/
@@ -25761,11 +29851,11 @@ var SAFE_INSERT_BEFORE_TOKENS =
     ["text", "paren.rparen", "punctuation.operator", "comment"];
 
 var context;
-var contextCache = {}
+var contextCache = {};
 var initContext = function(editor) {
     var id = -1;
     if (editor.multiSelect) {
-        id = editor.selection.id;
+        id = editor.selection.index;
         if (contextCache.rangeCount != editor.multiSelect.rangeCount)
             contextCache = {rangeCount: editor.multiSelect.rangeCount};
     }
@@ -25782,6 +29872,19 @@ var initContext = function(editor) {
     };
 };
 
+var getWrapped = function(selection, selected, opening, closing) {
+    var rowDiff = selection.end.row - selection.start.row;
+    return {
+        text: opening + selected + closing,
+        selection: [
+                0,
+                selection.start.column + 1,
+                rowDiff,
+                selection.end.column + (rowDiff ? 0 : 1)
+            ]
+    };
+};
+
 var CstyleBehaviour = function() {
     this.add("braces", "insertion", function(state, action, editor, session, text) {
         var cursor = editor.getCursorPosition();
@@ -25791,10 +29894,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && selected !== "{" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '{' + selected + '}',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '{', '}');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 if (/[\]\}\)]/.test(line[cursor.column]) || editor.inMultiSelectMode) {
                     CstyleBehaviour.recordAutoInsert(editor, session, "}");
@@ -25874,10 +29974,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '(' + selected + ')',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '(', ')');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 CstyleBehaviour.recordAutoInsert(editor, session, ")");
                 return {
@@ -25922,10 +30019,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '[' + selected + ']',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '[', ']');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 CstyleBehaviour.recordAutoInsert(editor, session, "]");
                 return {
@@ -25971,49 +30065,44 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && selected !== "'" && selected != '"' && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: quote + selected + quote,
-                    selection: false
-                };
-            } else {
+                return getWrapped(selection, selected, quote, quote);
+            } else if (!selected) {
                 var cursor = editor.getCursorPosition();
                 var line = session.doc.getLine(cursor.row);
                 var leftChar = line.substring(cursor.column-1, cursor.column);
-                if (leftChar == '\\') {
+                var rightChar = line.substring(cursor.column, cursor.column + 1);
+                
+                var token = session.getTokenAt(cursor.row, cursor.column);
+                var rightToken = session.getTokenAt(cursor.row, cursor.column + 1);
+                if (leftChar == "\\" && token && /escape/.test(token.type))
                     return null;
+                
+                var stringBefore = token && /string|escape/.test(token.type);
+                var stringAfter = !rightToken || /string|escape/.test(rightToken.type);
+                
+                var pair;
+                if (rightChar == quote) {
+                    pair = stringBefore !== stringAfter;
+                } else {
+                    if (stringBefore && !stringAfter)
+                        return null; // wrap string with different quote
+                    if (stringBefore && stringAfter)
+                        return null; // do not pair quotes inside strings
+                    var wordRe = session.$mode.tokenRe;
+                    wordRe.lastIndex = 0;
+                    var isWordBefore = wordRe.test(leftChar);
+                    wordRe.lastIndex = 0;
+                    var isWordAfter = wordRe.test(leftChar);
+                    if (isWordBefore || isWordAfter)
+                        return null; // before or after alphanumeric
+                    if (rightChar && !/[\s;,.})\]\\]/.test(rightChar))
+                        return null; // there is rightChar and it isn't closing
+                    pair = true;
                 }
-                var tokens = session.getTokens(selection.start.row);
-                var col = 0, token;
-                var quotepos = -1; // Track whether we're inside an open quote.
-
-                for (var x = 0; x < tokens.length; x++) {
-                    token = tokens[x];
-                    if (token.type == "string") {
-                      quotepos = -1;
-                    } else if (quotepos < 0) {
-                      quotepos = token.value.indexOf(quote);
-                    }
-                    if ((token.value.length + col) > selection.start.column) {
-                        break;
-                    }
-                    col += tokens[x].value.length;
-                }
-                if (!token || (quotepos < 0 && token.type !== "comment" && (token.type !== "string" || ((selection.start.column !== token.value.length+col-1) && token.value.lastIndexOf(quote) === token.value.length-1)))) {
-                    if (!CstyleBehaviour.isSaneInsertion(editor, session))
-                        return;
-                    return {
-                        text: quote + quote,
-                        selection: [1,1]
-                    };
-                } else if (token && token.type === "string") {
-                    var rightChar = line.substring(cursor.column, cursor.column + 1);
-                    if (rightChar == quote) {
-                        return {
-                            text: '',
-                            selection: [1, 1]
-                        };
-                    }
-                }
+                return {
+                    text: pair ? quote + quote : "",
+                    selection: [1,1]
+                };
             }
         }
     });
@@ -26125,12 +30214,35 @@ var FoldMode = exports.FoldMode = function(commentRegex) {
 oop.inherits(FoldMode, BaseFoldMode);
 
 (function() {
-
+    
     this.foldingStartMarker = /(\{|\[)[^\}\]]*$|^\s*(\/\*)/;
     this.foldingStopMarker = /^[^\[\{]*(\}|\])|^[\s\*]*(\*\/)/;
+    this.singleLineBlockCommentRe= /^\s*(\/\*).*\*\/\s*$/;
+    this.tripleStarBlockCommentRe = /^\s*(\/\*\*\*).*\*\/\s*$/;
+    this.startRegionRe = /^\s*(\/\*|\/\/)#?region\b/;
+    this._getFoldWidgetBase = this.getFoldWidget;
+    this.getFoldWidget = function(session, foldStyle, row) {
+        var line = session.getLine(row);
+    
+        if (this.singleLineBlockCommentRe.test(line)) {
+            if (!this.startRegionRe.test(line) && !this.tripleStarBlockCommentRe.test(line))
+                return "";
+        }
+    
+        var fw = this._getFoldWidgetBase(session, foldStyle, row);
+    
+        if (!fw && this.startRegionRe.test(line))
+            return "start"; // lineCommentRegionStart
+    
+        return fw;
+    };
 
     this.getFoldWidgetRange = function(session, foldStyle, row, forceMultiline) {
         var line = session.getLine(row);
+        
+        if (this.startRegionRe.test(line))
+            return this.getCommentRegionBlock(session, line, row);
+        
         var match = line.match(this.foldingStartMarker);
         if (match) {
             var i = match.index;
@@ -26194,6 +30306,28 @@ oop.inherits(FoldMode, BaseFoldMode);
         }
         
         return new Range(startRow, startColumn, endRow, session.getLine(endRow).length);
+    };
+    this.getCommentRegionBlock = function(session, line, row) {
+        var startColumn = line.search(/\s*$/);
+        var maxRow = session.getLength();
+        var startRow = row;
+        
+        var re = /^\s*(?:\/\*|\/\/|--)#?(end)?region\b/;
+        var depth = 1;
+        while (++row < maxRow) {
+            line = session.getLine(row);
+            var m = re.exec(line);
+            if (!m) continue;
+            if (m[1]) depth--;
+            else depth++;
+
+            if (!depth) break;
+        }
+
+        var endRow = row;
+        if (endRow > startRow) {
+            return new Range(startRow, startColumn, endRow, line.length);
+        }
     };
 
 }).call(FoldMode.prototype);
@@ -26270,7 +30404,7 @@ oop.inherits(Mode, TextMode);
         var worker = new WorkerClient(["ace"], "ace/mode/javascript_worker", "JavaScriptWorker");
         worker.attachToDocument(session.getDocument());
 
-        worker.on("jslint", function(results) {
+        worker.on("annotate", function(results) {
             session.setAnnotations(results.data);
         });
 
@@ -26297,7 +30431,7 @@ var supportType = exports.supportType = "animation-fill-mode|alignment-adjust|al
 var supportFunction = exports.supportFunction = "rgb|rgba|url|attr|counter|counters";
 var supportConstant = exports.supportConstant = "absolute|after-edge|after|all-scroll|all|alphabetic|always|antialiased|armenian|auto|avoid-column|avoid-page|avoid|balance|baseline|before-edge|before|below|bidi-override|block-line-height|block|bold|bolder|border-box|both|bottom|box|break-all|break-word|capitalize|caps-height|caption|center|central|char|circle|cjk-ideographic|clone|close-quote|col-resize|collapse|column|consider-shifts|contain|content-box|cover|crosshair|cubic-bezier|dashed|decimal-leading-zero|decimal|default|disabled|disc|disregard-shifts|distribute-all-lines|distribute-letter|distribute-space|distribute|dotted|double|e-resize|ease-in|ease-in-out|ease-out|ease|ellipsis|end|exclude-ruby|fill|fixed|georgian|glyphs|grid-height|groove|hand|hanging|hebrew|help|hidden|hiragana-iroha|hiragana|horizontal|icon|ideograph-alpha|ideograph-numeric|ideograph-parenthesis|ideograph-space|ideographic|inactive|include-ruby|inherit|initial|inline-block|inline-box|inline-line-height|inline-table|inline|inset|inside|inter-ideograph|inter-word|invert|italic|justify|katakana-iroha|katakana|keep-all|last|left|lighter|line-edge|line-through|line|linear|list-item|local|loose|lower-alpha|lower-greek|lower-latin|lower-roman|lowercase|lr-tb|ltr|mathematical|max-height|max-size|medium|menu|message-box|middle|move|n-resize|ne-resize|newspaper|no-change|no-close-quote|no-drop|no-open-quote|no-repeat|none|normal|not-allowed|nowrap|nw-resize|oblique|open-quote|outset|outside|overline|padding-box|page|pointer|pre-line|pre-wrap|pre|preserve-3d|progress|relative|repeat-x|repeat-y|repeat|replaced|reset-size|ridge|right|round|row-resize|rtl|s-resize|scroll|se-resize|separate|slice|small-caps|small-caption|solid|space|square|start|static|status-bar|step-end|step-start|steps|stretch|strict|sub|super|sw-resize|table-caption|table-cell|table-column-group|table-column|table-footer-group|table-header-group|table-row-group|table-row|table|tb-rl|text-after-edge|text-before-edge|text-bottom|text-size|text-top|text|thick|thin|transparent|underline|upper-alpha|upper-latin|upper-roman|uppercase|use-script|vertical-ideographic|vertical-text|visible|w-resize|wait|whitespace|z-index|zero";
 var supportConstantColor = exports.supportConstantColor = "aqua|black|blue|fuchsia|gray|green|lime|maroon|navy|olive|orange|purple|red|silver|teal|white|yellow";
-var supportConstantFonts = exports.supportConstantFonts = "arial|century|comic|courier|garamond|georgia|helvetica|impact|lucida|symbol|system|tahoma|times|trebuchet|utopia|verdana|webdings|sans-serif|serif|monospace";
+var supportConstantFonts = exports.supportConstantFonts = "arial|century|comic|courier|cursive|fantasy|garamond|georgia|helvetica|impact|lucida|symbol|system|tahoma|times|trebuchet|utopia|verdana|webdings|sans-serif|serif|monospace";
 
 var numRe = exports.numRe = "\\-?(?:(?:[0-9]+)|(?:[0-9]*\\.[0-9]+))";
 var pseudoElements = exports.pseudoElements = "(\\:+)\\b(after|before|first-letter|first-line|moz-selection|selection)\\b";
@@ -26561,7 +30695,7 @@ oop.inherits(Mode, TextMode);
         var worker = new WorkerClient(["ace"], "ace/mode/css_worker", "Worker");
         worker.attachToDocument(session.getDocument());
 
-        worker.on("csslint", function(e) {
+        worker.on("annotate", function(e) {
             session.setAnnotations(e.data);
         });
 
@@ -26586,6 +30720,8 @@ var oop = require("../lib/oop");
 var TextHighlightRules = require("./text_highlight_rules").TextHighlightRules;
 
 var XmlHighlightRules = function(normalize) {
+    var tagRegex = "[_:a-zA-Z\xc0-\uffff][-_:.a-zA-Z0-9\xc0-\uffff]*";
+
     this.$rules = {
         start : [
             {token : "string.cdata.xml", regex : "<\\!\\[CDATA\\[", next : "cdata"},
@@ -26595,7 +30731,7 @@ var XmlHighlightRules = function(normalize) {
             },
             {
                 token : ["punctuation.instruction.xml", "keyword.instruction.xml"],
-                regex : "(<\\?)([-_a-zA-Z0-9]+)", next : "processing_instruction",
+                regex : "(<\\?)(" + tagRegex + ")", next : "processing_instruction",
             },
             {token : "comment.xml", regex : "<\\!--", next : "comment"},
             {
@@ -26611,7 +30747,7 @@ var XmlHighlightRules = function(normalize) {
 
         xml_decl : [{
             token : "entity.other.attribute-name.decl-attribute-name.xml",
-            regex : "(?:[-_a-zA-Z0-9]+:)?[-_a-zA-Z0-9]+"
+            regex : "(?:" + tagRegex + ":)?" + tagRegex + ""
         }, {
             token : "keyword.operator.decl-attribute-equals.xml",
             regex : "="
@@ -26647,7 +30783,7 @@ var XmlHighlightRules = function(normalize) {
             next: "pop"
         }, {
             token : ["punctuation.markup-decl.xml", "keyword.markup-decl.xml"],
-            regex : "(<\\!)([-_a-zA-Z0-9]+)",
+            regex : "(<\\!)(" + tagRegex + ")",
             push : [{
                 token : "text",
                 regex : "\\s+"
@@ -26683,7 +30819,7 @@ var XmlHighlightRules = function(normalize) {
 
         tag : [{
             token : ["meta.tag.punctuation.tag-open.xml", "meta.tag.punctuation.end-tag-open.xml", "meta.tag.tag-name.xml"],
-            regex : "(?:(<)|(</))((?:[-_a-zA-Z0-9]+:)?[-_a-zA-Z0-9]+)",
+            regex : "(?:(<)|(</))((?:" + tagRegex + ":)?" + tagRegex + ")",
             next: [
                 {include : "attributes"},
                 {token : "meta.tag.punctuation.tag-close.xml", regex : "/?>", next : "start"}
@@ -26714,7 +30850,7 @@ var XmlHighlightRules = function(normalize) {
 
         attributes: [{
             token : "entity.other.attribute-name.xml",
-            regex : "(?:[-_a-zA-Z0-9]+:)?[-_a-zA-Z0-9]+"
+            regex : "(?:" + tagRegex + ":)?" + tagRegex + ""
         }, {
             token : "keyword.operator.attribute-equals.xml",
             regex : "="
@@ -26826,7 +30962,7 @@ var HtmlHighlightRules = function() {
             include : "tag_whitespace"
         }, {
             token : "entity.other.attribute-name.xml",
-            regex : "[-_a-zA-Z0-9:]+"
+            regex : "[-_a-zA-Z0-9:.]+"
         }, {
             token : "keyword.operator.attribute-equals.xml",
             regex : "=",
@@ -26850,7 +30986,7 @@ var HtmlHighlightRules = function() {
                 return ["meta.tag.punctuation." + (start == "<" ? "" : "end-") + "tag-open.xml",
                     "meta.tag" + (group ? "." + group : "") + ".tag-name.xml"];
             },
-            regex : "(</?)([-_a-zA-Z0-9:]+)",
+            regex : "(</?)([-_a-zA-Z0-9:.]+)",
             next: "tag_stuff"
         }],
         tag_stuff: [
@@ -26989,6 +31125,8 @@ var XmlBehaviour = function () {
             var token = iterator.getCurrentToken();
 
             if (token && token.type.indexOf("tag-close") !== -1) {
+                if (token.value == "/>")
+                    return;
                 while (token && token.type.indexOf("tag-name") === -1) {
                     token = iterator.stepBackward();
                 }
@@ -27242,9 +31380,6 @@ function is(token, type) {
             if (!tag || top.tagName == tag.tagName) {
                 return stack.pop();
             }
-            else if (this.optionalEndTags.hasOwnProperty(tag.tagName)) {
-                return;
-            }
             else if (this.optionalEndTags.hasOwnProperty(top.tagName)) {
                 stack.pop();
                 continue;
@@ -27270,6 +31405,8 @@ function is(token, type) {
                 row: row,
                 column: firstTag.start.column + firstTag.tagName.length + 2
             };
+            if (firstTag.start.row == firstTag.end.row)
+                start.column = firstTag.end.column;
             while (tag = this._readTagForward(iterator)) {
                 if (tag.selfClosing) {
                     if (!stack.length) {
@@ -27311,6 +31448,8 @@ function is(token, type) {
                     this._pop(stack, tag);
                     if (stack.length == 0) {
                         tag.start.column += tag.tagName.length + 2;
+                        if (tag.start.row == tag.end.row && tag.start.column < tag.end.column)
+                            tag.start.column = tag.end.column;
                         return Range.fromPoints(tag.start, end);
                     }
                 }
@@ -27869,7 +32008,7 @@ var JavaScriptHighlightRules = function(options) {
                 regex : /(\.)(s(?:h(?:ift|ow(?:Mod(?:elessDialog|alDialog)|Help))|croll(?:X|By(?:Pages|Lines)?|Y|To)?|t(?:op|rike)|i(?:n|zeToContent|debar|gnText)|ort|u(?:p|b(?:str(?:ing)?)?)|pli(?:ce|t)|e(?:nd|t(?:Re(?:sizable|questHeader)|M(?:i(?:nutes|lliseconds)|onth)|Seconds|Ho(?:tKeys|urs)|Year|Cursor|Time(?:out)?|Interval|ZOptions|Date|UTC(?:M(?:i(?:nutes|lliseconds)|onth)|Seconds|Hours|Date|FullYear)|FullYear|Active)|arch)|qrt|lice|avePreferences|mall)|h(?:ome|andleEvent)|navigate|c(?:har(?:CodeAt|At)|o(?:s|n(?:cat|textual|firm)|mpile)|eil|lear(?:Timeout|Interval)?|a(?:ptureEvents|ll)|reate(?:StyleSheet|Popup|EventObject))|t(?:o(?:GMTString|S(?:tring|ource)|U(?:TCString|pperCase)|Lo(?:caleString|werCase))|est|a(?:n|int(?:Enabled)?))|i(?:s(?:NaN|Finite)|ndexOf|talics)|d(?:isableExternalCapture|ump|etachEvent)|u(?:n(?:shift|taint|escape|watch)|pdateCommands)|j(?:oin|avaEnabled)|p(?:o(?:p|w)|ush|lugins.refresh|a(?:ddings|rse(?:Int|Float)?)|r(?:int|ompt|eference))|e(?:scape|nableExternalCapture|val|lementFromPoint|x(?:p|ec(?:Script|Command)?))|valueOf|UTC|queryCommand(?:State|Indeterm|Enabled|Value)|f(?:i(?:nd|le(?:ModifiedDate|Size|CreatedDate|UpdatedDate)|xed)|o(?:nt(?:size|color)|rward)|loor|romCharCode)|watch|l(?:ink|o(?:ad|g)|astIndexOf)|a(?:sin|nchor|cos|t(?:tachEvent|ob|an(?:2)?)|pply|lert|b(?:s|ort))|r(?:ou(?:nd|teEvents)|e(?:size(?:By|To)|calc|turnValue|place|verse|l(?:oad|ease(?:Capture|Events)))|andom)|g(?:o|et(?:ResponseHeader|M(?:i(?:nutes|lliseconds)|onth)|Se(?:conds|lection)|Hours|Year|Time(?:zoneOffset)?|Da(?:y|te)|UTC(?:M(?:i(?:nutes|lliseconds)|onth)|Seconds|Hours|Da(?:y|te)|FullYear)|FullYear|A(?:ttention|llResponseHeaders)))|m(?:in|ove(?:B(?:y|elow)|To(?:Absolute)?|Above)|ergeAttributes|a(?:tch|rgins|x))|b(?:toa|ig|o(?:ld|rderWidths)|link|ack))\b(?=\()/
             }, {
                 token : ["punctuation.operator", "support.function.dom"],
-                regex : /(\.)(s(?:ub(?:stringData|mit)|plitText|e(?:t(?:NamedItem|Attribute(?:Node)?)|lect))|has(?:ChildNodes|Feature)|namedItem|c(?:l(?:ick|o(?:se|neNode))|reate(?:C(?:omment|DATASection|aption)|T(?:Head|extNode|Foot)|DocumentFragment|ProcessingInstruction|E(?:ntityReference|lement)|Attribute))|tabIndex|i(?:nsert(?:Row|Before|Cell|Data)|tem)|open|delete(?:Row|C(?:ell|aption)|T(?:Head|Foot)|Data)|focus|write(?:ln)?|a(?:dd|ppend(?:Child|Data))|re(?:set|place(?:Child|Data)|move(?:NamedItem|Child|Attribute(?:Node)?)?)|get(?:NamedItem|Element(?:sBy(?:Name|TagName)|ById)|Attribute(?:Node)?)|blur)\b(?=\()/
+                regex : /(\.)(s(?:ub(?:stringData|mit)|plitText|e(?:t(?:NamedItem|Attribute(?:Node)?)|lect))|has(?:ChildNodes|Feature)|namedItem|c(?:l(?:ick|o(?:se|neNode))|reate(?:C(?:omment|DATASection|aption)|T(?:Head|extNode|Foot)|DocumentFragment|ProcessingInstruction|E(?:ntityReference|lement)|Attribute))|tabIndex|i(?:nsert(?:Row|Before|Cell|Data)|tem)|open|delete(?:Row|C(?:ell|aption)|T(?:Head|Foot)|Data)|focus|write(?:ln)?|a(?:dd|ppend(?:Child|Data))|re(?:set|place(?:Child|Data)|move(?:NamedItem|Child|Attribute(?:Node)?)?)|get(?:NamedItem|Element(?:sBy(?:Name|TagName|ClassName)|ById)|Attribute(?:Node)?)|blur)\b(?=\()/
             }, {
                 token : ["punctuation.operator", "support.constant"],
                 regex : /(\.)(s(?:ystemLanguage|cr(?:ipts|ollbars|een(?:X|Y|Top|Left))|t(?:yle(?:Sheets)?|atus(?:Text|bar)?)|ibling(?:Below|Above)|ource|uffixes|e(?:curity(?:Policy)?|l(?:ection|f)))|h(?:istory|ost(?:name)?|as(?:h|Focus))|y|X(?:MLDocument|SLDocument)|n(?:ext|ame(?:space(?:s|URI)|Prop))|M(?:IN_VALUE|AX_VALUE)|c(?:haracterSet|o(?:n(?:structor|trollers)|okieEnabled|lorDepth|mp(?:onents|lete))|urrent|puClass|l(?:i(?:p(?:boardData)?|entInformation)|osed|asses)|alle(?:e|r)|rypto)|t(?:o(?:olbar|p)|ext(?:Transform|Indent|Decoration|Align)|ags)|SQRT(?:1_2|2)|i(?:n(?:ner(?:Height|Width)|put)|ds|gnoreCase)|zIndex|o(?:scpu|n(?:readystatechange|Line)|uter(?:Height|Width)|p(?:sProfile|ener)|ffscreenBuffering)|NEGATIVE_INFINITY|d(?:i(?:splay|alog(?:Height|Top|Width|Left|Arguments)|rectories)|e(?:scription|fault(?:Status|Ch(?:ecked|arset)|View)))|u(?:ser(?:Profile|Language|Agent)|n(?:iqueID|defined)|pdateInterval)|_content|p(?:ixelDepth|ort|ersonalbar|kcs11|l(?:ugins|atform)|a(?:thname|dding(?:Right|Bottom|Top|Left)|rent(?:Window|Layer)?|ge(?:X(?:Offset)?|Y(?:Offset)?))|r(?:o(?:to(?:col|type)|duct(?:Sub)?|mpter)|e(?:vious|fix)))|e(?:n(?:coding|abledPlugin)|x(?:ternal|pando)|mbeds)|v(?:isibility|endor(?:Sub)?|Linkcolor)|URLUnencoded|P(?:I|OSITIVE_INFINITY)|f(?:ilename|o(?:nt(?:Size|Family|Weight)|rmName)|rame(?:s|Element)|gColor)|E|whiteSpace|l(?:i(?:stStyleType|n(?:eHeight|kColor))|o(?:ca(?:tion(?:bar)?|lName)|wsrc)|e(?:ngth|ft(?:Context)?)|a(?:st(?:M(?:odified|atch)|Index|Paren)|yer(?:s|X)|nguage))|a(?:pp(?:MinorVersion|Name|Co(?:deName|re)|Version)|vail(?:Height|Top|Width|Left)|ll|r(?:ity|guments)|Linkcolor|bove)|r(?:ight(?:Context)?|e(?:sponse(?:XML|Text)|adyState))|global|x|m(?:imeTypes|ultiline|enubar|argin(?:Right|Bottom|Top|Left))|L(?:N(?:10|2)|OG(?:10E|2E))|b(?:o(?:ttom|rder(?:Width|RightWidth|BottomWidth|Style|Color|TopWidth|LeftWidth))|ufferDepth|elow|ackground(?:Color|Image)))\b/
@@ -28147,11 +32286,11 @@ var SAFE_INSERT_BEFORE_TOKENS =
     ["text", "paren.rparen", "punctuation.operator", "comment"];
 
 var context;
-var contextCache = {}
+var contextCache = {};
 var initContext = function(editor) {
     var id = -1;
     if (editor.multiSelect) {
-        id = editor.selection.id;
+        id = editor.selection.index;
         if (contextCache.rangeCount != editor.multiSelect.rangeCount)
             contextCache = {rangeCount: editor.multiSelect.rangeCount};
     }
@@ -28168,6 +32307,19 @@ var initContext = function(editor) {
     };
 };
 
+var getWrapped = function(selection, selected, opening, closing) {
+    var rowDiff = selection.end.row - selection.start.row;
+    return {
+        text: opening + selected + closing,
+        selection: [
+                0,
+                selection.start.column + 1,
+                rowDiff,
+                selection.end.column + (rowDiff ? 0 : 1)
+            ]
+    };
+};
+
 var CstyleBehaviour = function() {
     this.add("braces", "insertion", function(state, action, editor, session, text) {
         var cursor = editor.getCursorPosition();
@@ -28177,10 +32329,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && selected !== "{" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '{' + selected + '}',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '{', '}');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 if (/[\]\}\)]/.test(line[cursor.column]) || editor.inMultiSelectMode) {
                     CstyleBehaviour.recordAutoInsert(editor, session, "}");
@@ -28260,10 +32409,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '(' + selected + ')',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '(', ')');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 CstyleBehaviour.recordAutoInsert(editor, session, ")");
                 return {
@@ -28308,10 +32454,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '[' + selected + ']',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '[', ']');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 CstyleBehaviour.recordAutoInsert(editor, session, "]");
                 return {
@@ -28357,49 +32500,44 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && selected !== "'" && selected != '"' && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: quote + selected + quote,
-                    selection: false
-                };
-            } else {
+                return getWrapped(selection, selected, quote, quote);
+            } else if (!selected) {
                 var cursor = editor.getCursorPosition();
                 var line = session.doc.getLine(cursor.row);
                 var leftChar = line.substring(cursor.column-1, cursor.column);
-                if (leftChar == '\\') {
+                var rightChar = line.substring(cursor.column, cursor.column + 1);
+                
+                var token = session.getTokenAt(cursor.row, cursor.column);
+                var rightToken = session.getTokenAt(cursor.row, cursor.column + 1);
+                if (leftChar == "\\" && token && /escape/.test(token.type))
                     return null;
+                
+                var stringBefore = token && /string|escape/.test(token.type);
+                var stringAfter = !rightToken || /string|escape/.test(rightToken.type);
+                
+                var pair;
+                if (rightChar == quote) {
+                    pair = stringBefore !== stringAfter;
+                } else {
+                    if (stringBefore && !stringAfter)
+                        return null; // wrap string with different quote
+                    if (stringBefore && stringAfter)
+                        return null; // do not pair quotes inside strings
+                    var wordRe = session.$mode.tokenRe;
+                    wordRe.lastIndex = 0;
+                    var isWordBefore = wordRe.test(leftChar);
+                    wordRe.lastIndex = 0;
+                    var isWordAfter = wordRe.test(leftChar);
+                    if (isWordBefore || isWordAfter)
+                        return null; // before or after alphanumeric
+                    if (rightChar && !/[\s;,.})\]\\]/.test(rightChar))
+                        return null; // there is rightChar and it isn't closing
+                    pair = true;
                 }
-                var tokens = session.getTokens(selection.start.row);
-                var col = 0, token;
-                var quotepos = -1; // Track whether we're inside an open quote.
-
-                for (var x = 0; x < tokens.length; x++) {
-                    token = tokens[x];
-                    if (token.type == "string") {
-                      quotepos = -1;
-                    } else if (quotepos < 0) {
-                      quotepos = token.value.indexOf(quote);
-                    }
-                    if ((token.value.length + col) > selection.start.column) {
-                        break;
-                    }
-                    col += tokens[x].value.length;
-                }
-                if (!token || (quotepos < 0 && token.type !== "comment" && (token.type !== "string" || ((selection.start.column !== token.value.length+col-1) && token.value.lastIndexOf(quote) === token.value.length-1)))) {
-                    if (!CstyleBehaviour.isSaneInsertion(editor, session))
-                        return;
-                    return {
-                        text: quote + quote,
-                        selection: [1,1]
-                    };
-                } else if (token && token.type === "string") {
-                    var rightChar = line.substring(cursor.column, cursor.column + 1);
-                    if (rightChar == quote) {
-                        return {
-                            text: '',
-                            selection: [1, 1]
-                        };
-                    }
-                }
+                return {
+                    text: pair ? quote + quote : "",
+                    selection: [1,1]
+                };
             }
         }
     });
@@ -28511,12 +32649,35 @@ var FoldMode = exports.FoldMode = function(commentRegex) {
 oop.inherits(FoldMode, BaseFoldMode);
 
 (function() {
-
+    
     this.foldingStartMarker = /(\{|\[)[^\}\]]*$|^\s*(\/\*)/;
     this.foldingStopMarker = /^[^\[\{]*(\}|\])|^[\s\*]*(\*\/)/;
+    this.singleLineBlockCommentRe= /^\s*(\/\*).*\*\/\s*$/;
+    this.tripleStarBlockCommentRe = /^\s*(\/\*\*\*).*\*\/\s*$/;
+    this.startRegionRe = /^\s*(\/\*|\/\/)#?region\b/;
+    this._getFoldWidgetBase = this.getFoldWidget;
+    this.getFoldWidget = function(session, foldStyle, row) {
+        var line = session.getLine(row);
+    
+        if (this.singleLineBlockCommentRe.test(line)) {
+            if (!this.startRegionRe.test(line) && !this.tripleStarBlockCommentRe.test(line))
+                return "";
+        }
+    
+        var fw = this._getFoldWidgetBase(session, foldStyle, row);
+    
+        if (!fw && this.startRegionRe.test(line))
+            return "start"; // lineCommentRegionStart
+    
+        return fw;
+    };
 
     this.getFoldWidgetRange = function(session, foldStyle, row, forceMultiline) {
         var line = session.getLine(row);
+        
+        if (this.startRegionRe.test(line))
+            return this.getCommentRegionBlock(session, line, row);
+        
         var match = line.match(this.foldingStartMarker);
         if (match) {
             var i = match.index;
@@ -28580,6 +32741,28 @@ oop.inherits(FoldMode, BaseFoldMode);
         }
         
         return new Range(startRow, startColumn, endRow, session.getLine(endRow).length);
+    };
+    this.getCommentRegionBlock = function(session, line, row) {
+        var startColumn = line.search(/\s*$/);
+        var maxRow = session.getLength();
+        var startRow = row;
+        
+        var re = /^\s*(?:\/\*|\/\/|--)#?(end)?region\b/;
+        var depth = 1;
+        while (++row < maxRow) {
+            line = session.getLine(row);
+            var m = re.exec(line);
+            if (!m) continue;
+            if (m[1]) depth--;
+            else depth++;
+
+            if (!depth) break;
+        }
+
+        var endRow = row;
+        if (endRow > startRow) {
+            return new Range(startRow, startColumn, endRow, line.length);
+        }
     };
 
 }).call(FoldMode.prototype);
@@ -28656,7 +32839,7 @@ oop.inherits(Mode, TextMode);
         var worker = new WorkerClient(["ace"], "ace/mode/javascript_worker", "JavaScriptWorker");
         worker.attachToDocument(session.getDocument());
 
-        worker.on("jslint", function(results) {
+        worker.on("annotate", function(results) {
             session.setAnnotations(results.data);
         });
 
@@ -28794,11 +32977,11 @@ var SAFE_INSERT_BEFORE_TOKENS =
     ["text", "paren.rparen", "punctuation.operator", "comment"];
 
 var context;
-var contextCache = {}
+var contextCache = {};
 var initContext = function(editor) {
     var id = -1;
     if (editor.multiSelect) {
-        id = editor.selection.id;
+        id = editor.selection.index;
         if (contextCache.rangeCount != editor.multiSelect.rangeCount)
             contextCache = {rangeCount: editor.multiSelect.rangeCount};
     }
@@ -28815,6 +32998,19 @@ var initContext = function(editor) {
     };
 };
 
+var getWrapped = function(selection, selected, opening, closing) {
+    var rowDiff = selection.end.row - selection.start.row;
+    return {
+        text: opening + selected + closing,
+        selection: [
+                0,
+                selection.start.column + 1,
+                rowDiff,
+                selection.end.column + (rowDiff ? 0 : 1)
+            ]
+    };
+};
+
 var CstyleBehaviour = function() {
     this.add("braces", "insertion", function(state, action, editor, session, text) {
         var cursor = editor.getCursorPosition();
@@ -28824,10 +33020,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && selected !== "{" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '{' + selected + '}',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '{', '}');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 if (/[\]\}\)]/.test(line[cursor.column]) || editor.inMultiSelectMode) {
                     CstyleBehaviour.recordAutoInsert(editor, session, "}");
@@ -28907,10 +33100,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '(' + selected + ')',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '(', ')');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 CstyleBehaviour.recordAutoInsert(editor, session, ")");
                 return {
@@ -28955,10 +33145,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '[' + selected + ']',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '[', ']');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 CstyleBehaviour.recordAutoInsert(editor, session, "]");
                 return {
@@ -29004,49 +33191,44 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && selected !== "'" && selected != '"' && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: quote + selected + quote,
-                    selection: false
-                };
-            } else {
+                return getWrapped(selection, selected, quote, quote);
+            } else if (!selected) {
                 var cursor = editor.getCursorPosition();
                 var line = session.doc.getLine(cursor.row);
                 var leftChar = line.substring(cursor.column-1, cursor.column);
-                if (leftChar == '\\') {
+                var rightChar = line.substring(cursor.column, cursor.column + 1);
+                
+                var token = session.getTokenAt(cursor.row, cursor.column);
+                var rightToken = session.getTokenAt(cursor.row, cursor.column + 1);
+                if (leftChar == "\\" && token && /escape/.test(token.type))
                     return null;
+                
+                var stringBefore = token && /string|escape/.test(token.type);
+                var stringAfter = !rightToken || /string|escape/.test(rightToken.type);
+                
+                var pair;
+                if (rightChar == quote) {
+                    pair = stringBefore !== stringAfter;
+                } else {
+                    if (stringBefore && !stringAfter)
+                        return null; // wrap string with different quote
+                    if (stringBefore && stringAfter)
+                        return null; // do not pair quotes inside strings
+                    var wordRe = session.$mode.tokenRe;
+                    wordRe.lastIndex = 0;
+                    var isWordBefore = wordRe.test(leftChar);
+                    wordRe.lastIndex = 0;
+                    var isWordAfter = wordRe.test(leftChar);
+                    if (isWordBefore || isWordAfter)
+                        return null; // before or after alphanumeric
+                    if (rightChar && !/[\s;,.})\]\\]/.test(rightChar))
+                        return null; // there is rightChar and it isn't closing
+                    pair = true;
                 }
-                var tokens = session.getTokens(selection.start.row);
-                var col = 0, token;
-                var quotepos = -1; // Track whether we're inside an open quote.
-
-                for (var x = 0; x < tokens.length; x++) {
-                    token = tokens[x];
-                    if (token.type == "string") {
-                      quotepos = -1;
-                    } else if (quotepos < 0) {
-                      quotepos = token.value.indexOf(quote);
-                    }
-                    if ((token.value.length + col) > selection.start.column) {
-                        break;
-                    }
-                    col += tokens[x].value.length;
-                }
-                if (!token || (quotepos < 0 && token.type !== "comment" && (token.type !== "string" || ((selection.start.column !== token.value.length+col-1) && token.value.lastIndexOf(quote) === token.value.length-1)))) {
-                    if (!CstyleBehaviour.isSaneInsertion(editor, session))
-                        return;
-                    return {
-                        text: quote + quote,
-                        selection: [1,1]
-                    };
-                } else if (token && token.type === "string") {
-                    var rightChar = line.substring(cursor.column, cursor.column + 1);
-                    if (rightChar == quote) {
-                        return {
-                            text: '',
-                            selection: [1, 1]
-                        };
-                    }
-                }
+                return {
+                    text: pair ? quote + quote : "",
+                    selection: [1,1]
+                };
             }
         }
     });
@@ -29158,12 +33340,35 @@ var FoldMode = exports.FoldMode = function(commentRegex) {
 oop.inherits(FoldMode, BaseFoldMode);
 
 (function() {
-
+    
     this.foldingStartMarker = /(\{|\[)[^\}\]]*$|^\s*(\/\*)/;
     this.foldingStopMarker = /^[^\[\{]*(\}|\])|^[\s\*]*(\*\/)/;
+    this.singleLineBlockCommentRe= /^\s*(\/\*).*\*\/\s*$/;
+    this.tripleStarBlockCommentRe = /^\s*(\/\*\*\*).*\*\/\s*$/;
+    this.startRegionRe = /^\s*(\/\*|\/\/)#?region\b/;
+    this._getFoldWidgetBase = this.getFoldWidget;
+    this.getFoldWidget = function(session, foldStyle, row) {
+        var line = session.getLine(row);
+    
+        if (this.singleLineBlockCommentRe.test(line)) {
+            if (!this.startRegionRe.test(line) && !this.tripleStarBlockCommentRe.test(line))
+                return "";
+        }
+    
+        var fw = this._getFoldWidgetBase(session, foldStyle, row);
+    
+        if (!fw && this.startRegionRe.test(line))
+            return "start"; // lineCommentRegionStart
+    
+        return fw;
+    };
 
     this.getFoldWidgetRange = function(session, foldStyle, row, forceMultiline) {
         var line = session.getLine(row);
+        
+        if (this.startRegionRe.test(line))
+            return this.getCommentRegionBlock(session, line, row);
+        
         var match = line.match(this.foldingStartMarker);
         if (match) {
             var i = match.index;
@@ -29228,6 +33433,28 @@ oop.inherits(FoldMode, BaseFoldMode);
         
         return new Range(startRow, startColumn, endRow, session.getLine(endRow).length);
     };
+    this.getCommentRegionBlock = function(session, line, row) {
+        var startColumn = line.search(/\s*$/);
+        var maxRow = session.getLength();
+        var startRow = row;
+        
+        var re = /^\s*(?:\/\*|\/\/|--)#?(end)?region\b/;
+        var depth = 1;
+        while (++row < maxRow) {
+            line = session.getLine(row);
+            var m = re.exec(line);
+            if (!m) continue;
+            if (m[1]) depth--;
+            else depth++;
+
+            if (!depth) break;
+        }
+
+        var endRow = row;
+        if (endRow > startRow) {
+            return new Range(startRow, startColumn, endRow, line.length);
+        }
+    };
 
 }).call(FoldMode.prototype);
 
@@ -29279,11 +33506,11 @@ oop.inherits(Mode, TextMode);
         var worker = new WorkerClient(["ace"], "ace/mode/json_worker", "JsonWorker");
         worker.attachToDocument(session.getDocument());
 
-        worker.on("error", function(e) {
-            session.setAnnotations([e.data]);
+        worker.on("annotate", function(e) {
+            session.setAnnotations(e.data);
         });
 
-        worker.on("ok", function() {
+        worker.on("terminate", function() {
             session.clearAnnotations();
         });
 
@@ -29474,7 +33701,7 @@ var JavaScriptHighlightRules = function(options) {
                 regex : /(\.)(s(?:h(?:ift|ow(?:Mod(?:elessDialog|alDialog)|Help))|croll(?:X|By(?:Pages|Lines)?|Y|To)?|t(?:op|rike)|i(?:n|zeToContent|debar|gnText)|ort|u(?:p|b(?:str(?:ing)?)?)|pli(?:ce|t)|e(?:nd|t(?:Re(?:sizable|questHeader)|M(?:i(?:nutes|lliseconds)|onth)|Seconds|Ho(?:tKeys|urs)|Year|Cursor|Time(?:out)?|Interval|ZOptions|Date|UTC(?:M(?:i(?:nutes|lliseconds)|onth)|Seconds|Hours|Date|FullYear)|FullYear|Active)|arch)|qrt|lice|avePreferences|mall)|h(?:ome|andleEvent)|navigate|c(?:har(?:CodeAt|At)|o(?:s|n(?:cat|textual|firm)|mpile)|eil|lear(?:Timeout|Interval)?|a(?:ptureEvents|ll)|reate(?:StyleSheet|Popup|EventObject))|t(?:o(?:GMTString|S(?:tring|ource)|U(?:TCString|pperCase)|Lo(?:caleString|werCase))|est|a(?:n|int(?:Enabled)?))|i(?:s(?:NaN|Finite)|ndexOf|talics)|d(?:isableExternalCapture|ump|etachEvent)|u(?:n(?:shift|taint|escape|watch)|pdateCommands)|j(?:oin|avaEnabled)|p(?:o(?:p|w)|ush|lugins.refresh|a(?:ddings|rse(?:Int|Float)?)|r(?:int|ompt|eference))|e(?:scape|nableExternalCapture|val|lementFromPoint|x(?:p|ec(?:Script|Command)?))|valueOf|UTC|queryCommand(?:State|Indeterm|Enabled|Value)|f(?:i(?:nd|le(?:ModifiedDate|Size|CreatedDate|UpdatedDate)|xed)|o(?:nt(?:size|color)|rward)|loor|romCharCode)|watch|l(?:ink|o(?:ad|g)|astIndexOf)|a(?:sin|nchor|cos|t(?:tachEvent|ob|an(?:2)?)|pply|lert|b(?:s|ort))|r(?:ou(?:nd|teEvents)|e(?:size(?:By|To)|calc|turnValue|place|verse|l(?:oad|ease(?:Capture|Events)))|andom)|g(?:o|et(?:ResponseHeader|M(?:i(?:nutes|lliseconds)|onth)|Se(?:conds|lection)|Hours|Year|Time(?:zoneOffset)?|Da(?:y|te)|UTC(?:M(?:i(?:nutes|lliseconds)|onth)|Seconds|Hours|Da(?:y|te)|FullYear)|FullYear|A(?:ttention|llResponseHeaders)))|m(?:in|ove(?:B(?:y|elow)|To(?:Absolute)?|Above)|ergeAttributes|a(?:tch|rgins|x))|b(?:toa|ig|o(?:ld|rderWidths)|link|ack))\b(?=\()/
             }, {
                 token : ["punctuation.operator", "support.function.dom"],
-                regex : /(\.)(s(?:ub(?:stringData|mit)|plitText|e(?:t(?:NamedItem|Attribute(?:Node)?)|lect))|has(?:ChildNodes|Feature)|namedItem|c(?:l(?:ick|o(?:se|neNode))|reate(?:C(?:omment|DATASection|aption)|T(?:Head|extNode|Foot)|DocumentFragment|ProcessingInstruction|E(?:ntityReference|lement)|Attribute))|tabIndex|i(?:nsert(?:Row|Before|Cell|Data)|tem)|open|delete(?:Row|C(?:ell|aption)|T(?:Head|Foot)|Data)|focus|write(?:ln)?|a(?:dd|ppend(?:Child|Data))|re(?:set|place(?:Child|Data)|move(?:NamedItem|Child|Attribute(?:Node)?)?)|get(?:NamedItem|Element(?:sBy(?:Name|TagName)|ById)|Attribute(?:Node)?)|blur)\b(?=\()/
+                regex : /(\.)(s(?:ub(?:stringData|mit)|plitText|e(?:t(?:NamedItem|Attribute(?:Node)?)|lect))|has(?:ChildNodes|Feature)|namedItem|c(?:l(?:ick|o(?:se|neNode))|reate(?:C(?:omment|DATASection|aption)|T(?:Head|extNode|Foot)|DocumentFragment|ProcessingInstruction|E(?:ntityReference|lement)|Attribute))|tabIndex|i(?:nsert(?:Row|Before|Cell|Data)|tem)|open|delete(?:Row|C(?:ell|aption)|T(?:Head|Foot)|Data)|focus|write(?:ln)?|a(?:dd|ppend(?:Child|Data))|re(?:set|place(?:Child|Data)|move(?:NamedItem|Child|Attribute(?:Node)?)?)|get(?:NamedItem|Element(?:sBy(?:Name|TagName|ClassName)|ById)|Attribute(?:Node)?)|blur)\b(?=\()/
             }, {
                 token : ["punctuation.operator", "support.constant"],
                 regex : /(\.)(s(?:ystemLanguage|cr(?:ipts|ollbars|een(?:X|Y|Top|Left))|t(?:yle(?:Sheets)?|atus(?:Text|bar)?)|ibling(?:Below|Above)|ource|uffixes|e(?:curity(?:Policy)?|l(?:ection|f)))|h(?:istory|ost(?:name)?|as(?:h|Focus))|y|X(?:MLDocument|SLDocument)|n(?:ext|ame(?:space(?:s|URI)|Prop))|M(?:IN_VALUE|AX_VALUE)|c(?:haracterSet|o(?:n(?:structor|trollers)|okieEnabled|lorDepth|mp(?:onents|lete))|urrent|puClass|l(?:i(?:p(?:boardData)?|entInformation)|osed|asses)|alle(?:e|r)|rypto)|t(?:o(?:olbar|p)|ext(?:Transform|Indent|Decoration|Align)|ags)|SQRT(?:1_2|2)|i(?:n(?:ner(?:Height|Width)|put)|ds|gnoreCase)|zIndex|o(?:scpu|n(?:readystatechange|Line)|uter(?:Height|Width)|p(?:sProfile|ener)|ffscreenBuffering)|NEGATIVE_INFINITY|d(?:i(?:splay|alog(?:Height|Top|Width|Left|Arguments)|rectories)|e(?:scription|fault(?:Status|Ch(?:ecked|arset)|View)))|u(?:ser(?:Profile|Language|Agent)|n(?:iqueID|defined)|pdateInterval)|_content|p(?:ixelDepth|ort|ersonalbar|kcs11|l(?:ugins|atform)|a(?:thname|dding(?:Right|Bottom|Top|Left)|rent(?:Window|Layer)?|ge(?:X(?:Offset)?|Y(?:Offset)?))|r(?:o(?:to(?:col|type)|duct(?:Sub)?|mpter)|e(?:vious|fix)))|e(?:n(?:coding|abledPlugin)|x(?:ternal|pando)|mbeds)|v(?:isibility|endor(?:Sub)?|Linkcolor)|URLUnencoded|P(?:I|OSITIVE_INFINITY)|f(?:ilename|o(?:nt(?:Size|Family|Weight)|rmName)|rame(?:s|Element)|gColor)|E|whiteSpace|l(?:i(?:stStyleType|n(?:eHeight|kColor))|o(?:ca(?:tion(?:bar)?|lName)|wsrc)|e(?:ngth|ft(?:Context)?)|a(?:st(?:M(?:odified|atch)|Index|Paren)|yer(?:s|X)|nguage))|a(?:pp(?:MinorVersion|Name|Co(?:deName|re)|Version)|vail(?:Height|Top|Width|Left)|ll|r(?:ity|guments)|Linkcolor|bove)|r(?:ight(?:Context)?|e(?:sponse(?:XML|Text)|adyState))|global|x|m(?:imeTypes|ultiline|enubar|argin(?:Right|Bottom|Top|Left))|L(?:N(?:10|2)|OG(?:10E|2E))|b(?:o(?:ttom|rder(?:Width|RightWidth|BottomWidth|Style|Color|TopWidth|LeftWidth))|ufferDepth|elow|ackground(?:Color|Image)))\b/
@@ -29752,11 +33979,11 @@ var SAFE_INSERT_BEFORE_TOKENS =
     ["text", "paren.rparen", "punctuation.operator", "comment"];
 
 var context;
-var contextCache = {}
+var contextCache = {};
 var initContext = function(editor) {
     var id = -1;
     if (editor.multiSelect) {
-        id = editor.selection.id;
+        id = editor.selection.index;
         if (contextCache.rangeCount != editor.multiSelect.rangeCount)
             contextCache = {rangeCount: editor.multiSelect.rangeCount};
     }
@@ -29773,6 +34000,19 @@ var initContext = function(editor) {
     };
 };
 
+var getWrapped = function(selection, selected, opening, closing) {
+    var rowDiff = selection.end.row - selection.start.row;
+    return {
+        text: opening + selected + closing,
+        selection: [
+                0,
+                selection.start.column + 1,
+                rowDiff,
+                selection.end.column + (rowDiff ? 0 : 1)
+            ]
+    };
+};
+
 var CstyleBehaviour = function() {
     this.add("braces", "insertion", function(state, action, editor, session, text) {
         var cursor = editor.getCursorPosition();
@@ -29782,10 +34022,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && selected !== "{" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '{' + selected + '}',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '{', '}');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 if (/[\]\}\)]/.test(line[cursor.column]) || editor.inMultiSelectMode) {
                     CstyleBehaviour.recordAutoInsert(editor, session, "}");
@@ -29865,10 +34102,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '(' + selected + ')',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '(', ')');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 CstyleBehaviour.recordAutoInsert(editor, session, ")");
                 return {
@@ -29913,10 +34147,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '[' + selected + ']',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '[', ']');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 CstyleBehaviour.recordAutoInsert(editor, session, "]");
                 return {
@@ -29962,49 +34193,44 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && selected !== "'" && selected != '"' && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: quote + selected + quote,
-                    selection: false
-                };
-            } else {
+                return getWrapped(selection, selected, quote, quote);
+            } else if (!selected) {
                 var cursor = editor.getCursorPosition();
                 var line = session.doc.getLine(cursor.row);
                 var leftChar = line.substring(cursor.column-1, cursor.column);
-                if (leftChar == '\\') {
+                var rightChar = line.substring(cursor.column, cursor.column + 1);
+                
+                var token = session.getTokenAt(cursor.row, cursor.column);
+                var rightToken = session.getTokenAt(cursor.row, cursor.column + 1);
+                if (leftChar == "\\" && token && /escape/.test(token.type))
                     return null;
+                
+                var stringBefore = token && /string|escape/.test(token.type);
+                var stringAfter = !rightToken || /string|escape/.test(rightToken.type);
+                
+                var pair;
+                if (rightChar == quote) {
+                    pair = stringBefore !== stringAfter;
+                } else {
+                    if (stringBefore && !stringAfter)
+                        return null; // wrap string with different quote
+                    if (stringBefore && stringAfter)
+                        return null; // do not pair quotes inside strings
+                    var wordRe = session.$mode.tokenRe;
+                    wordRe.lastIndex = 0;
+                    var isWordBefore = wordRe.test(leftChar);
+                    wordRe.lastIndex = 0;
+                    var isWordAfter = wordRe.test(leftChar);
+                    if (isWordBefore || isWordAfter)
+                        return null; // before or after alphanumeric
+                    if (rightChar && !/[\s;,.})\]\\]/.test(rightChar))
+                        return null; // there is rightChar and it isn't closing
+                    pair = true;
                 }
-                var tokens = session.getTokens(selection.start.row);
-                var col = 0, token;
-                var quotepos = -1; // Track whether we're inside an open quote.
-
-                for (var x = 0; x < tokens.length; x++) {
-                    token = tokens[x];
-                    if (token.type == "string") {
-                      quotepos = -1;
-                    } else if (quotepos < 0) {
-                      quotepos = token.value.indexOf(quote);
-                    }
-                    if ((token.value.length + col) > selection.start.column) {
-                        break;
-                    }
-                    col += tokens[x].value.length;
-                }
-                if (!token || (quotepos < 0 && token.type !== "comment" && (token.type !== "string" || ((selection.start.column !== token.value.length+col-1) && token.value.lastIndexOf(quote) === token.value.length-1)))) {
-                    if (!CstyleBehaviour.isSaneInsertion(editor, session))
-                        return;
-                    return {
-                        text: quote + quote,
-                        selection: [1,1]
-                    };
-                } else if (token && token.type === "string") {
-                    var rightChar = line.substring(cursor.column, cursor.column + 1);
-                    if (rightChar == quote) {
-                        return {
-                            text: '',
-                            selection: [1, 1]
-                        };
-                    }
-                }
+                return {
+                    text: pair ? quote + quote : "",
+                    selection: [1,1]
+                };
             }
         }
     });
@@ -30116,12 +34342,35 @@ var FoldMode = exports.FoldMode = function(commentRegex) {
 oop.inherits(FoldMode, BaseFoldMode);
 
 (function() {
-
+    
     this.foldingStartMarker = /(\{|\[)[^\}\]]*$|^\s*(\/\*)/;
     this.foldingStopMarker = /^[^\[\{]*(\}|\])|^[\s\*]*(\*\/)/;
+    this.singleLineBlockCommentRe= /^\s*(\/\*).*\*\/\s*$/;
+    this.tripleStarBlockCommentRe = /^\s*(\/\*\*\*).*\*\/\s*$/;
+    this.startRegionRe = /^\s*(\/\*|\/\/)#?region\b/;
+    this._getFoldWidgetBase = this.getFoldWidget;
+    this.getFoldWidget = function(session, foldStyle, row) {
+        var line = session.getLine(row);
+    
+        if (this.singleLineBlockCommentRe.test(line)) {
+            if (!this.startRegionRe.test(line) && !this.tripleStarBlockCommentRe.test(line))
+                return "";
+        }
+    
+        var fw = this._getFoldWidgetBase(session, foldStyle, row);
+    
+        if (!fw && this.startRegionRe.test(line))
+            return "start"; // lineCommentRegionStart
+    
+        return fw;
+    };
 
     this.getFoldWidgetRange = function(session, foldStyle, row, forceMultiline) {
         var line = session.getLine(row);
+        
+        if (this.startRegionRe.test(line))
+            return this.getCommentRegionBlock(session, line, row);
+        
         var match = line.match(this.foldingStartMarker);
         if (match) {
             var i = match.index;
@@ -30185,6 +34434,28 @@ oop.inherits(FoldMode, BaseFoldMode);
         }
         
         return new Range(startRow, startColumn, endRow, session.getLine(endRow).length);
+    };
+    this.getCommentRegionBlock = function(session, line, row) {
+        var startColumn = line.search(/\s*$/);
+        var maxRow = session.getLength();
+        var startRow = row;
+        
+        var re = /^\s*(?:\/\*|\/\/|--)#?(end)?region\b/;
+        var depth = 1;
+        while (++row < maxRow) {
+            line = session.getLine(row);
+            var m = re.exec(line);
+            if (!m) continue;
+            if (m[1]) depth--;
+            else depth++;
+
+            if (!depth) break;
+        }
+
+        var endRow = row;
+        if (endRow > startRow) {
+            return new Range(startRow, startColumn, endRow, line.length);
+        }
     };
 
 }).call(FoldMode.prototype);
@@ -30261,7 +34532,7 @@ oop.inherits(Mode, TextMode);
         var worker = new WorkerClient(["ace"], "ace/mode/javascript_worker", "JavaScriptWorker");
         worker.attachToDocument(session.getDocument());
 
-        worker.on("jslint", function(results) {
+        worker.on("annotate", function(results) {
             session.setAnnotations(results.data);
         });
 
@@ -30285,6 +34556,8 @@ var oop = require("../lib/oop");
 var TextHighlightRules = require("./text_highlight_rules").TextHighlightRules;
 
 var XmlHighlightRules = function(normalize) {
+    var tagRegex = "[_:a-zA-Z\xc0-\uffff][-_:.a-zA-Z0-9\xc0-\uffff]*";
+
     this.$rules = {
         start : [
             {token : "string.cdata.xml", regex : "<\\!\\[CDATA\\[", next : "cdata"},
@@ -30294,7 +34567,7 @@ var XmlHighlightRules = function(normalize) {
             },
             {
                 token : ["punctuation.instruction.xml", "keyword.instruction.xml"],
-                regex : "(<\\?)([-_a-zA-Z0-9]+)", next : "processing_instruction",
+                regex : "(<\\?)(" + tagRegex + ")", next : "processing_instruction",
             },
             {token : "comment.xml", regex : "<\\!--", next : "comment"},
             {
@@ -30310,7 +34583,7 @@ var XmlHighlightRules = function(normalize) {
 
         xml_decl : [{
             token : "entity.other.attribute-name.decl-attribute-name.xml",
-            regex : "(?:[-_a-zA-Z0-9]+:)?[-_a-zA-Z0-9]+"
+            regex : "(?:" + tagRegex + ":)?" + tagRegex + ""
         }, {
             token : "keyword.operator.decl-attribute-equals.xml",
             regex : "="
@@ -30346,7 +34619,7 @@ var XmlHighlightRules = function(normalize) {
             next: "pop"
         }, {
             token : ["punctuation.markup-decl.xml", "keyword.markup-decl.xml"],
-            regex : "(<\\!)([-_a-zA-Z0-9]+)",
+            regex : "(<\\!)(" + tagRegex + ")",
             push : [{
                 token : "text",
                 regex : "\\s+"
@@ -30382,7 +34655,7 @@ var XmlHighlightRules = function(normalize) {
 
         tag : [{
             token : ["meta.tag.punctuation.tag-open.xml", "meta.tag.punctuation.end-tag-open.xml", "meta.tag.tag-name.xml"],
-            regex : "(?:(<)|(</))((?:[-_a-zA-Z0-9]+:)?[-_a-zA-Z0-9]+)",
+            regex : "(?:(<)|(</))((?:" + tagRegex + ":)?" + tagRegex + ")",
             next: [
                 {include : "attributes"},
                 {token : "meta.tag.punctuation.tag-close.xml", regex : "/?>", next : "start"}
@@ -30413,7 +34686,7 @@ var XmlHighlightRules = function(normalize) {
 
         attributes: [{
             token : "entity.other.attribute-name.xml",
-            regex : "(?:[-_a-zA-Z0-9]+:)?[-_a-zA-Z0-9]+"
+            regex : "(?:" + tagRegex + ":)?" + tagRegex + ""
         }, {
             token : "keyword.operator.attribute-equals.xml",
             regex : "="
@@ -30606,6 +34879,8 @@ var XmlBehaviour = function () {
             var token = iterator.getCurrentToken();
 
             if (token && token.type.indexOf("tag-close") !== -1) {
+                if (token.value == "/>")
+                    return;
                 while (token && token.type.indexOf("tag-name") === -1) {
                     token = iterator.stepBackward();
                 }
@@ -30805,9 +35080,6 @@ function is(token, type) {
             if (!tag || top.tagName == tag.tagName) {
                 return stack.pop();
             }
-            else if (this.optionalEndTags.hasOwnProperty(tag.tagName)) {
-                return;
-            }
             else if (this.optionalEndTags.hasOwnProperty(top.tagName)) {
                 stack.pop();
                 continue;
@@ -30833,6 +35105,8 @@ function is(token, type) {
                 row: row,
                 column: firstTag.start.column + firstTag.tagName.length + 2
             };
+            if (firstTag.start.row == firstTag.end.row)
+                start.column = firstTag.end.column;
             while (tag = this._readTagForward(iterator)) {
                 if (tag.selfClosing) {
                     if (!stack.length) {
@@ -30874,6 +35148,8 @@ function is(token, type) {
                     this._pop(stack, tag);
                     if (stack.length == 0) {
                         tag.start.column += tag.tagName.length + 2;
+                        if (tag.start.row == tag.end.row && tag.start.column < tag.end.column)
+                            tag.start.column = tag.end.column;
                         return Range.fromPoints(tag.start, end);
                     }
                 }
@@ -30889,7 +35165,7 @@ function is(token, type) {
 
 });
 
-ace.define("ace/mode/xml",["require","exports","module","ace/lib/oop","ace/lib/lang","ace/mode/text","ace/mode/xml_highlight_rules","ace/mode/behaviour/xml","ace/mode/folding/xml"], function(require, exports, module) {
+ace.define("ace/mode/xml",["require","exports","module","ace/lib/oop","ace/lib/lang","ace/mode/text","ace/mode/xml_highlight_rules","ace/mode/behaviour/xml","ace/mode/folding/xml","ace/worker/worker_client"], function(require, exports, module) {
 "use strict";
 
 var oop = require("../lib/oop");
@@ -30898,11 +35174,12 @@ var TextMode = require("./text").Mode;
 var XmlHighlightRules = require("./xml_highlight_rules").XmlHighlightRules;
 var XmlBehaviour = require("./behaviour/xml").XmlBehaviour;
 var XmlFoldMode = require("./folding/xml").FoldMode;
+var WorkerClient = require("../worker/worker_client").WorkerClient;
 
 var Mode = function() {
-    this.HighlightRules = XmlHighlightRules;
-    this.$behaviour = new XmlBehaviour();
-    this.foldingRules = new XmlFoldMode();
+   this.HighlightRules = XmlHighlightRules;
+   this.$behaviour = new XmlBehaviour();
+   this.foldingRules = new XmlFoldMode();
 };
 
 oop.inherits(Mode, TextMode);
@@ -30913,6 +35190,21 @@ oop.inherits(Mode, TextMode);
 
     this.blockComment = {start: "<!--", end: "-->"};
 
+    this.createWorker = function(session) {
+        var worker = new WorkerClient(["ace"], "ace/mode/xml_worker", "Worker");
+        worker.attachToDocument(session.getDocument());
+
+        worker.on("error", function(e) {
+            session.setAnnotations(e.data);
+        });
+
+        worker.on("terminate", function() {
+            session.clearAnnotations();
+        });
+
+        return worker;
+    };
+    
     this.$id = "ace/mode/xml";
 }).call(Mode.prototype);
 
@@ -30929,7 +35221,7 @@ var supportType = exports.supportType = "animation-fill-mode|alignment-adjust|al
 var supportFunction = exports.supportFunction = "rgb|rgba|url|attr|counter|counters";
 var supportConstant = exports.supportConstant = "absolute|after-edge|after|all-scroll|all|alphabetic|always|antialiased|armenian|auto|avoid-column|avoid-page|avoid|balance|baseline|before-edge|before|below|bidi-override|block-line-height|block|bold|bolder|border-box|both|bottom|box|break-all|break-word|capitalize|caps-height|caption|center|central|char|circle|cjk-ideographic|clone|close-quote|col-resize|collapse|column|consider-shifts|contain|content-box|cover|crosshair|cubic-bezier|dashed|decimal-leading-zero|decimal|default|disabled|disc|disregard-shifts|distribute-all-lines|distribute-letter|distribute-space|distribute|dotted|double|e-resize|ease-in|ease-in-out|ease-out|ease|ellipsis|end|exclude-ruby|fill|fixed|georgian|glyphs|grid-height|groove|hand|hanging|hebrew|help|hidden|hiragana-iroha|hiragana|horizontal|icon|ideograph-alpha|ideograph-numeric|ideograph-parenthesis|ideograph-space|ideographic|inactive|include-ruby|inherit|initial|inline-block|inline-box|inline-line-height|inline-table|inline|inset|inside|inter-ideograph|inter-word|invert|italic|justify|katakana-iroha|katakana|keep-all|last|left|lighter|line-edge|line-through|line|linear|list-item|local|loose|lower-alpha|lower-greek|lower-latin|lower-roman|lowercase|lr-tb|ltr|mathematical|max-height|max-size|medium|menu|message-box|middle|move|n-resize|ne-resize|newspaper|no-change|no-close-quote|no-drop|no-open-quote|no-repeat|none|normal|not-allowed|nowrap|nw-resize|oblique|open-quote|outset|outside|overline|padding-box|page|pointer|pre-line|pre-wrap|pre|preserve-3d|progress|relative|repeat-x|repeat-y|repeat|replaced|reset-size|ridge|right|round|row-resize|rtl|s-resize|scroll|se-resize|separate|slice|small-caps|small-caption|solid|space|square|start|static|status-bar|step-end|step-start|steps|stretch|strict|sub|super|sw-resize|table-caption|table-cell|table-column-group|table-column|table-footer-group|table-header-group|table-row-group|table-row|table|tb-rl|text-after-edge|text-before-edge|text-bottom|text-size|text-top|text|thick|thin|transparent|underline|upper-alpha|upper-latin|upper-roman|uppercase|use-script|vertical-ideographic|vertical-text|visible|w-resize|wait|whitespace|z-index|zero";
 var supportConstantColor = exports.supportConstantColor = "aqua|black|blue|fuchsia|gray|green|lime|maroon|navy|olive|orange|purple|red|silver|teal|white|yellow";
-var supportConstantFonts = exports.supportConstantFonts = "arial|century|comic|courier|garamond|georgia|helvetica|impact|lucida|symbol|system|tahoma|times|trebuchet|utopia|verdana|webdings|sans-serif|serif|monospace";
+var supportConstantFonts = exports.supportConstantFonts = "arial|century|comic|courier|cursive|fantasy|garamond|georgia|helvetica|impact|lucida|symbol|system|tahoma|times|trebuchet|utopia|verdana|webdings|sans-serif|serif|monospace";
 
 var numRe = exports.numRe = "\\-?(?:(?:[0-9]+)|(?:[0-9]*\\.[0-9]+))";
 var pseudoElements = exports.pseudoElements = "(\\:+)\\b(after|before|first-letter|first-line|moz-selection|selection)\\b";
@@ -31193,7 +35485,7 @@ oop.inherits(Mode, TextMode);
         var worker = new WorkerClient(["ace"], "ace/mode/css_worker", "Worker");
         worker.attachToDocument(session.getDocument());
 
-        worker.on("csslint", function(e) {
+        worker.on("annotate", function(e) {
             session.setAnnotations(e.data);
         });
 
@@ -31248,7 +35540,7 @@ var HtmlHighlightRules = function() {
             include : "tag_whitespace"
         }, {
             token : "entity.other.attribute-name.xml",
-            regex : "[-_a-zA-Z0-9:]+"
+            regex : "[-_a-zA-Z0-9:.]+"
         }, {
             token : "keyword.operator.attribute-equals.xml",
             regex : "=",
@@ -31272,7 +35564,7 @@ var HtmlHighlightRules = function() {
                 return ["meta.tag.punctuation." + (start == "<" ? "" : "end-") + "tag-open.xml",
                     "meta.tag" + (group ? "." + group : "") + ".tag-name.xml"];
             },
-            regex : "(</?)([-_a-zA-Z0-9:]+)",
+            regex : "(</?)([-_a-zA-Z0-9:.]+)",
             next: "tag_stuff"
         }],
         tag_stuff: [
@@ -31817,6 +36109,7 @@ var MarkdownHighlightRules = function() {
         }],
         "allowBlock": [
             {token : "support.function", regex : "^ {4}.+", next : "allowBlock"},
+            {token : "empty_line", regex : '^$', next: "allowBlock"},
             {token : "empty", regex : "", next : "start"}
         ],
 
@@ -32125,7 +36418,7 @@ var ShHighlightRules = function() {
             token : "keyword.operator"
         }, {
             stateName: "heredoc",
-            regex : "(<<)(\\s*)(['\"`]?)([\\w\\-]+)(['\"`]?)",
+            regex : "(<<-?)(\\s*)(['\"`]?)([\\w\\-]+)(['\"`]?)",
             onMatch : function(value, currentState, stack) {
                 var next = value[2] == '-' ? "indentedHeredoc" : "heredoc";
                 var tokens = value.split(this.splitRegex);
@@ -32243,12 +36536,35 @@ var FoldMode = exports.FoldMode = function(commentRegex) {
 oop.inherits(FoldMode, BaseFoldMode);
 
 (function() {
-
+    
     this.foldingStartMarker = /(\{|\[)[^\}\]]*$|^\s*(\/\*)/;
     this.foldingStopMarker = /^[^\[\{]*(\}|\])|^[\s\*]*(\*\/)/;
+    this.singleLineBlockCommentRe= /^\s*(\/\*).*\*\/\s*$/;
+    this.tripleStarBlockCommentRe = /^\s*(\/\*\*\*).*\*\/\s*$/;
+    this.startRegionRe = /^\s*(\/\*|\/\/)#?region\b/;
+    this._getFoldWidgetBase = this.getFoldWidget;
+    this.getFoldWidget = function(session, foldStyle, row) {
+        var line = session.getLine(row);
+    
+        if (this.singleLineBlockCommentRe.test(line)) {
+            if (!this.startRegionRe.test(line) && !this.tripleStarBlockCommentRe.test(line))
+                return "";
+        }
+    
+        var fw = this._getFoldWidgetBase(session, foldStyle, row);
+    
+        if (!fw && this.startRegionRe.test(line))
+            return "start"; // lineCommentRegionStart
+    
+        return fw;
+    };
 
     this.getFoldWidgetRange = function(session, foldStyle, row, forceMultiline) {
         var line = session.getLine(row);
+        
+        if (this.startRegionRe.test(line))
+            return this.getCommentRegionBlock(session, line, row);
+        
         var match = line.match(this.foldingStartMarker);
         if (match) {
             var i = match.index;
@@ -32313,6 +36629,28 @@ oop.inherits(FoldMode, BaseFoldMode);
         
         return new Range(startRow, startColumn, endRow, session.getLine(endRow).length);
     };
+    this.getCommentRegionBlock = function(session, line, row) {
+        var startColumn = line.search(/\s*$/);
+        var maxRow = session.getLength();
+        var startRow = row;
+        
+        var re = /^\s*(?:\/\*|\/\/|--)#?(end)?region\b/;
+        var depth = 1;
+        while (++row < maxRow) {
+            line = session.getLine(row);
+            var m = re.exec(line);
+            if (!m) continue;
+            if (m[1]) depth--;
+            else depth++;
+
+            if (!depth) break;
+        }
+
+        var endRow = row;
+        if (endRow > startRow) {
+            return new Range(startRow, startColumn, endRow, line.length);
+        }
+    };
 
 }).call(FoldMode.prototype);
 
@@ -32332,11 +36670,11 @@ var SAFE_INSERT_BEFORE_TOKENS =
     ["text", "paren.rparen", "punctuation.operator", "comment"];
 
 var context;
-var contextCache = {}
+var contextCache = {};
 var initContext = function(editor) {
     var id = -1;
     if (editor.multiSelect) {
-        id = editor.selection.id;
+        id = editor.selection.index;
         if (contextCache.rangeCount != editor.multiSelect.rangeCount)
             contextCache = {rangeCount: editor.multiSelect.rangeCount};
     }
@@ -32353,6 +36691,19 @@ var initContext = function(editor) {
     };
 };
 
+var getWrapped = function(selection, selected, opening, closing) {
+    var rowDiff = selection.end.row - selection.start.row;
+    return {
+        text: opening + selected + closing,
+        selection: [
+                0,
+                selection.start.column + 1,
+                rowDiff,
+                selection.end.column + (rowDiff ? 0 : 1)
+            ]
+    };
+};
+
 var CstyleBehaviour = function() {
     this.add("braces", "insertion", function(state, action, editor, session, text) {
         var cursor = editor.getCursorPosition();
@@ -32362,10 +36713,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && selected !== "{" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '{' + selected + '}',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '{', '}');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 if (/[\]\}\)]/.test(line[cursor.column]) || editor.inMultiSelectMode) {
                     CstyleBehaviour.recordAutoInsert(editor, session, "}");
@@ -32445,10 +36793,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '(' + selected + ')',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '(', ')');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 CstyleBehaviour.recordAutoInsert(editor, session, ")");
                 return {
@@ -32493,10 +36838,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '[' + selected + ']',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '[', ']');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 CstyleBehaviour.recordAutoInsert(editor, session, "]");
                 return {
@@ -32542,49 +36884,44 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && selected !== "'" && selected != '"' && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: quote + selected + quote,
-                    selection: false
-                };
-            } else {
+                return getWrapped(selection, selected, quote, quote);
+            } else if (!selected) {
                 var cursor = editor.getCursorPosition();
                 var line = session.doc.getLine(cursor.row);
                 var leftChar = line.substring(cursor.column-1, cursor.column);
-                if (leftChar == '\\') {
+                var rightChar = line.substring(cursor.column, cursor.column + 1);
+                
+                var token = session.getTokenAt(cursor.row, cursor.column);
+                var rightToken = session.getTokenAt(cursor.row, cursor.column + 1);
+                if (leftChar == "\\" && token && /escape/.test(token.type))
                     return null;
+                
+                var stringBefore = token && /string|escape/.test(token.type);
+                var stringAfter = !rightToken || /string|escape/.test(rightToken.type);
+                
+                var pair;
+                if (rightChar == quote) {
+                    pair = stringBefore !== stringAfter;
+                } else {
+                    if (stringBefore && !stringAfter)
+                        return null; // wrap string with different quote
+                    if (stringBefore && stringAfter)
+                        return null; // do not pair quotes inside strings
+                    var wordRe = session.$mode.tokenRe;
+                    wordRe.lastIndex = 0;
+                    var isWordBefore = wordRe.test(leftChar);
+                    wordRe.lastIndex = 0;
+                    var isWordAfter = wordRe.test(leftChar);
+                    if (isWordBefore || isWordAfter)
+                        return null; // before or after alphanumeric
+                    if (rightChar && !/[\s;,.})\]\\]/.test(rightChar))
+                        return null; // there is rightChar and it isn't closing
+                    pair = true;
                 }
-                var tokens = session.getTokens(selection.start.row);
-                var col = 0, token;
-                var quotepos = -1; // Track whether we're inside an open quote.
-
-                for (var x = 0; x < tokens.length; x++) {
-                    token = tokens[x];
-                    if (token.type == "string") {
-                      quotepos = -1;
-                    } else if (quotepos < 0) {
-                      quotepos = token.value.indexOf(quote);
-                    }
-                    if ((token.value.length + col) > selection.start.column) {
-                        break;
-                    }
-                    col += tokens[x].value.length;
-                }
-                if (!token || (quotepos < 0 && token.type !== "comment" && (token.type !== "string" || ((selection.start.column !== token.value.length+col-1) && token.value.lastIndexOf(quote) === token.value.length-1)))) {
-                    if (!CstyleBehaviour.isSaneInsertion(editor, session))
-                        return;
-                    return {
-                        text: quote + quote,
-                        selection: [1,1]
-                    };
-                } else if (token && token.type === "string") {
-                    var rightChar = line.substring(cursor.column, cursor.column + 1);
-                    if (rightChar == quote) {
-                        return {
-                            text: '',
-                            selection: [1, 1]
-                        };
-                    }
-                }
+                return {
+                    text: pair ? quote + quote : "",
+                    selection: [1,1]
+                };
             }
         }
     });
@@ -32966,21 +37303,29 @@ var SqlHighlightRules = function() {
 
     var keywords = (
         "select|insert|update|delete|from|where|and|or|group|by|order|limit|offset|having|as|case|" +
-        "when|else|end|type|left|right|join|on|outer|desc|asc|union"
+        "when|else|end|type|left|right|join|on|outer|desc|asc|union|create|table|primary|key|if|" +
+        "foreign|not|references|default|null|inner|cross|natural|database|drop|grant"
     );
 
     var builtinConstants = (
-        "true|false|null"
+        "true|false"
     );
 
     var builtinFunctions = (
-        "count|min|max|avg|sum|rank|now|coalesce"
+        "avg|count|first|last|max|min|sum|ucase|lcase|mid|len|round|rank|now|format|" + 
+        "coalesce|ifnull|isnull|nvl"
+    );
+
+    var dataTypes = (
+        "int|numeric|decimal|date|varchar|char|bigint|float|double|bit|binary|text|set|timestamp|" +
+        "money|real|number|integer"
     );
 
     var keywordMapper = this.createKeywordMapper({
         "support.function": builtinFunctions,
         "keyword": keywords,
-        "constant.language": builtinConstants
+        "constant.language": builtinConstants,
+        "storage.type": dataTypes
     }, "identifier", true);
 
     this.$rules = {
@@ -33055,6 +37400,8 @@ var oop = require("../lib/oop");
 var TextHighlightRules = require("./text_highlight_rules").TextHighlightRules;
 
 var XmlHighlightRules = function(normalize) {
+    var tagRegex = "[_:a-zA-Z\xc0-\uffff][-_:.a-zA-Z0-9\xc0-\uffff]*";
+
     this.$rules = {
         start : [
             {token : "string.cdata.xml", regex : "<\\!\\[CDATA\\[", next : "cdata"},
@@ -33064,7 +37411,7 @@ var XmlHighlightRules = function(normalize) {
             },
             {
                 token : ["punctuation.instruction.xml", "keyword.instruction.xml"],
-                regex : "(<\\?)([-_a-zA-Z0-9]+)", next : "processing_instruction",
+                regex : "(<\\?)(" + tagRegex + ")", next : "processing_instruction",
             },
             {token : "comment.xml", regex : "<\\!--", next : "comment"},
             {
@@ -33080,7 +37427,7 @@ var XmlHighlightRules = function(normalize) {
 
         xml_decl : [{
             token : "entity.other.attribute-name.decl-attribute-name.xml",
-            regex : "(?:[-_a-zA-Z0-9]+:)?[-_a-zA-Z0-9]+"
+            regex : "(?:" + tagRegex + ":)?" + tagRegex + ""
         }, {
             token : "keyword.operator.decl-attribute-equals.xml",
             regex : "="
@@ -33116,7 +37463,7 @@ var XmlHighlightRules = function(normalize) {
             next: "pop"
         }, {
             token : ["punctuation.markup-decl.xml", "keyword.markup-decl.xml"],
-            regex : "(<\\!)([-_a-zA-Z0-9]+)",
+            regex : "(<\\!)(" + tagRegex + ")",
             push : [{
                 token : "text",
                 regex : "\\s+"
@@ -33152,7 +37499,7 @@ var XmlHighlightRules = function(normalize) {
 
         tag : [{
             token : ["meta.tag.punctuation.tag-open.xml", "meta.tag.punctuation.end-tag-open.xml", "meta.tag.tag-name.xml"],
-            regex : "(?:(<)|(</))((?:[-_a-zA-Z0-9]+:)?[-_a-zA-Z0-9]+)",
+            regex : "(?:(<)|(</))((?:" + tagRegex + ":)?" + tagRegex + ")",
             next: [
                 {include : "attributes"},
                 {token : "meta.tag.punctuation.tag-close.xml", regex : "/?>", next : "start"}
@@ -33183,7 +37530,7 @@ var XmlHighlightRules = function(normalize) {
 
         attributes: [{
             token : "entity.other.attribute-name.xml",
-            regex : "(?:[-_a-zA-Z0-9]+:)?[-_a-zA-Z0-9]+"
+            regex : "(?:" + tagRegex + ":)?" + tagRegex + ""
         }, {
             token : "keyword.operator.attribute-equals.xml",
             regex : "="
@@ -33376,6 +37723,8 @@ var XmlBehaviour = function () {
             var token = iterator.getCurrentToken();
 
             if (token && token.type.indexOf("tag-close") !== -1) {
+                if (token.value == "/>")
+                    return;
                 while (token && token.type.indexOf("tag-name") === -1) {
                     token = iterator.stepBackward();
                 }
@@ -33575,9 +37924,6 @@ function is(token, type) {
             if (!tag || top.tagName == tag.tagName) {
                 return stack.pop();
             }
-            else if (this.optionalEndTags.hasOwnProperty(tag.tagName)) {
-                return;
-            }
             else if (this.optionalEndTags.hasOwnProperty(top.tagName)) {
                 stack.pop();
                 continue;
@@ -33603,6 +37949,8 @@ function is(token, type) {
                 row: row,
                 column: firstTag.start.column + firstTag.tagName.length + 2
             };
+            if (firstTag.start.row == firstTag.end.row)
+                start.column = firstTag.end.column;
             while (tag = this._readTagForward(iterator)) {
                 if (tag.selfClosing) {
                     if (!stack.length) {
@@ -33644,6 +37992,8 @@ function is(token, type) {
                     this._pop(stack, tag);
                     if (stack.length == 0) {
                         tag.start.column += tag.tagName.length + 2;
+                        if (tag.start.row == tag.end.row && tag.start.column < tag.end.column)
+                            tag.start.column = tag.end.column;
                         return Range.fromPoints(tag.start, end);
                     }
                 }
@@ -33659,7 +38009,7 @@ function is(token, type) {
 
 });
 
-ace.define("ace/mode/xml",["require","exports","module","ace/lib/oop","ace/lib/lang","ace/mode/text","ace/mode/xml_highlight_rules","ace/mode/behaviour/xml","ace/mode/folding/xml"], function(require, exports, module) {
+ace.define("ace/mode/xml",["require","exports","module","ace/lib/oop","ace/lib/lang","ace/mode/text","ace/mode/xml_highlight_rules","ace/mode/behaviour/xml","ace/mode/folding/xml","ace/worker/worker_client"], function(require, exports, module) {
 "use strict";
 
 var oop = require("../lib/oop");
@@ -33668,11 +38018,12 @@ var TextMode = require("./text").Mode;
 var XmlHighlightRules = require("./xml_highlight_rules").XmlHighlightRules;
 var XmlBehaviour = require("./behaviour/xml").XmlBehaviour;
 var XmlFoldMode = require("./folding/xml").FoldMode;
+var WorkerClient = require("../worker/worker_client").WorkerClient;
 
 var Mode = function() {
-    this.HighlightRules = XmlHighlightRules;
-    this.$behaviour = new XmlBehaviour();
-    this.foldingRules = new XmlFoldMode();
+   this.HighlightRules = XmlHighlightRules;
+   this.$behaviour = new XmlBehaviour();
+   this.foldingRules = new XmlFoldMode();
 };
 
 oop.inherits(Mode, TextMode);
@@ -33683,6 +38034,21 @@ oop.inherits(Mode, TextMode);
 
     this.blockComment = {start: "<!--", end: "-->"};
 
+    this.createWorker = function(session) {
+        var worker = new WorkerClient(["ace"], "ace/mode/xml_worker", "Worker");
+        worker.attachToDocument(session.getDocument());
+
+        worker.on("error", function(e) {
+            session.setAnnotations(e.data);
+        });
+
+        worker.on("terminate", function() {
+            session.clearAnnotations();
+        });
+
+        return worker;
+    };
+    
     this.$id = "ace/mode/xml";
 }).call(Mode.prototype);
 
@@ -33867,7 +38233,7 @@ var JavaScriptHighlightRules = function(options) {
                 regex : /(\.)(s(?:h(?:ift|ow(?:Mod(?:elessDialog|alDialog)|Help))|croll(?:X|By(?:Pages|Lines)?|Y|To)?|t(?:op|rike)|i(?:n|zeToContent|debar|gnText)|ort|u(?:p|b(?:str(?:ing)?)?)|pli(?:ce|t)|e(?:nd|t(?:Re(?:sizable|questHeader)|M(?:i(?:nutes|lliseconds)|onth)|Seconds|Ho(?:tKeys|urs)|Year|Cursor|Time(?:out)?|Interval|ZOptions|Date|UTC(?:M(?:i(?:nutes|lliseconds)|onth)|Seconds|Hours|Date|FullYear)|FullYear|Active)|arch)|qrt|lice|avePreferences|mall)|h(?:ome|andleEvent)|navigate|c(?:har(?:CodeAt|At)|o(?:s|n(?:cat|textual|firm)|mpile)|eil|lear(?:Timeout|Interval)?|a(?:ptureEvents|ll)|reate(?:StyleSheet|Popup|EventObject))|t(?:o(?:GMTString|S(?:tring|ource)|U(?:TCString|pperCase)|Lo(?:caleString|werCase))|est|a(?:n|int(?:Enabled)?))|i(?:s(?:NaN|Finite)|ndexOf|talics)|d(?:isableExternalCapture|ump|etachEvent)|u(?:n(?:shift|taint|escape|watch)|pdateCommands)|j(?:oin|avaEnabled)|p(?:o(?:p|w)|ush|lugins.refresh|a(?:ddings|rse(?:Int|Float)?)|r(?:int|ompt|eference))|e(?:scape|nableExternalCapture|val|lementFromPoint|x(?:p|ec(?:Script|Command)?))|valueOf|UTC|queryCommand(?:State|Indeterm|Enabled|Value)|f(?:i(?:nd|le(?:ModifiedDate|Size|CreatedDate|UpdatedDate)|xed)|o(?:nt(?:size|color)|rward)|loor|romCharCode)|watch|l(?:ink|o(?:ad|g)|astIndexOf)|a(?:sin|nchor|cos|t(?:tachEvent|ob|an(?:2)?)|pply|lert|b(?:s|ort))|r(?:ou(?:nd|teEvents)|e(?:size(?:By|To)|calc|turnValue|place|verse|l(?:oad|ease(?:Capture|Events)))|andom)|g(?:o|et(?:ResponseHeader|M(?:i(?:nutes|lliseconds)|onth)|Se(?:conds|lection)|Hours|Year|Time(?:zoneOffset)?|Da(?:y|te)|UTC(?:M(?:i(?:nutes|lliseconds)|onth)|Seconds|Hours|Da(?:y|te)|FullYear)|FullYear|A(?:ttention|llResponseHeaders)))|m(?:in|ove(?:B(?:y|elow)|To(?:Absolute)?|Above)|ergeAttributes|a(?:tch|rgins|x))|b(?:toa|ig|o(?:ld|rderWidths)|link|ack))\b(?=\()/
             }, {
                 token : ["punctuation.operator", "support.function.dom"],
-                regex : /(\.)(s(?:ub(?:stringData|mit)|plitText|e(?:t(?:NamedItem|Attribute(?:Node)?)|lect))|has(?:ChildNodes|Feature)|namedItem|c(?:l(?:ick|o(?:se|neNode))|reate(?:C(?:omment|DATASection|aption)|T(?:Head|extNode|Foot)|DocumentFragment|ProcessingInstruction|E(?:ntityReference|lement)|Attribute))|tabIndex|i(?:nsert(?:Row|Before|Cell|Data)|tem)|open|delete(?:Row|C(?:ell|aption)|T(?:Head|Foot)|Data)|focus|write(?:ln)?|a(?:dd|ppend(?:Child|Data))|re(?:set|place(?:Child|Data)|move(?:NamedItem|Child|Attribute(?:Node)?)?)|get(?:NamedItem|Element(?:sBy(?:Name|TagName)|ById)|Attribute(?:Node)?)|blur)\b(?=\()/
+                regex : /(\.)(s(?:ub(?:stringData|mit)|plitText|e(?:t(?:NamedItem|Attribute(?:Node)?)|lect))|has(?:ChildNodes|Feature)|namedItem|c(?:l(?:ick|o(?:se|neNode))|reate(?:C(?:omment|DATASection|aption)|T(?:Head|extNode|Foot)|DocumentFragment|ProcessingInstruction|E(?:ntityReference|lement)|Attribute))|tabIndex|i(?:nsert(?:Row|Before|Cell|Data)|tem)|open|delete(?:Row|C(?:ell|aption)|T(?:Head|Foot)|Data)|focus|write(?:ln)?|a(?:dd|ppend(?:Child|Data))|re(?:set|place(?:Child|Data)|move(?:NamedItem|Child|Attribute(?:Node)?)?)|get(?:NamedItem|Element(?:sBy(?:Name|TagName|ClassName)|ById)|Attribute(?:Node)?)|blur)\b(?=\()/
             }, {
                 token : ["punctuation.operator", "support.constant"],
                 regex : /(\.)(s(?:ystemLanguage|cr(?:ipts|ollbars|een(?:X|Y|Top|Left))|t(?:yle(?:Sheets)?|atus(?:Text|bar)?)|ibling(?:Below|Above)|ource|uffixes|e(?:curity(?:Policy)?|l(?:ection|f)))|h(?:istory|ost(?:name)?|as(?:h|Focus))|y|X(?:MLDocument|SLDocument)|n(?:ext|ame(?:space(?:s|URI)|Prop))|M(?:IN_VALUE|AX_VALUE)|c(?:haracterSet|o(?:n(?:structor|trollers)|okieEnabled|lorDepth|mp(?:onents|lete))|urrent|puClass|l(?:i(?:p(?:boardData)?|entInformation)|osed|asses)|alle(?:e|r)|rypto)|t(?:o(?:olbar|p)|ext(?:Transform|Indent|Decoration|Align)|ags)|SQRT(?:1_2|2)|i(?:n(?:ner(?:Height|Width)|put)|ds|gnoreCase)|zIndex|o(?:scpu|n(?:readystatechange|Line)|uter(?:Height|Width)|p(?:sProfile|ener)|ffscreenBuffering)|NEGATIVE_INFINITY|d(?:i(?:splay|alog(?:Height|Top|Width|Left|Arguments)|rectories)|e(?:scription|fault(?:Status|Ch(?:ecked|arset)|View)))|u(?:ser(?:Profile|Language|Agent)|n(?:iqueID|defined)|pdateInterval)|_content|p(?:ixelDepth|ort|ersonalbar|kcs11|l(?:ugins|atform)|a(?:thname|dding(?:Right|Bottom|Top|Left)|rent(?:Window|Layer)?|ge(?:X(?:Offset)?|Y(?:Offset)?))|r(?:o(?:to(?:col|type)|duct(?:Sub)?|mpter)|e(?:vious|fix)))|e(?:n(?:coding|abledPlugin)|x(?:ternal|pando)|mbeds)|v(?:isibility|endor(?:Sub)?|Linkcolor)|URLUnencoded|P(?:I|OSITIVE_INFINITY)|f(?:ilename|o(?:nt(?:Size|Family|Weight)|rmName)|rame(?:s|Element)|gColor)|E|whiteSpace|l(?:i(?:stStyleType|n(?:eHeight|kColor))|o(?:ca(?:tion(?:bar)?|lName)|wsrc)|e(?:ngth|ft(?:Context)?)|a(?:st(?:M(?:odified|atch)|Index|Paren)|yer(?:s|X)|nguage))|a(?:pp(?:MinorVersion|Name|Co(?:deName|re)|Version)|vail(?:Height|Top|Width|Left)|ll|r(?:ity|guments)|Linkcolor|bove)|r(?:ight(?:Context)?|e(?:sponse(?:XML|Text)|adyState))|global|x|m(?:imeTypes|ultiline|enubar|argin(?:Right|Bottom|Top|Left))|L(?:N(?:10|2)|OG(?:10E|2E))|b(?:o(?:ttom|rder(?:Width|RightWidth|BottomWidth|Style|Color|TopWidth|LeftWidth))|ufferDepth|elow|ackground(?:Color|Image)))\b/
@@ -34145,11 +38511,11 @@ var SAFE_INSERT_BEFORE_TOKENS =
     ["text", "paren.rparen", "punctuation.operator", "comment"];
 
 var context;
-var contextCache = {}
+var contextCache = {};
 var initContext = function(editor) {
     var id = -1;
     if (editor.multiSelect) {
-        id = editor.selection.id;
+        id = editor.selection.index;
         if (contextCache.rangeCount != editor.multiSelect.rangeCount)
             contextCache = {rangeCount: editor.multiSelect.rangeCount};
     }
@@ -34166,6 +38532,19 @@ var initContext = function(editor) {
     };
 };
 
+var getWrapped = function(selection, selected, opening, closing) {
+    var rowDiff = selection.end.row - selection.start.row;
+    return {
+        text: opening + selected + closing,
+        selection: [
+                0,
+                selection.start.column + 1,
+                rowDiff,
+                selection.end.column + (rowDiff ? 0 : 1)
+            ]
+    };
+};
+
 var CstyleBehaviour = function() {
     this.add("braces", "insertion", function(state, action, editor, session, text) {
         var cursor = editor.getCursorPosition();
@@ -34175,10 +38554,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && selected !== "{" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '{' + selected + '}',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '{', '}');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 if (/[\]\}\)]/.test(line[cursor.column]) || editor.inMultiSelectMode) {
                     CstyleBehaviour.recordAutoInsert(editor, session, "}");
@@ -34258,10 +38634,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '(' + selected + ')',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '(', ')');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 CstyleBehaviour.recordAutoInsert(editor, session, ")");
                 return {
@@ -34306,10 +38679,7 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: '[' + selected + ']',
-                    selection: false
-                };
+                return getWrapped(selection, selected, '[', ']');
             } else if (CstyleBehaviour.isSaneInsertion(editor, session)) {
                 CstyleBehaviour.recordAutoInsert(editor, session, "]");
                 return {
@@ -34355,49 +38725,44 @@ var CstyleBehaviour = function() {
             var selection = editor.getSelectionRange();
             var selected = session.doc.getTextRange(selection);
             if (selected !== "" && selected !== "'" && selected != '"' && editor.getWrapBehavioursEnabled()) {
-                return {
-                    text: quote + selected + quote,
-                    selection: false
-                };
-            } else {
+                return getWrapped(selection, selected, quote, quote);
+            } else if (!selected) {
                 var cursor = editor.getCursorPosition();
                 var line = session.doc.getLine(cursor.row);
                 var leftChar = line.substring(cursor.column-1, cursor.column);
-                if (leftChar == '\\') {
+                var rightChar = line.substring(cursor.column, cursor.column + 1);
+                
+                var token = session.getTokenAt(cursor.row, cursor.column);
+                var rightToken = session.getTokenAt(cursor.row, cursor.column + 1);
+                if (leftChar == "\\" && token && /escape/.test(token.type))
                     return null;
+                
+                var stringBefore = token && /string|escape/.test(token.type);
+                var stringAfter = !rightToken || /string|escape/.test(rightToken.type);
+                
+                var pair;
+                if (rightChar == quote) {
+                    pair = stringBefore !== stringAfter;
+                } else {
+                    if (stringBefore && !stringAfter)
+                        return null; // wrap string with different quote
+                    if (stringBefore && stringAfter)
+                        return null; // do not pair quotes inside strings
+                    var wordRe = session.$mode.tokenRe;
+                    wordRe.lastIndex = 0;
+                    var isWordBefore = wordRe.test(leftChar);
+                    wordRe.lastIndex = 0;
+                    var isWordAfter = wordRe.test(leftChar);
+                    if (isWordBefore || isWordAfter)
+                        return null; // before or after alphanumeric
+                    if (rightChar && !/[\s;,.})\]\\]/.test(rightChar))
+                        return null; // there is rightChar and it isn't closing
+                    pair = true;
                 }
-                var tokens = session.getTokens(selection.start.row);
-                var col = 0, token;
-                var quotepos = -1; // Track whether we're inside an open quote.
-
-                for (var x = 0; x < tokens.length; x++) {
-                    token = tokens[x];
-                    if (token.type == "string") {
-                      quotepos = -1;
-                    } else if (quotepos < 0) {
-                      quotepos = token.value.indexOf(quote);
-                    }
-                    if ((token.value.length + col) > selection.start.column) {
-                        break;
-                    }
-                    col += tokens[x].value.length;
-                }
-                if (!token || (quotepos < 0 && token.type !== "comment" && (token.type !== "string" || ((selection.start.column !== token.value.length+col-1) && token.value.lastIndexOf(quote) === token.value.length-1)))) {
-                    if (!CstyleBehaviour.isSaneInsertion(editor, session))
-                        return;
-                    return {
-                        text: quote + quote,
-                        selection: [1,1]
-                    };
-                } else if (token && token.type === "string") {
-                    var rightChar = line.substring(cursor.column, cursor.column + 1);
-                    if (rightChar == quote) {
-                        return {
-                            text: '',
-                            selection: [1, 1]
-                        };
-                    }
-                }
+                return {
+                    text: pair ? quote + quote : "",
+                    selection: [1,1]
+                };
             }
         }
     });
@@ -34509,12 +38874,35 @@ var FoldMode = exports.FoldMode = function(commentRegex) {
 oop.inherits(FoldMode, BaseFoldMode);
 
 (function() {
-
+    
     this.foldingStartMarker = /(\{|\[)[^\}\]]*$|^\s*(\/\*)/;
     this.foldingStopMarker = /^[^\[\{]*(\}|\])|^[\s\*]*(\*\/)/;
+    this.singleLineBlockCommentRe= /^\s*(\/\*).*\*\/\s*$/;
+    this.tripleStarBlockCommentRe = /^\s*(\/\*\*\*).*\*\/\s*$/;
+    this.startRegionRe = /^\s*(\/\*|\/\/)#?region\b/;
+    this._getFoldWidgetBase = this.getFoldWidget;
+    this.getFoldWidget = function(session, foldStyle, row) {
+        var line = session.getLine(row);
+    
+        if (this.singleLineBlockCommentRe.test(line)) {
+            if (!this.startRegionRe.test(line) && !this.tripleStarBlockCommentRe.test(line))
+                return "";
+        }
+    
+        var fw = this._getFoldWidgetBase(session, foldStyle, row);
+    
+        if (!fw && this.startRegionRe.test(line))
+            return "start"; // lineCommentRegionStart
+    
+        return fw;
+    };
 
     this.getFoldWidgetRange = function(session, foldStyle, row, forceMultiline) {
         var line = session.getLine(row);
+        
+        if (this.startRegionRe.test(line))
+            return this.getCommentRegionBlock(session, line, row);
+        
         var match = line.match(this.foldingStartMarker);
         if (match) {
             var i = match.index;
@@ -34578,6 +38966,28 @@ oop.inherits(FoldMode, BaseFoldMode);
         }
         
         return new Range(startRow, startColumn, endRow, session.getLine(endRow).length);
+    };
+    this.getCommentRegionBlock = function(session, line, row) {
+        var startColumn = line.search(/\s*$/);
+        var maxRow = session.getLength();
+        var startRow = row;
+        
+        var re = /^\s*(?:\/\*|\/\/|--)#?(end)?region\b/;
+        var depth = 1;
+        while (++row < maxRow) {
+            line = session.getLine(row);
+            var m = re.exec(line);
+            if (!m) continue;
+            if (m[1]) depth--;
+            else depth++;
+
+            if (!depth) break;
+        }
+
+        var endRow = row;
+        if (endRow > startRow) {
+            return new Range(startRow, startColumn, endRow, line.length);
+        }
     };
 
 }).call(FoldMode.prototype);
@@ -34654,7 +39064,7 @@ oop.inherits(Mode, TextMode);
         var worker = new WorkerClient(["ace"], "ace/mode/javascript_worker", "JavaScriptWorker");
         worker.attachToDocument(session.getDocument());
 
-        worker.on("jslint", function(results) {
+        worker.on("annotate", function(results) {
             session.setAnnotations(results.data);
         });
 
@@ -35275,7 +39685,6 @@ background: #BDD5FC\
 }\
 .ace-clouds.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #FFFFFF;\
-border-radius: 2px\
 }\
 .ace-clouds .ace_marker-layer .ace_step {\
 background: rgb(255, 255, 0)\
@@ -35371,7 +39780,6 @@ background: #000000\
 }\
 .ace-clouds-midnight.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #191919;\
-border-radius: 2px\
 }\
 .ace-clouds-midnight .ace_marker-layer .ace_step {\
 background: rgb(102, 82, 0)\
@@ -35390,7 +39798,7 @@ background-color: rgba(215, 215, 215, 0.031)\
 border: 1px solid #000000\
 }\
 .ace-clouds-midnight .ace_invisible {\
-color: #BFBFBF\
+color: #666\
 }\
 .ace-clouds-midnight .ace_keyword,\
 .ace-clouds-midnight .ace_meta,\
@@ -35454,7 +39862,7 @@ color: rgb(128,145,160)\
 }\
 .ace-cobalt .ace_print-margin {\
 width: 1px;\
-background: #011e3a\
+background: #555555\
 }\
 .ace-cobalt {\
 background-color: #002240;\
@@ -35468,7 +39876,6 @@ background: rgba(179, 101, 57, 0.75)\
 }\
 .ace-cobalt.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #002240;\
-border-radius: 2px\
 }\
 .ace-cobalt .ace_marker-layer .ace_step {\
 background: rgb(127, 111, 19)\
@@ -35552,7 +39959,8 @@ color: #9EFFFF\
 }\
 .ace-cobalt .ace_indent-guide {\
 background: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAACCAYAAACZgbYnAAAAEklEQVQImWNgYGBgYHCLSvkPAAP3AgSDTRd4AAAAAElFTkSuQmCC) right repeat-y\
-}";
+}\
+";
 
 var dom = require("../lib/dom");
 dom.importCssString(exports.cssText, exports.cssClass);
@@ -35699,7 +40107,6 @@ background: rgba(39, 95, 255, 0.30)\
 }\
 .ace-dawn.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #F9F9F9;\
-border-radius: 2px\
 }\
 .ace-dawn .ace_marker-layer .ace_step {\
 background: rgb(255, 255, 0)\
@@ -36080,8 +40487,11 @@ font-weight: bold;\
 .ace-github .ace_cursor {\
 color: black;\
 }\
-.ace-github .ace_marker-layer .ace_active-line {\
+.ace-github.ace_focus .ace_marker-layer .ace_active-line {\
 background: rgb(255, 255, 204);\
+}\
+.ace-github .ace_marker-layer .ace_active-line {\
+background: rgb(245, 245, 245);\
 }\
 .ace-github .ace_marker-layer .ace_selection {\
 background: rgb(181, 213, 255);\
@@ -36109,6 +40519,9 @@ background-color : rgba(0, 0, 0, 0.07);\
 .ace-github .ace_marker-layer .ace_selected-word {\
 background: rgb(250, 250, 255);\
 border: 1px solid rgb(200, 200, 250);\
+}\
+.ace-github .ace_invisible {\
+color: #BFBFBF\
 }\
 .ace-github .ace_print-margin {\
 width: 1px;\
@@ -36145,7 +40558,6 @@ background: rgba(90, 100, 126, 0.88)\
 }\
 .ace-idle-fingers.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #323232;\
-border-radius: 2px\
 }\
 .ace-idle-fingers .ace_marker-layer .ace_step {\
 background: rgb(102, 82, 0)\
@@ -36247,14 +40659,13 @@ background: rgba(100, 5, 208, 0.27)\
 }\
 .ace-katzenmilch.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #f3f2f3;\
-border-radius: 2px\
 }\
 .ace-katzenmilch .ace_marker-layer .ace_step {\
 background: rgb(198, 219, 174)\
 }\
 .ace-katzenmilch .ace_marker-layer .ace_bracket {\
 margin: -1px 0 0 -1px;\
-border: 1px solid #000000\
+border: 1px solid rgba(0, 0, 0, 0.33);\
 }\
 .ace-katzenmilch .ace_marker-layer .ace_active-line {\
 background: rgb(232, 242, 254)\
@@ -36264,6 +40675,9 @@ background-color: rgb(232, 242, 254)\
 }\
 .ace-katzenmilch .ace_marker-layer .ace_selected-word {\
 border: 1px solid rgba(100, 5, 208, 0.27)\
+}\
+.ace-katzenmilch .ace_invisible {\
+color: #BFBFBF\
 }\
 .ace-katzenmilch .ace_fold {\
 background-color: rgba(2, 95, 73, 0.97);\
@@ -36361,7 +40775,6 @@ background: rgba(170, 0, 255, 0.45)\
 }\
 .ace-kr-theme.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #0B0A09;\
-border-radius: 2px\
 }\
 .ace-kr-theme .ace_marker-layer .ace_step {\
 background: rgb(102, 82, 0)\
@@ -36485,6 +40898,9 @@ background-color: rgba(203, 220, 47, 0.22);\
 .ace-kuroir .ace_marker-layer .ace_selected-word {\
 border: 1px solid rgba(245, 170, 0, 0.57);\
 }\
+.ace-kuroir .ace_invisible {\
+color: #BFBFBF\
+}\
 .ace-kuroir .ace_fold {\
 border-color: #363636;\
 }\
@@ -36525,7 +40941,6 @@ background: #454545\
 }\
 .ace-merbivore.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #161616;\
-border-radius: 2px\
 }\
 .ace-merbivore .ace_marker-layer .ace_step {\
 background: rgb(102, 82, 0)\
@@ -36621,7 +41036,6 @@ background: #494949\
 }\
 .ace-merbivore-soft.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #1C1C1C;\
-border-radius: 2px\
 }\
 .ace-merbivore-soft .ace_marker-layer .ace_step {\
 background: rgb(102, 82, 0)\
@@ -36718,7 +41132,6 @@ background: rgba(145, 153, 148, 0.40)\
 }\
 .ace-mono-industrial.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #222C28;\
-border-radius: 2px\
 }\
 .ace-mono-industrial .ace_marker-layer .ace_step {\
 background: rgb(102, 82, 0)\
@@ -36826,7 +41239,6 @@ background: #49483E\
 }\
 .ace-monokai.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #272822;\
-border-radius: 2px\
 }\
 .ace-monokai .ace_marker-layer .ace_step {\
 background: rgb(102, 82, 0)\
@@ -36932,7 +41344,6 @@ background: rgba(221, 240, 255, 0.20)\
 }\
 .ace-pastel-on-dark.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #2C2828;\
-border-radius: 2px\
 }\
 .ace-pastel-on-dark .ace_marker-layer .ace_step {\
 background: rgb(102, 82, 0)\
@@ -37047,7 +41458,6 @@ background: rgba(255, 255, 255, 0.1)\
 }\
 .ace-solarized-dark.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #002B36;\
-border-radius: 2px\
 }\
 .ace-solarized-dark .ace_marker-layer .ace_step {\
 background: rgb(102, 82, 0)\
@@ -37130,7 +41540,6 @@ background: rgba(7, 54, 67, 0.09)\
 }\
 .ace-solarized-light.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #FDF6E3;\
-border-radius: 2px\
 }\
 .ace-solarized-light .ace_marker-layer .ace_step {\
 background: rgb(255, 255, 0)\
@@ -37222,7 +41631,6 @@ background: #424242\
 }\
 .ace-terminal-theme.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px black;\
-border-radius: 2px\
 }\
 .ace-terminal-theme .ace_marker-layer .ace_step {\
 background: rgb(0, 0, 0)\
@@ -37413,7 +41821,6 @@ background: rgb(181, 213, 255);\
 }\
 .ace-tm.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px white;\
-border-radius: 2px;\
 }\
 .ace-tm .ace_marker-layer .ace_step {\
 background: rgb(252, 255, 0);\
@@ -37467,7 +41874,6 @@ background: #D6D6D6\
 }\
 .ace-tomorrow.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #FFFFFF;\
-border-radius: 2px\
 }\
 .ace-tomorrow .ace_marker-layer .ace_step {\
 background: rgb(255, 255, 0)\
@@ -37576,7 +41982,6 @@ background: #373B41\
 }\
 .ace-tomorrow-night.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #1D1F21;\
-border-radius: 2px\
 }\
 .ace-tomorrow-night .ace_marker-layer .ace_step {\
 background: rgb(102, 82, 0)\
@@ -37686,7 +42091,6 @@ background: #003F8E\
 }\
 .ace-tomorrow-night-blue.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #002451;\
-border-radius: 2px\
 }\
 .ace-tomorrow-night-blue .ace_marker-layer .ace_step {\
 background: rgb(127, 111, 19)\
@@ -37792,7 +42196,6 @@ background: #424242\
 }\
 .ace-tomorrow-night-bright.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #000000;\
-border-radius: 2px\
 }\
 .ace-tomorrow-night-bright .ace_marker-layer .ace_step {\
 background: rgb(102, 82, 0)\
@@ -37915,7 +42318,6 @@ background: #515151\
 }\
 .ace-tomorrow-night-eighties.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #2D2D2D;\
-border-radius: 2px\
 }\
 .ace-tomorrow-night-eighties .ace_marker-layer .ace_step {\
 background: rgb(102, 82, 0)\
@@ -38023,7 +42425,6 @@ background: rgba(221, 240, 255, 0.20)\
 }\
 .ace-twilight.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #141414;\
-border-radius: 2px\
 }\
 .ace-twilight .ace_marker-layer .ace_step {\
 background: rgb(102, 82, 0)\
@@ -38133,7 +42534,6 @@ background: #6699CC\
 }\
 .ace-vibrant-ink.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #0F0F0F;\
-border-radius: 2px\
 }\
 .ace-vibrant-ink .ace_marker-layer .ace_step {\
 background: rgb(102, 82, 0)\
@@ -38229,7 +42629,6 @@ background: #B5D5FF\
 }\
 .ace-xcode.ace_multiselect .ace_selection.ace_start {\
 box-shadow: 0 0 3px 0px #FFFFFF;\
-border-radius: 2px\
 }\
 .ace-xcode .ace_marker-layer .ace_step {\
 background: rgb(198, 219, 174)\

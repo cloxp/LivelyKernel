@@ -911,21 +911,28 @@ handleOnCapture);
         return false;
     },
 
-    onMouseDownEntry: function(evt, allHits) {
-        evt.hand.pointerId = evt.pointerId;
-        if (!this.shape.reallyContainsPoint(this.localize(evt.getPosition()))) {
-            // Click point was not really on this morph;  try next thing below
-            if (!allHits) allHits = this.world().morphsContainingPoint(evt.getPosition());
-            var below = false;
-            // Call recursively on next morph below this one
-            for (var i=0; i<allHits.length; i++) {
-                if (below) {
-                    if (!allHits[i].eventsAreIgnored) {
-                        return allHits[i].onMouseDownEntry(evt, allHits); } }
-                else if (allHits[i] === this) below = true;
-                }
-            return false;
+    reallyContainsPoint: function(globalPos, morphsContainingEvtPoint) {
+        if (this.shape.reallyContainsPoint(this.localize(globalPos))) return true;
+
+        // Click point was not really on this morph;  try next thing below
+        if (!morphsContainingEvtPoint)
+          morphsContainingEvtPoint = this.world().morphsContainingPoint(globalPos);
+
+        // Call recursively on next morph below this one
+        var below = false;
+        for (var i = 0; i < morphsContainingEvtPoint.length; i++) {
+            if (below) {
+                if (!morphsContainingEvtPoint[i].eventsAreIgnored)
+                  return morphsContainingEvtPoint[i].reallyContainsPoint(globalPos, morphsContainingEvtPoint); 
+            } else if (morphsContainingEvtPoint[i] === this) below = true;
         }
+        return false;
+    },
+
+    onMouseDownEntry: function(evt) {
+        if (!this.reallyContainsPoint(evt.getPosition(), null)) return false;
+
+        evt.hand.pointerId = evt.pointerId;
         // checkMouseUpEntry if mouse is on the scrollbar
         var suppressScrollbarClick = (this.showsVerticalScrollBar()
                                     || this.showsHorizontalScrollBar())
@@ -984,19 +991,8 @@ handleOnCapture);
     onMouseUpEntry: function(evt, allHits) {
         evt.hand.move(evt);
         evt.hand.pointerId = undefined;
-        if (!this.shape.reallyContainsPoint(this.localize(evt.getPosition()))) {
-            // Click point was not really on this morph;  try next thing below
-            if (!allHits) allHits = this.world().morphsContainingPoint(evt.getPosition());
-            var below = false;
-            // Call recursively on next morph below this one
-            for (var i=0; i<allHits.length; i++) {
-                if (below) {
-                    if (!allHits[i].eventsAreIgnored) {
-                        return allHits[i].onMouseUpEntry(evt, allHits); } }
-                else if (allHits[i] === this) below = true;
-                }
-            return false;
-        }
+        if (!this.reallyContainsPoint(evt.getPosition())) return false;
+
         var world = evt.world,
             completeClick = evt.getTargetMorph() === this,
             internalCompleteClick = evt.hand.internalClickedOnMorph === this,
@@ -1326,6 +1322,8 @@ handleOnCapture);
         var placeholder = this.placeholder,
             layouter = aMorph.getLayouter();
 
+        this.setFixedPosition(this.previouslyFixed);
+        delete this.previouslyFixed;
         if (placeholder) {
             var placeHolderPos = placeholder.getPosition();
             this.noLayoutDuring(function() {
@@ -1989,6 +1987,8 @@ lively.morphic.Morph.subclass('lively.morphic.HandMorph',
     grabMorph: function(morph, evt) {
         morph.previousOwner = morph.owner;
         morph.previousPosition = morph.getPosition();
+        morph.previouslyFixed = morph.hasFixedPosition();
+        morph.setFixedPosition(false);
         return this.grabMorphs([morph], evt)
     },
     grabMorphs: function(morphs, evt) {
@@ -2427,7 +2427,7 @@ Object.extend(lively.morphic.KeyboardDispatcher, {
     // be called when morphs to not actively handle (= calling evt.stop()) the
     // event
 
-    function defaulGlobalKeyHandler(evt) { // 1. capturing phase, outer -> inner
+    function defaultGlobalKeyHandler(evt) { // 1. capturing phase, outer -> inner
         var keys = evt.getKeyString({ignoreModifiersIfNoCombo: false});
         if (doDefaultEscapeAction(evt, keys)) return true;
         if (ensureFocusedMorph(evt, keys)) return undefined;
@@ -2443,9 +2443,9 @@ Object.extend(lively.morphic.KeyboardDispatcher, {
         evt.stop(); return true;
     }
 
-    lively.morphic.Events.GlobalEvents.unregister('keydown', "defaulGlobalKeyHandler", true);
+    lively.morphic.Events.GlobalEvents.unregister('keydown', "defaultGlobalKeyHandler", true);
     lively.morphic.Events.GlobalEvents.unregister('keydown', "doGlobalActionsOnBubble", false);
-    lively.morphic.Events.GlobalEvents.register('keydown', defaulGlobalKeyHandler, true);
+    lively.morphic.Events.GlobalEvents.register('keydown', defaultGlobalKeyHandler, true);
     lively.morphic.Events.GlobalEvents.register('keydown', doGlobalActionsOnBubble, false);
 
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
