@@ -34,7 +34,7 @@ snippet ife
 		${0}
 	}
 snippet err
-	if (${1:err}) { ${2:thenDo}(err, null); return; }
+	if (${1:err}) return ${2:thenDo}(err, null);
 snippet options
 	if (typeof ${1:options} === "function") {
 		${2:thenDo} = ${1};
@@ -71,9 +71,11 @@ snippet try
 snippet do
 	do {${2:/* code */}} while (${1:/* condition */});
 # Object Method
-snippet :f
-regex /([,{[])|^\s*/:f/
-	${1:methodName}: function(${2:attribute}) {${0}}${3:,}
+snippet :m
+regex /([,{[])|^\s*/:m/
+	${1:method}(${2:args}) {
+		${0}
+	}
 # Object Property
 snippet :p
 regex /([,{[])|^\s*/:p/
@@ -89,7 +91,7 @@ regex /\b/int|setI?n?t?e?r?v?a?l?/
 # delay function
 snippet delay
 regex /\b/st|del(ay)?/
-	(function() {${0}})${2:.bind(this)}.delay(${1:0});
+	(() => {${0}}).delay(${1:0});
 # Get Elements
 snippet gett
 	getElementsBy${1:TagName}('${2}')${3}
@@ -98,7 +100,9 @@ snippet get
 	getElementBy${1:Id}('${2}')${3}
 # console.log (Firebug)
 snippet cl
-	console.log(${1});
+	console.log(${1})
+snippet ce
+	console.error(${1})
 # show (lively)
 snippet s
 	show("${1:%o}", ${2});
@@ -148,43 +152,37 @@ snippet sdf
 		$1 = function($2) {${4:// main code}};
 	}
 # class
-name subclass
-regex /^\s*([^\.]+)?/\.?(sub)?class/
-	${M1?:${1:Object}}.subclass("${2:Name}",
-	"initializing", {
-		initialize: function(${3})  {
+snippet class
+	class ${1:name} {
+		constructor(${2:args}) {
 			${0}
 		}
-	});
-# TestClass
-name TestClass
-regex /^\s*/TestCl?a?s?s?/
-	TestCase.subclass("${1:TestClass}",
-	"running", {
-		setUp: function($super)  {},
-		tearDown: function($super)  {}
-	},
-	'testing', {
-		${2:test1}: function() {${0}}
-	});
+	}
+snippet subclass
+	class ${1:name} extends ${2:base} {
+		constructor(${2:args}) {
+			super(${2:args})
+			${0}
+		}
+	}
 # mocha / chai / expect
 snippet describe
 regex /^\s*/desc?r?i?b?e?/
-	describe("${1:test-subject}", function() {
+	describe("${1:test-subject}", () => {
 		${0}
 	});
 snippet it
-	it("${1:tested-action}", function() {
+	it("${1:tested-action}", () => {
 		${0}
 	});
 snippet beforeEach
 regex /^\s*/before?E?a?c?h?/
-	beforeEach(function(${1:done}) {
+	beforeEach(${1:done} => {
 		${0}
 	});
 snippet afterEach
 regex /^\s*/after?E?a?c?h?/
-	afterEach(function() {
+	afterEach(() => {
 		${0}
 	});
 # initialize methods
@@ -216,18 +214,49 @@ snippet llo
 	lively.lang.obj.
 snippet llf
 	lively.lang.fun.
+name llp
+regex /.*/llp(\()?(\))?/(\))?/
+	lively.lang.promise.${M1?($0${M2?${M2}:)}}
+name prom
+regex /.*/prom(\()?(\))?/(\))?/
+	lively.lang.promise${M1?${M1}:(}$0${M2?${M2}:)}
+snippet promcb
+	lively.lang.promise.convertCallbackFun(${0:func})
+snippet promch
+	lively.lang.promise.chain([
+		() => ${0}
+	])
+snippet Prom
+	new Promise((resolve, reject) => {$0})
+snippet then
+regex /(\.)?/then|the|th/
+	${M1?:.}then(${1:arg} => $0)
+snippet thenp
+regex /(\.)?/thp|thenp/
+	${M1?:.}then(show.curry("%o"))
+snippet catchp
+regex /(\.)?/cap|catchp/
+	${M1?:.}catch(show.curry("%s"))
+snippet shows
+	show.curry("%s")
 # Object.extend
 snippet Oe
 	Object.extend(${1:obj}, {$0});
+snippet keys
+regex /\b/([^\s]*)keys/
+	Object.keys(${0:$M1})
+snippet assign
+regex /\b/([^\s]*)assign/
+	Object.assign(${1:dest}, ${2:source})$0
 # collection iter
 regex /(\.?[^\.\s]+)/\.?((iter|forEa?c?h?)|(select|collect|reject|detect|map|filter))/
-	${M1?:${1:list}}.${M4?${M4}:${2:forEach}}(function(${3:ea}) {$0});
+	${M1?:${1:list}}.${M4?${M4}:${2:forEach}}(${3:ea} => {$0});
 # collection inject
 regex /(\.?[^\.\s]+|^\s*)/\.?inje?c?t?/
-	${M1?:${1:list}}.inject(${2:collector}, function($2, ea) { ${0:return $2;} });
+	${M1?:${1:list}}.inject(${2:collector}, ($2, ea) => { ${0:return $2;} });
 # collection withAllSubmorphsDo
 regex /(\.?[^\.\s]+|^\s*)/\.?withAl?l?S?u?b?m?o?r?p?h?s?D?o?/
-	${M1?:${1:owner}}.withAllSubmorphsDo(function(ea) { return ${0:ea}; });
+	${M1?:${1:owner}}.withAllSubmorphsDo(ea => { return ${0:ea}; });
 # addScript
 regex /(\.?[^\.\s]+|^\s*)/\.?addSc?r?i?p?t?/
 	${M1?:${1:morph}}.addScript(function ${2:scriptName}(${3}) {${0}});
@@ -241,7 +270,7 @@ snippet conC
 # lively.bindings.connect updater
 snippet conU
 	lively.bindings.connect(${1:source}, '${2:sourceAttr}', ${3:target}, '${4:targetAttr}', {
-		updater: function(\$upd, val) { ${0:\$upd(val);} }});
+		updater: (\$upd, val) => { ${0:\$upd(val);} }});
 # lively.bindings.signal
 snippet sig
 	lively.bindings.signal(${1:source}, '${2:sourceAttr}', ${3:value});
@@ -279,41 +308,59 @@ snippet def
 	});
 snippet req
 guard ^\s*
-	var ${1/.*\///} = require("${1}");
+	var ${3:${1/.*\///}} = require("${1}")${2};
 	$0
 snippet requ
 guard ^\s*
 	var ${1/.*\/(.)/\u$1/} = require("${1}").${1/.*\/(.)/\u$1/};
 	$0
+snippet lreq
+	lively.require("${1:lively.morphic.Core}").toRun(function() { $0 });
 # Functions.composeAsync
 snippet async
 	lively.lang.fun.composeAsync(
-		function(${1}n) { ${0:n(null);} }
-	)(${1}function(err) { if (err) show(err); });
+		${1:n} => ${0:$1(null);}
+	)(${2:thenDo});
 snippet mapasync
 	lively.lang.arr.mapAsyncSeries(
-		function(ea, _, n) { ${0:n(null);} },
-		function(err, results) {});
+		(ea, _, n) => { ${0:n(null);} },
+		(err, results) => {});
 # typeof tests
 snippet typef
 	typeof ${1:object} === "function"${0}
+snippet types
+	typeof ${1:object} === "string"${0}
+snippet typen
+	typeof ${1:object} === "number"${0}
 snippet typeu
 	typeof ${1:object} === "undefined"${0}
 snippet typenu
 	typeof ${1:object} !== "undefined"${0}
 # $world snippets
 snippet prompt
-	\$world.prompt("${1:query text}", function(input) {
+	\$world.prompt("${1:query text}", input => {
 		if (!input) return;
 		${0}
-	}, {input: "${2:initial input}", historyId: "${3:prompt-id}"});
+	}, {useLastInput: true, input: "${2:initial input}", historyId: "${3:prompt-id}"});
 snippet confirm
-	\$world.confirm("${1:query text}", function(input) {
+	\$world.confirm("${1:query text}", input => {
 		if (!input) return;
 		${0}
 	});
 # es6
 snippet f
-	${1:(arg)} => ${0}
+	${1:(${2:arg})} => ${0}
 snippet f1
 	${1:arg} => ${0}
+snippet fun*
+	function* ${1?:functionName}(${2}) {${0}}
+snippet fn*
+regex /((=)\s*|(:)\s*|(\()|\b)/fn\*/
+	function*($2) {${0:$TM_SELECTED_TEXT}}${M2?;}${M3?,}
+snippet import
+	import ${3:{ ${2:name} \}} from "${1:module}";$0
+snippet export
+	export { ${0:name} };
+# strings
+snippet $
+	\${${0:code}}

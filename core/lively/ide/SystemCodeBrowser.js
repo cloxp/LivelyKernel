@@ -93,7 +93,7 @@ lively.ide.BasicBrowser.subclass('lively.ide.SystemBrowser',
     switchToLocalCodebase: function() {
         this.setTargetURL(
             $world.getUserName() ?
-                $world.getUserDir() :
+                $world.ensureUserDir() :
                 URL.source.getDirectory());
     },
     start: function($super) {
@@ -116,6 +116,10 @@ lively.ide.BasicBrowser.subclass('lively.ide.SystemBrowser',
         this.locationInput().setTextString(locationInputString);
     },
     setTargetUrlFromString: function(aString) {
+      if (aString.match(/\/[^\.]+$/)) {
+        // if it has no extension and doesn't end with / we still consider it to be a dir
+        aString += "/";
+      }
         var isCompleteUrlString = aString.startsWith('http://');
         if (isCompleteUrlString) {
             return this.setTargetURL(new URL(aString));
@@ -222,7 +226,8 @@ lively.ide.BasicBrowser.subclass('lively.ide.SystemBrowser',
             lively.ide.RunTestMethodCommand,
             lively.ide.OpenInFileEditorCommand,
             lively.ide.OpenVersionsOfFile,
-            lively.ide.OpenModulePartCommand]
+            lively.ide.OpenModulePartCommand,
+            lively.ide.DebugNextMethodCallCommand]
     },
 
     sourceDatabase: function() { return this.rootNode().target; }
@@ -292,6 +297,12 @@ Object.extend(lively.ide, {
 
         var args = Array.from(arguments);
         if (args.length === 0) { this.openSystemCodeBrowser(); return; }
+        if (args.length === 1 && typeof args[0] === 'string' && !args[0].startsWith("http")) {
+          try {
+            var mWrapper = new lively.ide.ModuleWrapper(args[0], "js");
+            return lively.ide.browse(mWrapper.fileURL());
+          } catch (e) { return e; }
+        }
         if (args.length <= 2) { // url or path or options object
             var url = args[0].toString().startsWith('http:') ?
                 new URL(args[0]) : URL.root.withFilename(args[0]);

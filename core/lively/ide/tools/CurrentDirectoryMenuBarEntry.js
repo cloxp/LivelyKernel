@@ -30,7 +30,7 @@ lively.BuildSpec('lively.ide.tools.CurrentDirectoryMenuBarEntry', lively.BuildSp
         if (dir) {
           $world.knownWorkingDirectories = self.dirs = [dir];
         } else {
-          var cmd = lively.shell.exec('echo $WORKSPACE_LK', {sync:true})
+          var cmd = lively.shell.exec('echo $WORKSPACE_LK', {sync: true})
           $world.knownWorkingDirectories = self.dirs = cmd.getCode() ? [] : [cmd.resultString().trim()];
         }
         self.update();
@@ -105,7 +105,7 @@ lively.BuildSpec('lively.ide.tools.CurrentDirectoryMenuBarEntry', lively.BuildSp
 
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-  addDir: function addDir(d) {
+  addDir: function addDir(d, forceLoad) {
     var dirBefore = lively.shell.cwd();
     d = d && d.path ? d.path : (d || "");
     lively.shell.run('cd "'+d+'"; pwd', function(err, cmd) {
@@ -116,7 +116,7 @@ lively.BuildSpec('lively.ide.tools.CurrentDirectoryMenuBarEntry', lively.BuildSp
       this.dirs.pushIfNotIncluded(newD);
       if (!$world.knownWorkingDirectories) $world.knownWorkingDirectories = [];
       $world.knownWorkingDirectories.pushIfNotIncluded(newD);
-      if (dirBefore !== d) this.changeBaseDir(newD);
+      if (forceLoad || dirBefore !== d) this.changeBaseDir(newD);
     }.bind(this));
   },
 
@@ -124,7 +124,7 @@ lively.BuildSpec('lively.ide.tools.CurrentDirectoryMenuBarEntry', lively.BuildSp
       var path = dir && dir.path ? dir.path : (dir ? String(dir) : null);
       // $world.alertOK(dir ? 'base directory is now ' + path : 'resetting base dir');
       lively.shell.setWorkingDirectory(path);
-      lively.require("lively.lang.Runtime").toRun(function() {
+      lively.Config.get("lively.lang.Runtime.active") && lively.require("lively.lang.Runtime").toRun(function() {
           lively.lang.Runtime.loadLivelyRuntimeInProjectDir(path) });
       this.update();
   },
@@ -143,12 +143,12 @@ lively.BuildSpec('lively.ide.tools.CurrentDirectoryMenuBarEntry', lively.BuildSp
     (function() { this.update(); }).bind(this).delay(0);
     this.startStepping(30*1000, "update");
     var dChooser = $world.get(/^BaseDirectoryChooser/)
-    if (dChooser)
-      this.dirs = this.dirs.concat(dChooser.get("DirList").getList().pluck("value").compact()).uniq();
+    if (dChooser && dChooser.getMorphNamed("DirList"))
+      this.dirs = this.dirs.concat(dChooser.getMorphNamed("DirList").getList().pluck("value").compact()).uniq();
     $world.knownWorkingDirectories = ($world.knownWorkingDirectories||[]).concat(this.dirs);
     $world.knownWorkingDirectories = this.knownDirectories();
     this.dirs = this.knownDirectories();
-    if ($world.currentWorkingDirectory) this.addDir($world.currentWorkingDirectory);
+    if ($world.currentWorkingDirectory) this.addDir($world.currentWorkingDirectory, true/*force load*/);
   },
 
   onOwnerChanged: function onOwnerChanged(owner) {

@@ -2,7 +2,7 @@ module('lively.persistence.Serializer').requires().toRun(function() {
 
 Object.subclass('ObjectGraphLinearizer',
 'settings', {
-    defaultCopyDepth: 100,
+    defaultCopyDepth: 10000,
     keepIds: Config.keepSerializerIds || false,
     showLog: false,
     prettyPrint: false
@@ -107,7 +107,7 @@ Object.subclass('ObjectGraphLinearizer',
 
       function gatherReferences(obj, path) {
         if (!obj || typeof obj === "string" || typeof obj === "number" || typeof obj === "boolean") return [];
-        if (serializer.isReference(obj)) return {path: path, id: String(obj.id)};
+        if (serializer.isReference(obj)) return [{path: path, id: String(obj.id)}];
         else if (Array.isArray(obj)) return lively.lang.arr.flatmap(obj, function(ea, i) { return gatherReferences(ea, path.concat([i])); })
         else if (Object.isObject(obj)) return lively.lang.arr.flatmap(Object.keys(obj), function(key) { return gatherReferences(obj[key], path.concat([key])); })
         else return [];
@@ -1366,7 +1366,9 @@ ObjectLinearizerPlugin.subclass('lively.persistence.AttributeConnectionGarbageCo
         if (registeredTarget && registeredTarget.isCopyMorphRef) return [];
 
         // can we reach roots from target without using the connection?
-        graph[data.target] = graph[data.target].withoutAll(data.weakRefs);
+        var target = graph[data.target];
+        if (target)
+          graph[data.target] = target.withoutAll(data.weakRefs);
         var hull = Object.keys(lively.lang.graph.subgraphReachableBy(graph, data.target));
         if (roots.some(function(root) { return hull.indexOf(root) > -1; })) return [];
 

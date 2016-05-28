@@ -5,7 +5,8 @@ lively.morphic.Morph.subclass("lively.ide.CodeEditor.MorphicOverlay",
 
   style: {
     fill: Global.Color.rgba(33,33,33,.2),
-    borderWidth: 0
+    borderWidth: 0,
+    enableDropping: false
   },
 
   labelStyle: {
@@ -40,9 +41,13 @@ lively.morphic.Morph.subclass("lively.ide.CodeEditor.MorphicOverlay",
     this.label = this.makeLabel();
   },
 
-  onLoad: function($super) {
-    if (this.owner && this.owner.isCodeEditor) {
-      this.ensureAnchors(this.owner, this.getRange(this.owner));
+
+  onrestore: function($super) {
+    var self = this, o = this.owner;
+    if (o && o.isCodeEditor) {
+      o.withAceDo(function() {
+        self.ensureAnchors(o, self.getRange(o));
+      });
     }
   },
 
@@ -65,13 +70,12 @@ lively.morphic.Morph.subclass("lively.ide.CodeEditor.MorphicOverlay",
     } else {
       this.documentStartAnchor = new Anchor(codeEditor.getDocument(), range.start.row, range.start.column);
       this.documentStartAnchor.on("change", function(change) { self.onAnchorChange(codeEditor); });
-      
     }
     
     if (this.documentEndAnchor) {
-      this.documentEndAnchor.setPosition(range.end.row, range.end.column+1);
+      this.documentEndAnchor.setPosition(range.end.row, range.end.column);
     } else {
-      this.documentEndAnchor = new Anchor(codeEditor.getDocument(), range.end.row, range.end.column+1);
+      this.documentEndAnchor = new Anchor(codeEditor.getDocument(), range.end.row, range.end.column);
       this.documentEndAnchor.on("change", function(change) { self.onAnchorChange(codeEditor); });
     }
   },
@@ -93,13 +97,19 @@ lively.morphic.Morph.subclass("lively.ide.CodeEditor.MorphicOverlay",
 "layouting", {
 
   getRange: function(codeEditor) {
-    var bounds = this.globalBounds(),
-        topLeft = bounds.topLeft(),
-        bottomRight = bounds.bottomRight(),
+    var bounds = this.getGlobalTransform().transformRectToRect(this.innerBounds()),
+        // internally ace computes positions relative to viewport. We need to
+        // offset that:
+        bodyRect = document.body.getBoundingClientRect(),
+        topLeft = bounds.topLeft().addXY(bodyRect.left, bodyRect.top),
+        bottomRight = bounds.bottomRight().addXY(bodyRect.left, bodyRect.top),
         r = codeEditor.aceEditor.renderer,
-        start = r.pixelToScreenCoordinates(topLeft.x, topLeft.y),
-        end = r.pixelToScreenCoordinates(bottomRight.x, bottomRight.y-1);
-    return lively.ide.ace.require("ace/range").Range.fromPoints(start, end);
+        conf = r.layerConfig,
+        start = r.pixelToScreenCoordinates(topLeft.x-conf.characterWidth, topLeft.y),
+        end = r.pixelToScreenCoordinates(
+                bottomRight.x-(conf.characterWidth-1),
+                bottomRight.y-(conf.lineHeight-1));
+    return codeEditor.createRange(start, end);
   },
 
   getLine: function(codeEditor) {
@@ -122,10 +132,15 @@ lively.morphic.Morph.subclass("lively.ide.CodeEditor.MorphicOverlay",
   },
 
   fitLabel: function(thenDo) {
-    this.label.applyStyle({extent: pt(10,10), fixedWidth: false, fixedHeight: false})
+    this.label.applyStyle({
+      extent: pt(10,10),
+      fixedWidth: false, fixedHeight: false,
+      clipMode: "visible",
+      whiteSpaceHandling: "nowrap"
+    });
     this.label.fit();
     this.label.fitThenDo(function() {
-      this.label.applyStyle({fixedWidth: true, fixedHeight: true});
+      this.label.applyStyle({fixedWidth: true, fixedHeight: true, clipMode: "hidden"});
       this.label.setExtent(this.label.getExtent().withY(this.getExtent().y));
       thenDo && thenDo();
     }.bind(this));
@@ -154,9 +169,9 @@ lively.morphic.Morph.subclass("lively.ide.CodeEditor.MorphicOverlay",
     this.cachedBounds = null;
   },
 
-  setAtRange: function(codeEditor, range) {
+  setAtRange: function(codeEditor, range, useMaxColumn) {
     if (this.owner !== codeEditor) codeEditor.addMorph(this);
-    this.setBounds(codeEditor.rangeToMorphicBounds(range));
+    this.setBounds(codeEditor.rangeToMorphicBounds(range, useMaxColumn));
     this.ensureAnchors(codeEditor, range);
   },
 
@@ -234,6 +249,8 @@ lively.morphic.Morph.subclass("lively.ide.CodeEditor.MorphicOverlay",
 lively.morphic.CodeEditor.addMethods({
 
   morphicOverlayCreate: function(spec) {
+    if (!this._morphicOverlaysOnAfterRender)
+      this.morphicOverlaysSubscribeToEditorEvents();
     var overlay = new lively.ide.CodeEditor.MorphicOverlay(spec);
     if (!this.morphicOverlays) this.morphicOverlays = [];
     this.morphicOverlays.push(overlay);
@@ -241,6 +258,7 @@ lively.morphic.CodeEditor.addMethods({
   },
 
   morphicOverlaysRemoveAll: function() {
+    if (!this.morphicOverlays) return;
     this.morphicOverlays.invoke("remove");
     this.morphicOverlays.length = 0;
   },

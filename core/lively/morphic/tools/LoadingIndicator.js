@@ -81,7 +81,7 @@ lively.BuildSpec('lively.morphic.LoadingIndicator', {
 Object.extend(lively.morphic.tools.LoadingIndicator, {
     open: function(label, doFunc) {
         var loadingIndicator = lively.BuildSpec('lively.morphic.LoadingIndicator').createMorph().openInWorld();
-        if (arguments.length === 1) doFunc = label;
+        if (typeof label === "function") doFunc = label;
         else loadingIndicator.setLabel(label);
         doFunc && doFunc(function closeLoadingIndicator() { loadingIndicator.remove(); });
         return loadingIndicator;

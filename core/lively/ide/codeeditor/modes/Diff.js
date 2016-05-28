@@ -243,9 +243,9 @@ Mode.addMethods({
 
         "lively.ide.git.commit": {
             exec: function(ed, args) {
-              lively.shell.run("git commit", function(err, cmd) {
-                if (err) ed.$morph.showError(err + "\n" + (cmd ? cmd.resultString(true) : ""));
-                else ed.$morph.setStatusMessage(cmd.resultString(true));
+              lively.ide.git.Interface.gitCommit({}, function(err, cmd) {
+                if (err) ed.$morph.showError(err);
+                else ed.$morph.setStatusMessage("Commit successful");
               });
             }
         },
@@ -259,7 +259,7 @@ Mode.addMethods({
                   var input = (hist & hist.items && hist.items[0]) || "git diff";
                   $world.prompt("git diff command", function(input) {
                     n(input ? null : new Error("command canceled"), input);
-                  }, {input: input, historyId: histId})
+                  }, {useLastInput: true, input: input, historyId: histId});
                 },
                 function(cmdString, n) {
                   lively.shell.run(cmdString, function(err, cmd) {

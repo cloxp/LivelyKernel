@@ -102,6 +102,14 @@ lively.BuildSpec('lively.ide.tools.TextEditor', {
             sourceNameForEval: function sourceNameForEval() {
                 return this.getWindow().getLocation(true/*asstring*/);
             },
+
+            boundEvalImproved: function boundEvalImproved(__evalStatement, __evalOptions) {
+              return this.owner.owner.livelyRuntimeWithProjectDo(function(err, proj) {
+                if (!proj) return $super(__evalStatement, __evalOptions);
+                return $super(__evalStatement, lively.lang.obj.merge(__evalOptions, {varRecorderName: "__lvVarRecorder", topLevelVarRecorder: proj.state, dontTransform: []}))
+              });
+            },
+
             focus: function focus() {
                 var win = this.getWindow();
                 win && win.targetMorph && (win.targetMorph.lastFocused = this);
@@ -143,33 +151,11 @@ lively.BuildSpec('lively.ide.tools.TextEditor', {
         lively.bindings.connect(this, 'contentLoaded', editor, 'textString');
         lively.bindings.connect(this, 'contentLoaded', this, 'gotoLocationLine');
         lively.bindings.connect(this, 'contentLoaded', this, 'updateWindowTitle');
-        lively.bindings.connect(this, 'contentLoaded', editor, 'setTabSize', {updater: function($upd) {
-            this.sourceObj.get('editor').guessAndSetTabSize();
-        }});
+        lively.bindings.connect(this, 'contentLoaded', editor, 'setTabSize',
+          {updater: function($upd) { this.sourceObj.get('editor').guessAndSetTabSize(); }});
 
-        lively.bindings.connect(this, 'contentLoaded', editor, 'setTextMode', {updater: function($upd) {
-            var ext = this.sourceObj.getFileExtension().toLowerCase();
-            switch(ext) {
-                case "r": $upd("r"); return;
-                case "css": $upd("css"); return;
-                case "h": case "c": case "cpp": $upd("c_cpp"); return;
-                case "diff": $upd("diff"); return;
-                case "xhtml": case "html": $upd("html"); return;
-                case "js": $upd("javascript"); return;
-                case "json": $upd("json"); return;
-                case "jade": $upd("jade"); return;
-                case "ejs": $upd("ejs"); return;
-                case "markdown": case "md": $upd("markdown"); return;
-                case "sh": $upd("sh"); return;
-                case "xml": $upd("xml"); return;
-                case "svg": $upd("svg"); return;
-                case "lisp": case "el": $upd("lisp"); return;
-                case "clj": case "cljs": case "cljx": case "cljc": $upd("clojure"); return;
-                case "cabal": case "hs": $upd("haskell"); return;
-                case "py": $upd("python"); return;
-                default: $upd("text");
-            }
-        }});
+        lively.bindings.connect(this, 'contentLoaded', editor, 'guessAndSetTextMode',
+          {updater: function($upd) { $upd(this.sourceObj.get('editor').getTextMode()); }});
     },
     getLine: function getLine() {
         var string = this.get('urlText').textString,
@@ -228,15 +214,19 @@ lively.BuildSpec('lively.ide.tools.TextEditor', {
             if (err) { self.message(Strings.format("Could not read file.\nError: %s", err)); return; }
             lively.lang.fun.debounceNamed(self.id + "-debounce-contentLoaded", 300, function() {
               lively.bindings.signal(self, 'contentLoaded', cmd.getStdout());
+              self.livelyRuntimeUpdateDoitContext();
             })();
         });
     },
     loadFileNetwork: function loadFileNetwork() {
-        var webR = this.getWebResource(), self = this;
+        var webR = this.getWebResource();
         lively.bindings.connect(webR, 'content', this, 'contentLoaded', {
           updater: function($upd) {
-            var sourceObj = this.sourceObj;
-            lively.lang.fun.debounceNamed(self.id + "-debounce-contentLoaded-net", 100, function() { $upd(sourceObj.content); })();
+            var sourceObj = this.sourceObj, targetObj = this.targetObj;
+            lively.lang.fun.debounceNamed(targetObj.id + "-debounce-contentLoaded-net", 100, function() {
+              targetObj.livelyRuntimeUpdateDoitContext();
+              $upd(sourceObj.content);
+            })();
           }
         });
         webR.beAsync().forceUncached().get();
@@ -327,23 +317,25 @@ lively.BuildSpec('lively.ide.tools.TextEditor', {
 
     livelyRuntimeUpdateDoitContext: function livelyRuntimeUpdateDoitContext(thenDo) {
       var rt = lively.lang.Path("lively.lang.Runtime").get(Global);
-      if (!rt) return thenDo(null,null);
+      if (!rt || !lively.Config.get("lively.lang.Runtime.active")) return typeof thenDo === "function" && thenDo(null, null);
       var editor = this.get("editor");
-      lively.lang.Runtime.findProjectForResource(this.getLocation(), function(err, proj) {
-        editor.doitContext = (proj && proj.doitContext) || null;
-        thenDo && thenDo();
+      lively.lang.Runtime.findProjectForResource(String(this.getLocation()), function(err, proj) {
+        editor.doitContext = proj ?
+          (proj.doitContext || (proj.getDoitContext && proj.getDoitContext(proj))) :
+          null;
+        typeof thenDo === "function" && thenDo();
       });
     },
 
     livelyRuntimeWithProjectDo: function livelyRuntimeWithProjectDo(doFunc) {
       var rt = lively.lang.Path("lively.lang.Runtime").get(Global);
-      if (!rt) return doFunc(null,null);
-      lively.lang.Runtime.findProjectForResource(this.getLocation(), doFunc);
+      if (!rt || !lively.Config.get("lively.lang.Runtime.active")) return typeof doFunc === "function" && doFunc(null, null);
+      return lively.lang.Runtime.findProjectForResource(this.getLocation(), doFunc);
     },
 
     livelyRuntimeSignalChange: function livelyRuntimeSignalChange(thenDo) {
       var rt = lively.lang.Path("lively.lang.Runtime").get(Global);
-      if (!rt) return thenDo(null, null);
+      if (!rt || lively.Config.get("lively.lang.Runtime.active")) return typeof thenDo === "function" && thenDo(null, null);
       var loc = this.getLocation(),
           self = this;;
       lively.lang.fun.composeAsync(

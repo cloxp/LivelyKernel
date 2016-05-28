@@ -146,7 +146,7 @@ AsyncTestCase.subclass('lively.morphic.tests.Text.TextMorphTests', lively.morphi
         // issue 285
         var m = new lively.morphic.Text(new Rectangle(0,0, 100, 20), "");
         connect(m, 'textString', m, 'someOtherField')
-        var copy = m.duplicate()
+        var copy = m.copy()
         this.assert(copy.textString == '', 'copy is broken')
         this.done();
     },
@@ -822,7 +822,7 @@ lively.morphic.tests.MorphTests.subclass('lively.morphic.tests.Text.TextMorphRic
             [{textString: 'e'},
             {textString: 'intest'}])
         this.checkDOM([
-            {tagName: 'span', textContent: 'e', style: {color: 'rgb(0,100,0)'}},
+            {tagName: 'span', textContent: 'e', style: {color: 'darkgreen'}},
             {tagName: 'span', textContent: 'intest', style: {color: 'inherit'}}])
     },
 

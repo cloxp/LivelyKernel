@@ -1,6 +1,6 @@
 module('lively.morphic.Lists').requires('lively.morphic.Core', 'lively.morphic.Events', 'lively.morphic.TextCore', 'lively.morphic.Styles').toRun(function() {
 
-lively.morphic.Box.subclass('lively.morphic.OldList', 
+lively.morphic.Box.subclass('lively.morphic.OldList',
 'documentation', {
     connections: {
         selection: {},
@@ -374,7 +374,8 @@ lively.morphic.Box.subclass('lively.morphic.MorphList',
         fixedHeight: false,
         fixedWidth: false,
         allowInput: false,
-        selectable: false
+        selectable: false,
+        whiteSpaceHandling: "pre"
     },
     isList: true
 },
@@ -509,7 +510,13 @@ lively.morphic.Box.subclass('lively.morphic.MorphList',
     find: function (itemOrValue) {
         if (!itemOrValue) return undefined;
         // if we hand in a itemListMorph:
-        if (itemOrValue.isMorph && itemOrValue.item) itemOrValue = itemOrValue.item;
+        if (itemOrValue.isMorph) {
+          if (itemOrValue.item) itemOrValue = itemOrValue.item;
+          else {
+            var index = this.itemMorphs.indexOf(itemOrValue);
+            itemOrValue = this.itemList[index];
+          }
+        }
         // returns the index in this.itemList
         for (var i = 0, len = this.itemList.length; i < len; i++) {
             var val = this.itemList[i];
@@ -522,7 +529,7 @@ lively.morphic.Box.subclass('lively.morphic.MorphList',
         this.selectListItemMorph(this.itemMorphs[idx]);
         this.updateSelectionAndLineNoProperties(idx);
     },
-    
+
     saveSelectAt: function(idx) {
         this.selectAt(Math.max(0, Math.min(this.itemList.length-1, idx)));
     },
@@ -645,7 +652,7 @@ lively.morphic.Box.subclass('lively.morphic.MorphList',
     },
 
     selectAllAt: function(indexes) {
-        indexes.forEach(function(i) { 
+        indexes.forEach(function(i) {
             this.selectListItemMorph(this.itemMorphs[i], true);
         }, this);
     },
@@ -812,6 +819,11 @@ lively.morphic.Box.subclass('lively.morphic.List',
 
 },
 'accessing', {
+
+    getSelectedIndex: function() { return this.selectedLineNo; },
+
+    setSelectedIndex: function(index) { this.selectedLineNo = index; this.rerender(); return index; },
+
     get selectedLineNo() {
         if(this.noSingleSelectionIfMultipleSelected && this.selectedIndexes.length > 1)
             return undefined;
@@ -882,6 +894,7 @@ lively.morphic.Box.subclass('lively.morphic.List',
         if (selectionChanged) {
             lively.bindings.signal(this, 'selection', this.selection);
             lively.bindings.signal(this, 'selectedLineNo', this.selectedLineNo);
+            this.onSelectionChange(this.selection, oldSelectionValues[0]);
         }
     },
 
@@ -1139,6 +1152,8 @@ lively.morphic.Box.subclass('lively.morphic.List',
 },
 'event handling', {
 
+    onSelectionChange: function(oldSelection, newSelection) { },
+
     onScroll: function(evt) {
         Functions.throttleNamed(
             'onScroll-' + this.id, 60, this.updateView.bind(this))();
@@ -1154,7 +1169,7 @@ lively.morphic.Box.subclass('lively.morphic.List',
         if (!evt.isRightMouseButtonDown()) return $super(evt);
         // delayed because when owner is a window and comes forward the window
         // would be also in front of the new menu
-        var items = this.getMenu();
+        var items = this.getMenu(evt);
         if (items.length > 0) lively.morphic.Menu.openAt.curry(
             evt.getPosition(), null, items).delay(0.1);
         evt.stop(); return true;
@@ -1163,15 +1178,32 @@ lively.morphic.Box.subclass('lively.morphic.List',
     onKeyDown: function($super, evt) {
         if (evt.isCommandKey()) return $super(evt);
         var keys = evt.getKeyString(), wasHandled = true;
-        switch (keys) {
-            case 'Control-N': case 'Down': this.selectNext(); break;
-            case 'Control-P': case 'Up': this.selectPrev(); break;
-            case "Alt-V": case "PageUp": this.scrollPage('up'); break;
-            case "Control-V": case "PageDown": this.scrollPage('down'); break;
-            case "Alt-Shift->": case "End": this.scrollToBottom(); break;
-            case "Alt-Shift-<": case "Home": this.scrollToTop(); break;
-            case "Command-A": case "Control-A": this.selectAll(); break;
-            default: wasHandled = false;
+
+        if (this.isMultipleSelectionList) {
+          switch (keys) {
+              case 'Control-N': case 'Down': this.selectNext(); this.deselectAt(this.selectedLineNo-1); break;
+              case 'Control-P': case 'Up': this.selectPrev(); this.deselectAt(this.selectedLineNo+1); break;
+              case 'Control-Shift-N': case 'Shift-Down': this.selectNext(); break;
+              case 'Control-Shift-P': case 'Shift-Up': this.selectPrev(); break;
+              default: wasHandled = false;
+          }
+        } else {
+          switch (keys) {
+              case 'Control-N': case 'Down': case 'Shift-Down': this.selectNext(); break;
+              case 'Control-P': case 'Up': case 'Shift-Up': this.selectPrev(); break;
+              default: wasHandled = false;
+          }
+        }
+
+        if (!wasHandled) {
+          switch (keys) {
+              case "Alt-V": case "PageUp": this.scrollPage('up'); break;
+              case "Control-V": case "PageDown": this.scrollPage('down'); break;
+              case "Alt-Shift->": case "End": this.scrollToBottom(); break;
+              case "Alt-Shift-<": case "Home": this.scrollToTop(); break;
+              case "Command-A": case "Control-A": this.selectAll(); break;
+              default: wasHandled = false;
+          }
         }
         if (!wasHandled) return $super(evt);
         evt.stop(); return true;
@@ -1180,20 +1212,36 @@ lively.morphic.Box.subclass('lively.morphic.List',
     textOnMouseDown: function onMouseDown(evt) {
         // NOTE! This method is attached to all the list item morphs, so this
         // in here is NOT the list but each individual list item morph
+
         var list = this.owner.owner, // FIXME
             isMultiSelect = !!list.isMultipleSelectionList;
         if (!isMultiSelect) {
             this.setIsSelected(list.allowDeselectClick ? !this.selected : true);
         } else {
             var multiSelectWithShift = list.multipleSelectionMode === 'multiSelectWithShift',
-                hasSelection = !!list.getSelectedIndexes().length,
-                shiftPressed = evt.isShiftDown();
-            if (multiSelectWithShift && !shiftPressed) {
-                var selected = this.selected;
+                selectedIndexes = list.getSelectedIndexes(),
+                hasSelection = !!selectedIndexes.length,
+                shiftPressed = evt.isShiftDown(),
+                commandPressed = evt.isCommandKey(),
+                selected = this.selected;
+            if (commandPressed) delete evt.hand.haloTarget
+            if (multiSelectWithShift && shiftPressed) {
+              if (!hasSelection) this.setIsSelected(!selected || !list.allowDeselectClick);
+              else {
+                var lastIndex = selectedIndexes.last();
+                var desc = this.index > lastIndex;
+                var newSelections = lively.lang.arr.range(desc ? lastIndex : this.index, desc ? this.index : lastIndex)
+                  .withoutAll(selectedIndexes);
+                if (!desc) newSelections = newSelections.reverse();
+                list.selectAllAt(newSelections);
+              }
+            } else if (multiSelectWithShift && commandPressed) {
+              this.setIsSelected(!selected || !list.allowDeselectClick)
+            } else if (multiSelectWithShift && !shiftPressed) {
                 list.deselectAll();
-                this.setIsSelected(!selected || !list.allowDeselectClick);
+                this.setIsSelected(true);
             } else {
-                this.setIsSelected(!this.selected);
+                this.setIsSelected(!selected);
             }
         }
         evt.stop(); return true;
@@ -1251,7 +1299,6 @@ lively.morphic.Box.subclass('lively.morphic.List',
         if (item !== 0 && !item) item = {isitem: true, string: 'invalid list item: ' + item};
         var string = item.string || String(item);
         return string;
-
     },
     removeAllSelectedIndexes: function() {
         var oldIdx = this.selectedLineNo;
@@ -1274,7 +1321,6 @@ lively.morphic.Box.subclass('lively.morphic.List',
                 return this.selectedLineNo;                 //the updater has vetoed the change
         }
     },
-
 
     renderItems: function(items, from, to, selectedIndexes, renderBounds, layout) {
         this.ensureItemMorphs(to-from, layout).forEach(function(itemMorph, i) {
@@ -1302,6 +1348,7 @@ lively.morphic.Box.subclass('lively.morphic.List',
                 lively.bindings.noUpdate(function() { itemMorph.selected = selected; });
             }
         }, this);
+        this.deactivateNotNeededListItemMorphs();
         lively.bindings.signal(this, "rendered");
     },
 
@@ -1315,7 +1362,7 @@ lively.morphic.Box.subclass('lively.morphic.List',
                 resizeWidth: true,
                 whiteSpaceHandling: 'pre',
                 selectable: false,
-                padding: lively.Rectangle.inset(4,4,0,0)
+                padding: lively.Rectangle.inset(2)
             });
         text.addScript(function setIsSelected(bool, suppressUpdate) {
             if (!bool && this.selected) {
@@ -1333,9 +1380,8 @@ lively.morphic.Box.subclass('lively.morphic.List',
                 scrollByY = evt.hand.eventStartPos.subPt(evt.getPosition()).y / 4
             list.setScroll(0, list.getScroll()[1]+scrollByY);
         })
-        
+
         text.addScript(this.textOnMouseDown);
-        // text.disableEvents();
         text.unignoreEvents();
         text.disableHalos();
         text.setInputAllowed.bind(text, false).delay(1);
@@ -1355,15 +1401,7 @@ lively.morphic.Box.subclass('lively.morphic.List',
         requiredLength = Math.min(layout.noOfCandidatesShown, requiredLength);
         if (itemMorphs.length > requiredLength) {
             lively.bindings.noUpdate(function() {
-                itemMorphs.slice(requiredLength).forEach(function(text) {
-                    text.setPointerEvents('none');
-                    text.index = undefined;
-                    text.setTextString('');
-                    text.removeStyleClassName("selected");
-                    text.selected = false;
-                    text.setHandStyle("default");
-                    text.remove();
-                });
+                itemMorphs.slice(requiredLength).forEach(function(text) { text.selected = false; text.index = undefined; });
                 itemMorphs = itemMorphs.slice(0,requiredLength);
             });
         } else if (itemMorphs.length < requiredLength) {
@@ -1373,6 +1411,20 @@ lively.morphic.Box.subclass('lively.morphic.List',
             itemMorphs = itemMorphs.concat(newItems);
         }
         return itemMorphs;
+    },
+
+    deactivateNotNeededListItemMorphs: function() {
+      this.listItemContainer.submorphs.forEach(function(text) {
+        if (text.index !== undefined) return;
+        lively.bindings.noUpdate(function() {
+          text.setPointerEvents('none');
+          text.setTextString('');
+          text.removeStyleClassName("selected");
+          text.selected = false;
+          text.setHandStyle("default");
+          text.remove();
+        });
+      });
     },
 
     getVisibleIndexes: function() {

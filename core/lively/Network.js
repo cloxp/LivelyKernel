@@ -41,16 +41,18 @@ module('lively.Network').requires('lively.bindings', 'lively.Data', 'lively.net.
 Object.subclass('URL',
 "settings", {
     isURL: true,
-    splitter: new RegExp('^(http|https|file)://([^/:]*)(:([0-9]+))?(/.*)?$'),
+    splitter: new RegExp('^([^:]+:)?//([^/:]*)(:([0-9]+))?(/.*)?$'),
     pathSplitter: new RegExp("([^\\?#]*)(\\?[^#]*)?(#.*)?"),
 },
 'initializing', {
 
-    initialize: function(/*...*/) { // same field names as window.location
-        var firstArg = arguments[0];
-        if (!firstArg) throw new Error("URL constructor expecting string or URL parameter");
-        if (Object.isString(firstArg.valueOf())) {
-            var urlString = firstArg;
+    initialize: function(stringOrSpec, baseURI) { // same field names as window.location
+        if (!stringOrSpec) throw new Error("URL constructor expecting string or URL parameter");
+        if (typeof stringOrSpec === "string" && baseURI && !stringOrSpec.match(/^[^:]+:\/\//)) {
+          stringOrSpec = new URL(baseURI).withFilename(stringOrSpec).withRelativePartsResolved().toString();
+        }
+        if (typeof stringOrSpec === "string") {
+            var urlString = stringOrSpec;
             var result = urlString.match(this.splitter);
             if (!result) throw new Error("malformed URL string '" + urlString + "'");
             this.protocol = result[1];
@@ -71,14 +73,15 @@ Object.subclass('URL',
                 this.hash = "";
             }
         } else { // spec is either an URL or window.location
-            var spec = firstArg;
-            this.protocol = spec.protocol || "http";
+            var spec = stringOrSpec;
+            this.protocol = spec.protocol || "http:";
             this.port = spec.port;
             this.hostname = spec.hostname;
             this.pathname = spec.pathname || "";
             if (spec.search !== undefined) this.search = spec.search;
             if (spec.hash !== undefined) this.hash = spec.hash;
         }
+        this.href = this.toString();
     },
 },
 "accessing", {
@@ -88,7 +91,7 @@ Object.subclass('URL',
     },
 
     toString: function() {
-        return this.protocol + "://" + this.hostname + (this.port ? ":" + this.port : "") + this.fullPath();
+        return this.protocol + "//" + this.hostname + (this.port ? ":" + this.port : "") + this.fullPath();
     },
 
     fullPath: function() {
@@ -203,6 +206,14 @@ Object.subclass('URL',
         var dirPart = this.isLeaf() ? this.dirname() : this.fullPath();
         return new URL({protocol: this.protocol, port: this.port,
             hostname: this.hostname, pathname: dirPart + filename});
+    },
+
+    join: function(path) {
+        var left = this.fullPath().replace(/\/+$/, ""),
+            right = path.replace(/^\/+/, ""),
+            both = lively.lang.string.joinPath(left, right);
+        return new URL({protocol: this.protocol, port: this.port,
+            hostname: this.hostname, pathname: both});
     },
 
     withQuery: function(record) {
@@ -420,8 +431,14 @@ Object.extend(URL, {
             new URL(urlString) :
             new URL(Config.rootPath).withRelativePath(urlString);
     },
-    fromLiteral: function(literal) {
-        return new URL(literal)
+
+    fromLiteral: function(literal) { return new URL(literal) },
+
+    resolvePath: function(path) {
+      // absolute?
+      if (/^[a-z]*:?\/\//i.test(path)) return path;
+      if (path[0] === "/") return URL.ensureAbsoluteRootPathURL(path).toString();
+      return URL.source.withFilename(path).withRelativePartsResolved().toString();
     },
 
     makeProxied: function makeProxied(url) {
@@ -686,6 +703,8 @@ View.subclass('NetRequest',
     put: function(url, content) { return this.request("PUT", this.useProxy ? URL.makeProxied(url) : String(url), content) },
 
     post: function(url, content) { return this.request("POST", this.useProxy ? URL.makeProxied(url) : String(url), content) },
+
+    patch: function(url, content) { return this.request("PATCH", this.useProxy ? URL.makeProxied(url) : String(url), content) },
 
     propfind: function(url, depth, content) {
         this.setContentType("text/xml"); // complain if it's set to something else?
@@ -1547,6 +1566,8 @@ Object.subclass('WebResource',
         this.content = this.convertContent(content || '');
         this.addHeaderForPutRequirements(options);
         if (contentType) this.addContentType(contentType)
+        // rk 2016-01-22
+        // added b/c Chrome caches PUTs
         this.addNoCacheHeader();
         var req = this.createXMLHTTPRequest('PUT');
         req.request(this.content);
@@ -1569,12 +1590,22 @@ Object.subclass('WebResource',
     },
 
     post: function(content, contentType) {
-        this.content = content;
+        this.content = this.convertContent(content)
         var request = this.createNetRequest();
         if (contentType) {
             request.setContentType(contentType);
         }
-        request.post(this.getURL(), content);
+        request.post(this.getURL(), this.content);
+        return this;
+    },
+
+    patch: function(content, contentType) {
+        this.content = this.convertContent(content)
+        var request = this.createNetRequest();
+        if (contentType) {
+          request.setContentType(contentType);
+        }
+        request.patch(this.getURL(), this.content);
         return this;
     },
 
@@ -1672,16 +1703,48 @@ Object.subclass('WebResource',
       }).getProperties();
     },
 
-    ensureExistance: function() {
-        var url = this.getURL();
-        url.getAllParentDirectories().forEach(function(ea) {
-            var webR = new WebResource(ea);
-            if (!webR.exists()) {
-                console.log('creating ' + webR.getURL());
-                webR.create();
-            }
-        })
+    ensureExistance: function(thenDo) {
+        var url = this.getURL(),
+            useProxy = !this._noProxy,
+            isSync = !!this._isSync;
+
+        if (isSync) {
+          var stati = lively.lang.arr.map(
+            url.getAllParentDirectories(),
+            function(url) {
+              var dir = makeWebResource(url);
+              if (!dir.exists()) dir.create();
+              return dir.status;
+            });
+            thenDo && thenDo(stati.detect(function(ea) { return !ea.isSuccess(); }));
+        } else {
+          lively.lang.arr.mapAsyncSeries(
+            url.getAllParentDirectories(),
+            function(url, _, n) {
+              lively.lang.fun.composeAsync(
+                function(n) { makeWebResource(url).whenDone(n).head(); },
+                function(status, n) {
+                  if (status.isSuccess()) n(null, status);
+                  else makeWebResource(url).whenDone(n).create();
+                },
+
+                function(status, n) {
+                  n(status.isSuccess() ? null : status); }
+              )(n);
+            },
+            function(err) { thenDo && thenDo(err); })
+        }
+
         return this;
+
+        // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+        function makeWebResource(url) {
+          var webR = new WebResource(url);
+          if (!isSync) webR.beAsync();
+          if (!useProxy) webR.noProxy();
+          return webR;
+        }
     }
 
 },
@@ -1787,6 +1850,14 @@ Object.subclass('WebResource',
     convertContent: function(content) {
         // if requiredRevision is set then put will only succeed if the resource has
         // the revision number requiredRevision
+        if ((Global.Document && content instanceof Document) ||
+                (Global.Node && content instanceof Node)) {
+            content = Exporter.stringify(content);
+        } else if (UserAgent.isIE && content.xml) {
+            // serialization FIX for IE9+
+            content = content.xml;
+        }
+
         if (this.isBinary()) {
             // from http://code.google.com/p/chromium/issues/detail?id=35705#c6
             var byteValue = function(x) { return x.charCodeAt(0) & 0xff },
@@ -1794,12 +1865,7 @@ Object.subclass('WebResource',
                 ui8a = new Uint8Array(ords);
             content = ui8a.buffer;
         }
-        if ((Global.Document && content instanceof Document) ||
-                (Global.Node && content instanceof Node)) {
-            content = Exporter.stringify(content);
-        } else if (content.xml) { // serialization FIX for IE9+
-            content = content.xml;
-        }
+
         return content;
     }
 },

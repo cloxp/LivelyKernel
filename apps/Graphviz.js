@@ -1,5 +1,16 @@
 module('apps.Graphviz').requires().toRun(function() {
 
+(function fixChrome_getTransformToElement_removal() {
+  // for more info see
+  // https://lists.w3.org/Archives/Public/www-svg/2015Aug/att-0009/SVGWG-F2F-minutes-20150824.html#item02
+  // https://github.com/huei90/snap.svg.zpd/issues/57
+  // delete SVGElement.prototype.getTransformToElement
+  SVGElement.prototype.getTransformToElement = SVGElement.prototype.getTransformToElement || function(elem) {
+      // return elem.getScreenCTM().inverse().multiply(this.getScreenCTM());
+      return elem.getCTM().inverse().multiply(this.getCTM());
+  };
+})();
+
 lively.BuildSpec('lively.morphic.SVGViewer', {
     _BorderColor: Color.rgb(95,94,95),
     _BorderWidth: 1,
@@ -159,6 +170,10 @@ lively.BuildSpec('lively.morphic.SVGViewer', {
     getSVGScale: function getSVGScale() {
     // this.getSVGScale();
     var m = this.get("clip").submorphs[0];
+    var svgNode = m.renderContext().shapeNode.querySelector("svg");
+    if (svgNode) {
+      return this.getTransform().preConcatenate(new lively.morphic.Similitude(svgNode.getCTM()).inverse()).getScale()
+    }
     return m.getScale();
     // var m = this.get("svgMorph"),
     //     match = m.renderContext().shapeNode.style.webkitTransform.match(/scale\(([^\)]+)\)/);
@@ -179,23 +194,38 @@ lively.BuildSpec('lively.morphic.SVGViewer', {
         // this.get('clip').addMorph(this.get('svgMorph'))
         // this._renderContext = null
         if (!this.get('svgMorph')) {
-          $world.inform("Found no svgMorph!\nMaybe it is already replaced with the graphvis morphic canvas? ")
-          return;
+          // $world.inform("Found no svgMorph!\nMaybe it is already replaced with the graphvis morphic canvas? ")
+          // return;
+          this.get("GraphvizMorphicCanvas") && this.get("GraphvizMorphicCanvas").remove();
+          this.get("clip").addMorph(lively.BuildSpec({
+              name: "svgMorph",
+              _ClipMode: "hidden",
+              _Extent: this.get("clip").getExtent(),
+              _Fill: null,
+              className: "lively.morphic.HtmlWrapperMorph",
+              doNotSerialize: ["rootElement"],
+              droppingEnabled: true,
+              layout: {resizeHeight: true,resizeWidth: true},
+          }).createMorph());
         }
         var el = this.get('svgMorph').renderContext().shapeNode;
         while (el.childNodes.length) el.removeChild(el.childNodes[0]);
         el.appendChild(new DOMParser().parseFromString(svgString, "text/xml").documentElement);
         // Exporter.stringify(el.childNodes[0])
+    
         var m = this.get('svgMorph');
-        m.addScript(function onOwnerChanged(owner) {
-            // scale to fit the svg drawing
-            $super(owner);
-            if (!owner || !owner.world()) return;
+        m.addScript(function scaleToFitSVG() {
             var el = this.renderContext().shapeNode.childNodes[0],
                 bnds = el.getBoundingClientRect(),
                 scale = this.get('SVGViewer').getSVGScale();
             this.applyStyle({clipMode: 'hidden', extent: pt(bnds.width/scale, bnds.height/scale)});
         });
+        m.addScript(function onOwnerChanged(owner) {
+            $super(owner);
+            if (!owner || !owner.world()) return;
+            this.scaleToFitSVG();
+        });
+        m.scaleToFitSVG();
     },
 
     reset: function reset() {
@@ -228,10 +258,13 @@ lively.BuildSpec('lively.morphic.SVGViewer', {
     convertSVGToMorphic: function convertSVGToMorphic() {
         var svgMorph = this.get("svgMorph"),
             svgNode = svgMorph.renderContext().shapeNode.getElementsByTagName("svg")[0],
-            morphicGraph = apps.Graphviz.Renderer.convertGraphvizSVGToMorphs(svgNode),
+            outerScale = this.getSVGScale(),
+            innerScale = new lively.morphic.Similitude(svgNode.getCTM()).getScale(),
+            morphicGraph = Global.apps.Graphviz.Renderer.convertGraphvizSVGToMorphs(svgNode),
             owner = svgMorph.owner;
         svgMorph.remove();
         owner.addMorph(morphicGraph);
+        morphicGraph.setScale(innerScale*outerScale);
         var btn = this.getMorphNamed("convertSVGToMorphicButton");
         btn && btn.remove();
     }
@@ -283,7 +316,7 @@ lively.BuildSpec("apps.Graphviz.GraphvizMorphicCanvas", {
     setNodesAndEdgeMorphs: function setNodesAndEdgeMorphs(morphs) {
       this.removeAllMorphs();
       morphs.forEach(function(ea) { this.addMorph(ea); }, this);
-      var fullBounds = morphs.invoke("bounds").reduce(function(fullBnds, bnds) { return fullBnds.union(bnds); })
+      var fullBounds = morphs.invoke("bounds").reduce(function(fullBnds, bnds) { return fullBnds.union(bnds); }, rect(0,0,0,0))
       this.setExtent(fullBounds.extent().addXY(20,20));
     },
 
@@ -325,6 +358,7 @@ lively.BuildSpec("apps.Graphviz.MorphNodeOrEdge", {
 
       var offsetInGraphTfm = new lively.morphic.Similitude(svgNode.getTransformToElement(el))
         .preConcatenate(offsetTfm).inverse();
+
       this.setTransform(offsetInGraphTfm);
 
       // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -339,13 +373,14 @@ lively.BuildSpec("apps.Graphviz.MorphNodeOrEdge", {
 
     setHighlight: function setHighlight(bool) {
       var node = this.renderContext().getShapeNode(),
-          ellipse = node.getElementsByTagName("ellipse")[0],
-          path = node.getElementsByTagName("path")[0],
+          ellipse = node.querySelector("ellipse") || node.querySelector("polygon"),
+          path = node.querySelector("path"),
           node = ellipse || path,
           attribute = !!ellipse ? "fill" : "stroke",
           fillColor = bool ? Global.Color.orange : Global.Color.white,
           strokeColor = bool ? Global.Color.orange : Global.Color.black,
           color = !!ellipse ? fillColor : strokeColor;
+      this.highlighted = true;
       node.setAttribute(attribute, color);
     }
 });
@@ -554,15 +589,16 @@ apps.Graphviz.Renderer = {
         // create a file like "users.robert.detecting-module-cycles.html.svg"
         var basename = URL.source.pathname.replace(/^\//, '').replace(/\//g, '.'),
             dotName = basename + '.dot',
-            graph = this.makeGraph(options),
+            graph = options.dotSource || this.makeGraph(options),
             dotURL = URL.root.withFilename(dotName),
             svgURL = this.changeExt(dotURL, '.svg');
         this.writeGraph(dotURL, graph);
         this.renderGraph(dotName);
         this.transformSVG(options.augmentSVG, svgURL);
-        if (options.asMorph || options.asWindow) {
+        if (options.asSVG || options.asMorph || options.asWindow) {
             var svg;
             this.transformSVG(function(svgString) { svg = svgString; }, svgURL);
+            if (options.asSVG) return svg;
             var morph = this.asMorph(svg);
             if (options.asWindow) morph = morph.openInWindow();
             if (options.convertNodesAndEdgesToMorphs)
@@ -606,7 +642,7 @@ apps.Graphviz.Renderer = {
 
     renderGraph: function(name) {
         var cmd = lively.shell.execSync(Strings.format('dot %s -Tsvg -o %s',
-            name, this.changeExt(name, '.svg'))),
+            name, this.changeExt(name, '.svg')), {cwd: lively.shell.WORKSPACE_LK}),
             outString = cmd.resultString(true).trim();
         outString.length && show(outString);
     },
@@ -618,5 +654,352 @@ apps.Graphviz.Renderer = {
       return viewer;
     }
 }
+
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+// cleanup
+
+apps.Graphviz.Simple = {
+  
+  renderDotToSVG: function(dotSource, options) {
+    // apps.Graphviz.Simple.renderDotToSVG("digraph { a -> b; b -> a; }").then(svg => show(svg))
+    return new Promise((resolve, reject) => {
+      if (!dotSource || !dotSource.trim()) return reject("Invalid dot source: " + dotSource)
+      var cmd = "dot -Tsvg";
+      lively.shell.run(cmd, {stdin: dotSource}, (err, cmd) => {
+        if (err) reject(cmd.resultString(true).trim() || err);
+        else resolve(cmd.getStdout());
+      });
+    });
+  },
+
+  renderDotToDisplay: function(dotSource, options) {
+    options = lively.lang.obj.merge({display: null}, options);
+    return apps.Graphviz.Simple.renderDotToSVG(dotSource)
+      .then((svg) => {
+        var display = options.display || lively.BuildSpec('apps.Graphviz.Display').createMorph();
+        return display.updateSVG(svg, options);
+      });
+  }
+}
+
+lively.BuildSpec('apps.Graphviz.Display', {
+  _BorderColor: Color.rgb(95,94,95),
+  _BorderWidth: 1,
+  _ClipMode: "hidden",
+  _Extent: lively.pt(300,300),
+  _Fill: Color.rgb(255,255,255),
+  className: "lively.morphic.Box",
+  layout: {adjustForNewBounds: true, resizeHeight: true, resizeWidth: true},
+  name: "graphviz-display",
+
+  _StyleSheet: `
+.graphviz-element {
+  cursor: pointer;
+}
+.graphviz-element.selected svg polygon, .graphviz-element.selected svg rectangle, .graphviz-element.selected svg ellipse {
+  fill: orange;
+  stroke: none;
+}
+`,
+
+  submorphs: [{
+    _BorderWidth: 0,
+    _ClipMode: "scroll",
+    _Extent: lively.pt(300,300),
+    _Position: lively.pt(0,0),
+    className: "lively.morphic.Box",
+    layout: {resizeHeight: true, resizeWidth: true},
+    name: "clip"
+  }],
+
+  doZoomBy: function doZoomBy(scaleDelta, zoomPoint) {
+    // zoomPoint is global
+    var oldScale = this.getSVGScale();
+
+    var minScale = 0.1, maxScale = 2;
+    if (oldScale <= minScale && scaleDelta < 1) return false;
+    if (oldScale >= maxScale && scaleDelta > 1) return false;
+
+    var newScale = lively.lang.num.roundTo(oldScale * scaleDelta, 0.0001);
+    
+    if (newScale !== oldScale) {
+        var clip = this.get('clip');
+        var canvas = clip.submorphs[0];
+        var scrollPos = clip.getScrollBounds().topLeft();
+        var oldPos = canvas.localize(zoomPoint);
+
+        this.setSVGScale(newScale);
+
+        var newPos = canvas.localize(zoomPoint)
+        var newScrollPos = scrollPos.addPt(oldPos.subPt(newPos).scaleBy(this.getSVGScale()));
+        clip.setScroll(newScrollPos.x, newScrollPos.y);
+    }
+  },
+
+    getSVGScale: function getSVGScale() {
+      var canvas = this.get('graphviz-canvas');
+      return canvas ? canvas.getScale() : 1;
+    },
+
+    setSVGScale: function setSVGScale(val) {
+      var canvas = this.get('graphviz-canvas');
+      canvas && canvas.setScale(val);
+    },
+
+    onMouseWheel: function onMouseWheel(evt) {
+        if (!evt.isAltDown()) return $super(evt);
+        var scaleDelta = 1 + (evt.wheelDelta / 2800);
+        this.doZoomBy(scaleDelta, evt.getPosition(), true);
+        evt.stop(); return true;
+    },
+
+    renderSVG: function renderSVG(svgString) {
+      var scale = this.getSVGScale();
+      this.setSVGScale(1);
+      var clip = this.get("clip"),
+          canvas = clip.getMorphNamed('graphviz-canvas')
+                || clip.addMorph(lively.BuildSpec('apps.Graphviz.Canvas').createMorph());
+      canvas.renderSVGString(svgString);
+      this.setSVGScale(scale);
+    },
+
+    getNodes: function getNodes() {
+      var canvas = this.get('graphviz-canvas');
+      return canvas ? canvas.submorphs.filter(ea => ea.graphvizType === "node") : [];
+    },
+
+    getEdges: function getEdges() {
+      var canvas = this.get('graphviz-canvas');
+      return canvas ? canvas.submorphs.filter(ea => ea.graphvizType === "edge") : [];
+    },
+
+    getClusters: function getClusters() {
+      var canvas = this.get('graphviz-canvas');
+      return canvas ? canvas.submorphs.filter(ea => ea.graphvizType === "cluster") : [];
+    },
+
+    setSelection: function setSelection(val) {
+      var canvas = this.get('graphviz-canvas');
+      return canvas && canvas.setSelection(val);
+    },
+
+    getSelection: function getSelection() {
+      var canvas = this.get('graphviz-canvas');
+      return canvas && canvas.getSelection();
+    },
+
+    updateSVG: function updateSVG(svgString, options) {
+      options = lively.lang.obj.merge({
+        display: null,
+        convertToMorphs: true,
+        makeSelectable: ["node"],
+        scrollSelectionIntoView: true
+      }, options);
+      
+      return new Promise((resolve, reject) => {
+        var scroll = this.get("clip").getScroll();
+        var selection = this.getSelection();
+  
+        this.renderSVG(svgString);
+  
+        if (options.convertToMorphs) {
+          if (!this.world()) this.openInWorldCenter();
+          var canvas = this.get("graphviz-canvas");
+          canvas.convertToMorphs();
+          if (options.makeSelectable) {
+            canvas.makeSelectable(Array.isArray(options.makeSelectable) ? options.makeSelectable : undefined);
+            canvas.shouldScrollSelectionIntoView = options.scrollSelectionIntoView;
+            lively.bindings.connect(canvas, 'selection', this, 'selection');
+          }
+        }
+  
+        if (selection) this.setSelection(selection.name);
+        this.get("clip").setScroll(scroll[0], scroll[1]);
+        // (() => {
+        //   this.get("clip").setScroll(scroll[0], scroll[1]);
+        //   resolve(this);
+        // }).delay(0);
+        resolve(this);
+      });
+    },
+
+    renderDot: function renderDot(dotSource, options) {
+      return apps.Graphviz.Simple.renderDotToDisplay(dotSource, lively.lang.obj.merge(options, {display: this}));
+    },
+
+    onFromBuildSpecCreated: function onFromBuildSpecCreated(dotSource, options) {
+      this.getPartsBinMetaInfo().addRequiredModule("apps.Graphviz");
+    }
+});
+
+lively.BuildSpec('apps.Graphviz.Canvas', {
+  name: 'graphviz-canvas',
+  _ClipMode: "hidden",
+  _Extent: pt(20,20),
+  _Position: pt(0,0),
+  _Fill: null,
+  className: "lively.morphic.HtmlWrapperMorph",
+  _StyleClassNames: ["Morph", "HtmlWrapperMorph", "graphviz-canvas"],
+  doNotSerialize: ["rootElement"],
+  layout: {resizeHeight: true,resizeWidth: true},
+
+  renderSVGString: function renderSVGString(svgString) {
+    this.removeAllMorphs();
+    this.renderContext().shapeNode.innerHTML = svgString;
+    this.scaleToFitSVG();
+  },
+
+  scaleToFitSVG: function scaleToFitSVG() {
+    var el = this.renderContext().shapeNode.querySelector("svg");
+    if (!el) return
+    var bnds = el.getBoundingClientRect(),
+        scale = this.getScale();
+    this.applyStyle({clipMode: 'hidden', extent: pt(bnds.width/scale, bnds.height/scale)});
+  },
+
+  onOwnerChanged: function onOwnerChanged(owner) {
+    $super(owner);
+    if (!owner || !owner.world()) return;
+    this.scaleToFitSVG();
+  },
+
+  convertToMorphs: function convertToMorphs() {
+    var graphs = this.renderContext().shapeNode.querySelectorAll("svg > .graph"),
+        elements = lively.lang.arr.from(graphs[0].querySelectorAll("g"));
+    elements.forEach(el => {
+      var element = lively.BuildSpec("apps.Graphviz.Element").createMorph();
+      this.addMorph(element);
+      element.initFromSVGElement(el);
+      el.parentNode.removeChild(el);
+    });
+  },
+
+  getSelection: function getSelection() {
+    return this.submorphs.detect(ea => ea.hasStyleClassName("selected"));
+  },
+
+  setSelection: function setSelection(selection) {
+    var id = typeof selection === "string" ? selection : (selection ? selection.name : null),
+        found = this.submorphs.detect(ea => ea.name === id || ea.name === "cluster_" + id);
+    lively.bindings.signal(this, 'selection', found);
+    return found;
+  },
+
+  makeSelectable: function makeSelectable(types) {
+    var targets = this.submorphs
+    if (types) targets = targets.filter(ea => types.include(ea.graphvizType));
+    targets.invoke("makeSelectable");
+    this.submorphs.withoutAll(targets).invoke("disableEvents");
+    lively.bindings.connect(this, 'selection', this, 'onSelectionChanged');
+  },
+
+  onSelectionChanged: function onSelectionChanged(selectedMorph) {
+    if (selectedMorph) {
+      selectedMorph.addStyleClassName("selected");
+    }
+    this.submorphs.without(selectedMorph)
+      .filter(ea => ea.isSelectable)
+      .forEach(ea => ea.removeStyleClassName("selected"));
+      
+    if (this.shouldScrollSelectionIntoView && selectedMorph)
+      this.scrollIntoView(selectedMorph);
+  },
+  
+  scrollIntoView: function scrollIntoView(morph) {
+    var clip = this.owner;
+    var nodeBounds = morph.transformToMorph(clip).transformRectToRect(morph.innerBounds())
+    var sBounds = clip.getScrollBounds();
+    if (!sBounds.containsRect(nodeBounds)) {
+      var delta = pt(0,0);
+      if (nodeBounds.bottom() > sBounds.bottom()) delta.y = nodeBounds.bottom() - sBounds.bottom();
+      else if (nodeBounds.top() < sBounds.top()) delta.y = nodeBounds.top() - sBounds.top();
+      if (nodeBounds.right() > sBounds.right()) delta.x = nodeBounds.right() - sBounds.right();
+      else if (nodeBounds.left() < sBounds.left()) delta.x = nodeBounds.left() - sBounds.left();
+      var s = clip.getScroll();
+      clip.setScroll(s[0]+delta.x, s[1]+delta.y);
+    }
+  },
+
+  onDrag: function onDrag(evt) {
+    this.setHandStyle("grabbing");
+    var delta = this._dragStartPos.subPt(evt.getPosition()),
+        scroll = this.owner.getScroll();
+    this.owner.setScroll(scroll[0] + delta.x, scroll[1] + delta.y);
+    this._dragStartPos = evt.getPosition();
+  },
+
+  onDragEnd: function onDragEnd(evt) {
+    this.setHandStyle("grab");
+    delete this._dragStartPos;
+  },
+
+  onDragStart: function onDragStart(evt) {
+    this._dragStartPos = evt.getPosition();
+  },
+
+  onMouseDown: function onMouseDown(evt) {
+    if (evt.getTargetMorph() === this) {
+      evt.stop(); return true; // to not auto scroll when hand outside of scroll area
+    }
+  }
+
+});
+
+lively.BuildSpec("apps.Graphviz.Element", {
+    className: "lively.morphic.HtmlWrapperMorph",
+    _BorderColor: null, _Extent: lively.pt(10,10),
+    draggingEnabled: false, grabbingEnabled: false, droppingEnabled: false,
+    _StyleClassNames: ["Morph", "HtmlWrapperMorph", "graphviz-element"],
+
+    initFromSVGElement: function initFromSVGElement(element) {
+      var el = typeof element === "string" ? document.getElementById(element) : element;
+      if (!el) { show("no element found for id " + element); return; }
+      var svgNode = el.ownerSVGElement;
+      // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+      // transform
+      var bb = el.getBBox();
+      var bounds = lively.rect(bb.x, bb.y, bb.width, bb.height);
+      var offsetTfm = new lively.morphic.Similitude(bounds.topLeft()).inverse()
+
+      this.setHTML(lively.lang.string.format("<svg width=\"%s\" height=\"%s\"><g transform=\"%s\">%s</g></svg>",
+        bounds.width, bounds.height, offsetTfm.toSVGAttributeValue(), el.outerHTML));
+
+      this.setExtent(bounds.extent());
+
+      // var displayScale = this.get("graphviz-display").getSVGScale();
+      // var displayTfm = new lively.morphic.Similitude(pt(0,0), 0, pt(displayScale, displayScale));
+      var elTfm = new lively.morphic.Similitude(svgNode.getTransformToElement(el));
+
+      var offsetInGraphTfm = new lively.morphic.Similitude()
+        // .preConcatenate(displayTfm)
+        .preConcatenate(elTfm)
+        .preConcatenate(offsetTfm)
+        .inverse();
+
+      this.setTransform(offsetInGraphTfm);
+
+      // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+      // graph data
+
+      // var id = el.getAttribute("id");
+      // if (id) wrapper.setName(id);
+
+      this.graphvizTitle = window.decodeURIComponent(el.getElementsByTagName("title")[0].textContent).trim();
+      this.graphvizType = el.getAttribute("class");
+      
+      this.setName(this.graphvizTitle || el.id);
+    },
+
+    makeSelectable: function makeSelectable() {
+      this.isSelectable = true;
+    },
+    
+    onMouseDown: function onMouseDown(evt) {
+      if (!this.isSelectable || evt.getTargetMorph() !== this) return $super(evt);
+      lively.bindings.signal(this.owner, 'selection', this);
+      evt.stop(); return true;
+    },
+});
+
 
 }); // end of module

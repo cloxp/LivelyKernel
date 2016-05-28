@@ -78,12 +78,12 @@ Trait('lively.morphic.SetStatusMessageTrait'),
     },
     doNotSerialize: ['_aceInitialized', 'aceEditor', 'aceEditorAfterSetupCallbacks', 'savedTextString', 'storedString', '_statusMorph'],
     _aceInitialized: false,
-    evalEnabled: false,
     isAceEditor: true,
     isCodeEditor: true,
     isText: true,
     showsMorphMenu: true,
-    connections: {textChange: {}, textString: {signalOnAssignment: false}, savedTextString: {}}
+    connections: {textChange: {}, textString: {signalOnAssignment: false}, savedTextString: {}},
+    printInspectMaxDepth: 2
 },
 'initializing', {
     initialize: function($super, bounds, stringOrOptions) {
@@ -203,6 +203,8 @@ Trait('lively.morphic.SetStatusMessageTrait'),
         this.setBehaviorsEnabled(this.getBehaviorsEnabled());
         this.setShowWarnings(this.getShowWarnings());
         this.setInputAllowed(this.inputAllowed());
+        this.setDraggableCodeEnabled(this.getDraggableCodeEnabled());
+        this.setScrubbingEnabled(this.getScrubbingEnabled());
 
         // 4) run after setup callbacks
         var cbs = this.aceEditorAfterSetupCallbacks;
@@ -501,6 +503,44 @@ Trait('lively.morphic.SetStatusMessageTrait'),
         return this.getTextMode().split(':')[0];
     },
 
+    guessTextMode: function(hint) {
+      var mode = hint || "text",
+          start = this.textString.slice(0, 2000);
+      // content tests
+      if (start.match(/^diff --.* a\//m)) mode = "diff";
+      else if (start.match(/#!\/bin\//m)) mode = "sh";
+      else {
+        // file-based tests
+        var file = this.getTargetFilePath(),
+            ext = file && file.split(".").last().toLowerCase();
+        switch(ext) {
+            case "r": mode = "r"; break;
+            case "css": mode = "css"; break;
+            case "h": case "c": case "cc": case "cpp": case "hpp": mode = "c_cpp"; break;
+            case "diff": mode = "diff"; break;
+            case "xhtml": case "html": mode = "html"; break;
+            case "js": mode = "javascript"; break;
+            case "json": mode = "json"; break;
+            case "jade": mode = "jade"; break;
+            case "ejs": mode = "ejs"; break;
+            case "markdown": case "md": mode = "markdown"; break;
+            case "sh": case "bashrc": case "bash_profile": case "profile": mode = "sh"; break;
+            case "dockerfile": mode = "dockerfile"; break;
+            case "xml": mode = "xml"; break;
+            case "svg": mode = "svg"; break;
+            case "lisp": case "el": mode = "lisp"; break;
+            case "clj": case "cljs": case "cljx": case "cljc": mode = "clojure"; break;
+            case "cabal": case "hs": mode = "haskell"; break;
+            case "py": mode = "python"; break;
+        }
+      }
+      return mode;
+    },
+
+    guessAndSetTextMode: function(hint) {
+      return this.setTextMode(this.guessTextMode(hint));
+    },
+
     showsCompleter: function() {
         return this.withAceDo(function(ed) {
             return ed.completer && ed.completer.activated; });
@@ -526,6 +566,18 @@ Trait('lively.morphic.SetStatusMessageTrait'),
         this.withAceDo(function(ed) {
             ed.session.removeMarker(marker);
         });
+    },
+
+    getLine: function(row) {
+      return this.withAceDo(function(ed) {
+        return ed.session.getLine(row);
+      });
+    },
+
+    getLineRange: function(row, excludeLastChar) {
+      return this.withAceDo(function(ed) {
+        return ed.selection.getLineRange(row, excludeLastChar);
+      });
     }
 
 },
@@ -725,7 +777,7 @@ Trait('lively.morphic.SetStatusMessageTrait'),
     getScroll: function(x,y) {
         return this.withAceDo(function(ed) {
             return [ed.session.getScrollLeft(), ed.session.getScrollTop()];
-        });
+        }) || [0,0];
     },
 
     scrollToRow: function(row) {
@@ -817,7 +869,10 @@ Trait('lively.morphic.SetStatusMessageTrait'),
           }
         }
       });
-    }
+    },
+
+    isClip: function() { return false; }
+
 },
 'text morph eval interface', {
 
@@ -1051,27 +1106,32 @@ Trait('lively.morphic.SetStatusMessageTrait'),
         }
     },
 
-    doit: function(printResult, editor) {
+    doit: function(printResult, editor, options) {
+        options = lively.lang.obj.merge({depth: this.printInspectMaxDepth}, options);
+
         var text = this.getSelectionMaybeInComment(),
             range = this.getSelectionRange(),
             result = this.tryBoundEval(text, {range: {start: {index: range[0]}, end: {index: range[1]}}});
+
         if (printResult) {
           if (this.getPrintItAsComment()) {
-            try { result = " => " + Objects.inspect(result, {maxDepth: 4});
+            try { result = " => " + lively.morphic.printInspect(result, options.depth);
             } catch (e) { result = " => Error printing inspect view of " + result + ": " + e; }
           }
           this.printObject(editor, result, false, this.getPrintItAsComment());
           return;
         }
+
         var isError = result instanceof Error;
-        if (isError && lively.Config.get('showDoitErrorMessages') && this.world()) {
-            this.world().logError(result, "doit error");
-        }
         if (lively.Config.get("showDoitInMessageMorph")) {
           if (result !== undefined) {
-            this.setStatusMessage(String(result), isError ? Color.red : null);
+            if (isError) this.showError(result)
+            else this.setStatusMessage(lively.morphic.printInspect(result, options.depth));
           }
+        } else if (isError && lively.Config.get('showDoitErrorMessages') && this.world()) {
+            this.world().logError(result, "doit error");
         }
+
         var sel = this.getSelection();
         if (sel && sel.isEmpty()) sel.selectLine();
         return result;
@@ -1096,17 +1156,19 @@ Trait('lively.morphic.SetStatusMessageTrait'),
     },
 
     doListProtocol: function() {
-        lively.require("lively.ide.codeeditor.Completions").toRun(function() {
-            new lively.ide.codeeditor.Completions.ProtocolLister(this)
-              .evalSelectionAndOpenNarrower();
-        }.bind(this));
+        var m = module("lively.ide.codeeditor.Completions");
+        if (!m.isLoaded()) {
+          m.load();
+          setTimeout(function() { this.doListProtocol(); }.bind(this), 200);
+        } else {
+          new lively.ide.codeeditor.Completions.ProtocolLister(this)
+            .evalSelectionAndOpenNarrower();
+        }
     },
 
     doInspect: function() {
         lively.morphic.inspect(this.evalSelection());
     },
-
-    printInspectMaxDepth: 1,
 
     printInspect: function(options) {
         options = options || {};
@@ -1116,7 +1178,7 @@ Trait('lively.morphic.SetStatusMessageTrait'),
               ed.execCommand('insertEvalResult');
             } else {
               var obj = this.evalSelection();
-              this.printObject(ed, Objects.inspect(obj, {maxDepth: options.depth || this.printInspectMaxDepth}));
+              this.printObject(ed, lively.morphic.printInspect(obj, options.depth || this.printInspectMaxDepth))
             }
         });
     },
@@ -1149,37 +1211,6 @@ Trait('lively.morphic.SetStatusMessageTrait'),
         function reset() { self.setSelectionRangeAce(currentRange); }
         return doFunc.call(this, reset);
     },
-
-    mergeUndosOf: function(doFunc) {
-        var ed, undoStackOld, wasMerged = false;
-
-        this.withAceDo(function(aceEd) {
-            ed = aceEd;
-            ed.session.markUndoGroup();
-            undoStackOld = ed.session.getUndoManager().$undoStack.clone();
-            try { doFunc.call(this, mergeUndos); } catch (e) {
-                if (!wasMerged) mergeUndos();
-                throw e;
-            }
-        });
-
-        // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-
-        function mergeUndos() {
-            wasMerged = true;
-            var undoStackNew = ed.session.getUndoManager().$undoStack.clone();
-            var deltas = undoStackNew.withoutAll(undoStackOld);
-            var undoStackMerged = deltas.length ? deltas.reduce(function(delta, ea) {
-                delta[0].deltas = delta[0].deltas.concat(ea[0].deltas);
-                return delta;
-            }) : [];
-            ed.session.getUndoManager().$undoStack = undoStackOld.concat([undoStackMerged]);
-        }
-    },
-
-    undo: function() { return this.withAceDo(function(ed) { return ed.undo(); }); },
-
-    redo: function() { return this.withAceDo(function(ed) { return ed.redo(); }); },
 
     getSelection: function() {
         return this.withAceDo(function(ed) { return ed.selection });
@@ -1355,12 +1386,107 @@ Trait('lively.morphic.SetStatusMessageTrait'),
         });
     },
 
+    multiSelectRemoveCurrentRange: function() {
+        this.withAceDo(function(ed) {
+          var sel = ed.selection,
+              ranges = sel.getAllRanges(),
+              range = sel.getRange(),
+              multiRange = ranges.detect(function(r) { return r.isEqual(range); }),
+              i = ranges.indexOf(multiRange),
+              prevI = i === 0 ? ranges.length-1 : i-1,
+              newRange = ranges[prevI];
+          ed.exitMultiSelectMode();
+          sel.setRange(newRange);
+          ranges
+            .without(multiRange)
+            .without(newRange)
+            .forEach(function(ea) { sel.addRange(ea, true); });
+          ed.centerSelection();
+          ed.renderer.scrollCursorIntoView();
+        });
+    },
+
     collapseSelection: function(dir) {
         // dir = 'start' || 'end'
         var sel = this.getSelection(), range = sel.getRange();
         dir && sel.moveCursorToPosition(range[dir]);
         sel.clearSelection();
     }
+
+},
+'undo', {
+
+    mergeUndosOf: function(doFunc) {
+        var ed, undoStackOld, wasMerged = false;
+
+        this.withAceDo(function(aceEd) {
+            ed = aceEd;
+            ed.session.markUndoGroup();
+            undoStackOld = ed.session.getUndoManager().$undoStack.clone();
+            try { doFunc.call(this, mergeUndos); } catch (e) {
+                if (!wasMerged) mergeUndos();
+                throw e;
+            }
+        });
+
+        // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+        function mergeUndos() {
+            wasMerged = true;
+            var undoStackNew = ed.session.getUndoManager().$undoStack.clone();
+            var deltas = undoStackNew.withoutAll(undoStackOld);
+            var undoStackMerged = deltas.length ? deltas.reduce(function(delta, ea) {
+                delta[0].deltas = delta[0].deltas.concat(ea[0].deltas);
+                return delta;
+            }) : [];
+            ed.session.getUndoManager().$undoStack = undoStackOld.concat([undoStackMerged]);
+        }
+    },
+
+    undo: function() { return this.withAceDo(function(ed) { return ed.undo(); }); },
+
+    redo: function() { return this.withAceDo(function(ed) { return ed.redo(); }); },
+
+},
+'changes', {
+
+   applyChanges: function(changes, cursorPos, mergeUndos) {
+    // stolen + modified from
+    //   https://github.com/rksm/paredit.js/blob/9f51bba662e133962e2d4e119461eb9cd8f45c27/examples/ace.ext.lang.paredit.js#L510
+    //
+    // changes:  alist of insert/remove instructions like
+    //   [["insert", {row: 2, column: 3}, "foo"], ["remove", {row: 4, column: 0}, {row: 4, column: 10}]]
+    // cursorPos: where to put the cursor after applying the changes
+
+    if (!changes || !changes.length) return;
+    var ed = this.aceEditor,
+        emacs = lively.ide.ace.require("ace/keyboard/emacs");
+
+    if (mergeUndos) this.mergeUndosOf(apply)
+    else {
+      apply();
+      ed.session.markUndoGroup();
+    }
+
+    cursorPos && ed.selection.moveToPosition(cursorPos);
+
+    // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+    function apply() {
+      changes.forEach(function(ea) {
+        var type = ea[0];
+        if (type === 'insert') {
+          ed.session.insert(ea[1], ea[2]);
+        } else if (type === 'remove') {
+          var range = {start: ea[1], end: ea[2]},
+              killRingString = ed.session.getTextRange(range);
+          if (killRingString.length > 1 && emacs)
+            emacs.killRing.add(killRingString);
+          ed.session.remove(range);
+        }
+      });
+    }
+  }
 
 },
 'annotations and markers', {
@@ -1502,8 +1628,9 @@ Trait('lively.morphic.SetStatusMessageTrait'),
 
     doSave: function() {
         this.savedTextString = this.textString;
-        if (this.evalEnabled) {
-            this.tryBoundEval(this.savedTextString, {range: {start: {index: 0}, end: {index: this.textString.length}}});
+        if (this.getEvalOnSave()) {
+            var result = this.tryBoundEval(this.savedTextString, {range: {start: {index: 0}, end: {index: this.textString.length}}});
+            if (result instanceof Error) this.showError(result);
         }
     },
 
@@ -1548,8 +1675,8 @@ Trait('lively.morphic.SetStatusMessageTrait'),
     },
 
     getLineWrapping: function() {
-        return this.hasOwnProperty("_LineWrapping") ? this._LineWrapping : this.withAceDo(function(ed) {
-            return ed.getOption('wrap'); });
+        return this.hasOwnProperty("_LineWrapping") ?
+          this._LineWrapping : lively.Config.get("aceDefaultLineWrapping");
     },
     setLineWrapping: function(value) {
         // value can either be a bool or "printMargin" or a number specifying the wrap limit
@@ -1620,6 +1747,7 @@ Trait('lively.morphic.SetStatusMessageTrait'),
         this._TabSize = tabSize;
         return this.withAceDo(function(ed) { return ed.session.setTabSize(tabSize); });
     },
+
     guessTabSize: function() {
         return this.withAceDo(function(ed) {
             var tabSize = ed.session.getLines(0, 100)
@@ -1629,6 +1757,7 @@ Trait('lively.morphic.SetStatusMessageTrait'),
             return tabSize;
         });
     },
+
     guessAndSetTabSize: function() {
         this.setTabSize(this.guessTabSize());
     },
@@ -1673,7 +1802,33 @@ Trait('lively.morphic.SetStatusMessageTrait'),
       return self._ScrubbingEnabled = bool;
     },
     getScrubbingEnabled: function() {
-        return this.hasOwnProperty("_ScrubbingEnabled") ? this._ScrubbingEnabled : false;
+        return this.hasOwnProperty("_ScrubbingEnabled") ? this._ScrubbingEnabled : lively.Config.get("aceDefaultScrubbingEnabled");
+    },
+
+    setDraggableCodeEnabled: function(bool) {
+      var self = this,
+          m = module('lively.ide.codeeditor.DraggableCode');
+      if (bool) {
+        if (!m.isLoaded()) m.load();
+        m.runWhenLoaded(function() { m.installIn(self); });
+      } else {
+        if (m.isLoaded()) m.uninstallFrom(self);
+      }
+      return self._DraggableCodeEnabled = bool;
+    },
+    getDraggableCodeEnabled: function() {
+      return this.hasOwnProperty("_DraggableCodeEnabled") ?
+        this._DraggableCodeEnabled :
+        lively.Config.get("draggableCodeInCodeEditor");
+    },
+
+    // evalEnabled is deprecated!
+    get evalEnabled() { return this.getEvalOnSave(); },
+    set evalEnabled(v) { return this.setEvalOnSave(v); },
+
+    setEvalOnSave: function(bool) { return this._EvalOnSave = bool; },
+    getEvalOnSave: function() {
+        return this.hasOwnProperty("_EvalOnSave") ? this._EvalOnSave : false;
     },
 
     setPrintItAsComment: function(bool) { return this._PrintItAsComment = bool; },
@@ -1716,49 +1871,60 @@ Trait('lively.morphic.SetStatusMessageTrait'),
     },
 
     astNodeRange: function(node) {
-      var start = this.indexToPosition(node.start),
-          end = this.indexToPosition(node.end);
-      return lively.ide.ace.require("ace/range").Range.fromPoints(start, end)
+      return this.createRange(
+        this.indexToPosition(node.start),
+        this.indexToPosition(node.end));
     },
 
-    astNodeMorphicBounds: function(node, useMaxColumn) {
-      // var node = this.getSession().$ast.body[0];
-      // var node = this.getSession().$ast;
-      // this.nodeBounds(node);
+    astNodeMorphicBounds: function(node, useMaxColumn, useScreenPos) {
+      return this.rangeToMorphicBounds(
+        this.astNodeRange(node), useMaxColumn, useScreenPos);
+    },
 
-      var start = this.indexToPosition(node.start),
-          end = this.indexToPosition(node.end);
+    lineToMorphicBounds: function(row) {
+      return this.rangeToMorphicBounds(this.getLineRange(row, true));
+    },
+
+    rangeToMorphicBounds: function(range, useMaxColumn, useScreenPos) {
+      var start = range.start,
+          end = lively.lang.obj.merge(range.end, {column: range.end.column-1});
 
       if (useMaxColumn) {
-        var maxColumn = this.getSession().getLines(start.row, end.row).pluck("length").max();
+        var maxColumn = useMaxColumn ?
+          this.getSession().getLines(start.row, end.row).pluck("length").max() : 0;
         end.column = maxColumn;
       }
 
-      var startMorphic = this.posToMorphicPos(start, "topLeft"),
-          endMorphic = this.posToMorphicPos(end, "bottomRight");
+      var topLeft = this.posToMorphicPos(start, "topLeft", useScreenPos),
+          bottomRight = this.posToMorphicPos(end, "bottomRight", useScreenPos);
 
-      return !startMorphic || !endMorphic ?
-        null : lively.rect(startMorphic, endMorphic);
+      return lively.rect(
+        topLeft.minPt(bottomRight),
+        topLeft.maxPt(bottomRight));
     },
 
-    rangeToMorphicBounds: function(range) {
-      var topLeft = this.posToMorphicPos(range.start, "topLeft"),
-          bottomRight = this.posToMorphicPos(range.end, "bottomRight");
-      return lively.rect(topLeft, bottomRight);
+    rangeToGlobalMorphicBounds: function(range, useMaxColumn, useScreenPos) {
+      return this.getGlobalTransform().transformRectToRect(
+        this.rangeToMorphicBounds(range, useMaxColumn, useScreenPos));
     },
 
-    posToMorphicPos: function(pos, corner) {
+    rangeFromGlobalMorphicBounds: function(bounds) {
+      var start = this.morphicPosToDocPos(bounds.topLeft()),
+          end = this.morphicPosToDocPos(bounds.bottomRight().addXY(-1,-1));
+      return this.createRange(start, end);
+    },
+
+    posToMorphicPos: function(pos, corner, useScreenPos) {
+      // useScreenPos: clip to actual lines in document
+      // FIXME: transformation?!
       var ed = this.aceEditor,
           r = ed.renderer,
-          config = ed.renderer.layerConfig,
-          bounds = ed.renderer.container.getBoundingClientRect(),
+          config = r.layerConfig,
           lineHeight = config.lineHeight,
-          // screenPos    = ed.session.documentToScreenPosition(pos.row, pos.column),
-          screenPos = pos,
+          pos = useScreenPos ? ed.session.documentToScreenPosition(pos.row, pos.column) : pos,
           localCoords = {
-            x: r.gutterWidth + config.padding + screenPos.column * config.characterWidth,
-            // y: config.firstRowScreen * config.lineHeight + screenPos.row * config.lineHeight - r.scrollTop
-            y: screenPos.row * config.lineHeight - r.scrollTop
+            x: r.gutterWidth + config.padding + pos.column * config.characterWidth,
+            y: pos.row * config.lineHeight - r.scrollTop
           };
 
       switch (corner) {
@@ -1778,7 +1944,16 @@ Trait('lively.morphic.SetStatusMessageTrait'),
           break;
       }
 
-      return lively.Point.ensure(localCoords);
+      var scrollLeft = this.getScroll()[0];
+
+      return lively.Point.ensure(localCoords).addXY(-scrollLeft, 0);
+    },
+
+    morphicPosToDocPos: function(globalPos) {
+      return this.withAceDo(function(ed) {
+        return ed.renderer.pixelToScreenCoordinates(
+            globalPos.x, globalPos.y);
+      });
     }
 
 },
@@ -1849,6 +2024,7 @@ Trait('lively.morphic.SetStatusMessageTrait'),
         items.push([lively.lang.string.format('[%s] use emacs-like keys', lively.Config.get('useEmacsyKeys') ? "X" : " "), function() { lively.Config.set('useEmacsyKeys', !lively.Config.get('useEmacsyKeys')); }]);
         items.push(["modes", modeItems]);
         items.push(["themes", themeItems]);
+
         boolItem({name: "ShowGutter", menuString: "show line numbers"}, items);
         boolItem({name: "ShowInvisibles", menuString: "show whitespace"}, items);
         boolItem({name: "ShowPrintMargin", menuString: "show print margin"}, items);
@@ -1866,9 +2042,20 @@ Trait('lively.morphic.SetStatusMessageTrait'),
         boolItem({name: "ShowErrors", menuString: "show Errors"}, items);
         boolItem({name: "AutocompletionEnabled", menuString: "use Autocompletion"}, items);
         if (isJs) {
-          boolItem({name: "ScrubbingEnabled", menuString: "scrubbing"}, items);
+          boolItem({name: "EvalOnSave", menuString: "evaluate all code when saving"}, items);
           boolItem({name: "PrintItAsComment", menuString: "printIt as comment"}, items);
           boolItem({name: "AutoEvalPrintItComments", menuString: "re-evaluate printIt comments"}, items);
+          boolItem({name: "ScrubbingEnabled", menuString: "scrubbing"}, items);
+          boolItem({name: "DraggableCodeEnabled", menuString: "draggable code"}, items);
+          items.push(["Toggle recording debugger behavior", function() {
+            lively.require("lively.ide.codeeditor.JavaScriptDebugging").toRun(function() {
+              if (!!editor.recordingWorkspaceState) {
+                lively.ide.codeeditor.JavaScriptDebugging.removeRecordingWorkspaceBehavior(editor)
+              } else {
+                lively.ide.codeeditor.JavaScriptDebugging.makeRecordingWorkspace(editor);
+              }
+            })
+          }]);
         }
 
         return items;

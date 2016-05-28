@@ -235,7 +235,12 @@ lively.morphic.Morph.addMethods(
     setHandStyleHTML: function(ctx, styleName) {
         if (!ctx.morphNode) return;
         if (!styleName || styleName == '') ctx.morphNode.style.cursor = null;
-        else ctx.morphNode.style.cursor = styleName;
+        else {
+          if (["zoom-in", "zoom-out", "grab", "grabbing"].include(styleName)) {
+            styleName = "-" + ctx.domInterface.browserPrefix + "-" + styleName;
+          }
+          ctx.morphNode.style.cursor = styleName;
+        }
     },
     setToolTipHTML: function(ctxt, string) {
         if (ctxt.morphNode)
@@ -479,14 +484,34 @@ lively.morphic.Text.addMethods(
     },
     onRenderFinishedHTML: function($super, ctx) {
         $super(ctx);
-        this.fit.bind(this).delay(0);
+        // this.fit.bind(this).delay(0);
+        // Note: this should be done in shape>>initHTML but we pulled text
+        // measuring up into the Text morph so we need to call it here...
+        this.whenOpenedInWorld(function() {
+          this.setPadding(this.getPadding());
+        }.bind(this));
     }
 },
 'accessing', {
     getTextExtentHTML: function(ctx) {
-        if (!ctx.textNode) return pt(0,0);
-        return ctx.textNode.scrollHeight != 0 ?
-            pt(ctx.textNode.scrollWidth, ctx.textNode.scrollHeight) : this.getExtent();
+        var node = ctx.textNode;
+        if (!node) return pt(0,0);
+        var style = node.style;
+        if (true || style.whiteSpace === "pre") {
+          var maxHeight = style.maxHeight,
+              maxWidth = style.maxWidth;
+          // let DOM render without restriction, read, add restrictions again
+          if (maxHeight) style.maxHeight = "";
+          if (maxWidth) style.maxWidth = "";
+        }
+        var ext = node.scrollHeight != 0 ?
+            pt(node.scrollWidth, node.scrollHeight) :
+            this.getExtent();
+        if (style.whiteSpace === "pre") {
+          if (maxHeight) style.maxHeight = maxHeight;
+          if (maxWidth) style.maxWidth = maxWidth;
+        }
+        return ext;
     },
     setTextExtentHTML: function(ctx, value) {
         if (!ctx.textNode) return null;
@@ -550,6 +575,7 @@ lively.morphic.Text.addMethods(
         // TODO Deprecated, to be removed
         console.warn('lively.morphic.Text>>setPaddingHTML should not be called anymore!!!')
     },
+
     setAlignHTML: function(ctx, alignMode) {
         if (!ctx.textNode) return;
         ctx.textNode.style.textAlign = alignMode || "";
@@ -623,10 +649,9 @@ lively.morphic.Text.addMethods(
 },
 'node creation', {
     createTextNodeHTML: function() {
-        var node = XHTMLNS.create('div');
+        var node = document.createElement('div');
         node.className = 'visibleSelection';
-        node.style.cssText = 'position: absolute;' // needed for text extent calculation
-                           + 'word-wrap: break-word;';
+        node.style.cssText = 'position: absolute;'; // needed for text extent calculation
         return node;
     }
 });
@@ -832,8 +857,6 @@ lively.morphic.Shapes.Shape.addMethods(
         // The other border props are initialized there as well:
         this.setBorderWidthHTML(ctx, this.getBorderWidth());
         this.setBorderStyleHTML(ctx, this.getBorderStyle());
-        // also sets extent:
-        this.setPaddingHTML(ctx, this.getPadding());
         if (UserAgent.fireFoxVersion) {
             ctx.shapeNode['-moz-user-modify'] = 'read-only';
         }
@@ -1025,9 +1048,11 @@ lively.morphic.Shapes.Image.addMethods(
 'rendering', {
     initHTML: function($super, ctx) {
         if (!ctx.shapeNode) {
-            ctx.shapeNode = XHTMLNS.create('div');
+            ctx.shapeNode = document.createElement('div');
             ctx.imgNode = ctx.domInterface.htmlImg();
             ctx.shapeNode.appendChild(ctx.imgNode);
+            if (!navigator.userAgent.match(/Safari\/|Firefox\//))
+              ctx.imgNode.crossOrigin = "anonymous";
             ctx.imgNode.draggable = false;
         }
 
@@ -1062,8 +1087,23 @@ lively.morphic.Shapes.Image.addMethods(
         } else {
              ctx.domInterface.setHTMLBorderRadius(ctx.getShapeNode(), value , value);
         }
-    }
-
+    },
+    reallyContainsPoint: function(p) {
+        // Check that p is a non-transparent pixel
+        var imgNode = this.renderContext().imgNode,
+            imgExt = pt(imgNode.naturalWidth, imgNode.naturalHeight),
+            scale = this.getExtent().invertedSafely(),
+            offset = this.getPosition(),
+            samplePos = p.subPt(offset).scaleByPt(scale).scaleByPt(imgExt);
+        var canvas = XHTMLNS.create('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        var ctx = canvas.getContext("2d");
+        ctx.drawImage(imgNode, -samplePos.x, -samplePos.y);
+        var imgData = ctx.getImageData(0, 0, 1, 1),
+            alpha = imgData.data[3];
+        return alpha > 0;
+    },
 });
 
 lively.morphic.Shapes.External.addMethods(

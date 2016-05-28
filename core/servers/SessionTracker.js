@@ -338,7 +338,7 @@ var websockets = require(path.join(process.env.WORKSPACE_LK, 'core/servers/suppo
 var WebSocketServer = websockets.WebSocketServer;
 var WebSocketClient = websockets.WebSocketClient;
 
-function SessionTracker(options) {
+var SessionTracker = module.exports.SessionTracker || function SessionTracker(options) {
     // options = {route: STRING, subserver: OBJECT}
     this.debug = debugLevel;
     options = options || {};
@@ -590,7 +590,18 @@ function SessionTracker(options) {
             if (err) { thenDo(err, null); return; }
             for (var url in remotes) {
                 var remote = remotes[url];
+                if (remote.remoteTrackerId === id) {
+                  return thenDo(
+                    remote.connection ? null : "id belongs to tracker but cannot find connection",
+                    remote.connection);
+                }
                 for (var remoteTrackerId in remote.trackersWithSessions) {
+                    if (remoteTrackerId === id) {
+                      return thenDo(
+                        remote.connection ? null : "id belongs to tracker but cannot find connection",
+                        remote.connection);
+                    }
+
                     var sessions = remote.trackersWithSessions[remoteTrackerId];
                     for (var sessionId in sessions) {
                         if (sessionId !== id) continue;
@@ -784,11 +795,7 @@ function SessionTracker(options) {
                 }).flatten();
 
                 var trackerSessions = trackerIds.map(function(tid) {
-                    return {
-                        id: tid,
-                        remoteAddress: null,
-                        type: "tracker"
-                    };
+                    return {id: tid, remoteAddress: null, type: "tracker"};
                 })
 
                 next(null, participants.concat(trackerSessions), trackerSessions);
@@ -905,8 +912,9 @@ lively.userData = (function setupUserDataExpt() {
             if (!data) { res.status(400).end('no data'); return; }
             if (!stored) { res.status(400).end('cannot access stored data'); return; }
             // only change credentials if there is no login system in place:
+            var authUser = req.auth && req.auth.username;
             if (!lively.Config || !lively.Config.get('userAuthEnabled')) {
-                stored.username = data.username || stored.username || 'unknown user';
+                stored.username = authUser || data.username || stored.username || 'unknown user';
                 stored.email = data.email || stored.email || null;
                 stored.group = data.group || stored.group || null;
             }

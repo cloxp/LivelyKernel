@@ -1,5 +1,6 @@
 {
   "bootstrap": [
+    ["optimizedLoading", true, "Combine commonly used modules into one file and load that while bootstrapping instead of individual modules."],
     ["loadUserConfig", true, "For sth like jens/config.js, used in lively.bootstrap."],
     ["libsFile", "core/lib/lively-libs-debug.js", "Library code."],
 
@@ -10,6 +11,7 @@
       "node_modules/lively.lang/lib/events.js",
       "node_modules/lively.lang/lib/object.js",
       "node_modules/lively.lang/lib/collection.js",
+      "node_modules/lively.lang/lib/sequence.js",
       "node_modules/lively.lang/lib/tree.js",
       "node_modules/lively.lang/lib/graph.js",
       "node_modules/lively.lang/lib/function.js",
@@ -19,6 +21,7 @@
       "node_modules/lively.lang/lib/class.js",
       "node_modules/lively.lang/lib/messenger.js",
       "node_modules/lively.lang/lib/worker.js",
+      "node_modules/lively.lang/lib/promise.js",
       "core/lively/lang/LocalStorage.js",
       "core/lively/Base.js",
       "core/lively/ModuleSystem.js"
@@ -116,6 +119,35 @@
     }
   ],
 
+  "lively.shell": [
+    {
+      "name":  "shellEnvVars",
+      "type":  "String",
+      "doc":  "Environment variables to be set whenever Lively runs a shell command on the OS the Lively server is running. Includes Config.shellUserEnvVars.",
+      "get":  {
+        "type":  "function",
+        "code":  "function()  { return lively.lang.obj.merge(lively.Config._shellEnvVars, lively.Config.get('shellUserEnvVars'));  }"
+      },
+      "set":  {
+        "type":  "function",
+        "code":  "function(val) { lively.Config._shellEnvVars = val || {};  }"
+      }
+    },
+    {
+      "name": "shellUserEnvVars",
+      "type": "String",
+      "doc":  "Custom environment variables that can be set by the user and will be remembered in localStorage.",
+      "get":  {
+        "type":  "function",
+        "code":  "function()  { var val = lively.LocalStorage.get('shellUserEnvVars');\nif (val && val !== 'undefined') try { return JSON.parse(val); } catch(e)  { console.warn(e); }\n return {}; }"
+      },
+      "set":  {
+        "type":  "function",
+        "code":  "function(val) { return lively.LocalStorage.set('shellUserEnvVars', val ? JSON.stringify(val) : '{}');  }"
+      }
+    }
+  ],
+
   "lively.Network": [
     {
       "name": "location",
@@ -185,7 +217,28 @@
     ["createWorldPreview", true, "Whether to store an HTML document showing a static version of the serialized world."],
     ["manuallyCreateWorld", false, "Loads up Lively and creates a complete new world from scratch instead of using a serialized one."],
     ["removeDOMContentBeforeWorldLoad", true, "Whether to remove all the DOM child nodes of the DOM element that is used to display the World."],
-    ["garbageCollectAttributeConnections", true, "Will remove connections and connected objects when connection targets in the object graph can only be reached through the connection itself. Can be disabled per connection using the garbageCollect: false option."]
+    ["garbageCollectAttributeConnections", true, "Will remove connections and connected objects when connection targets in the object graph can only be reached through the connection itself. Can be disabled per connection using the garbageCollect: false option."],
+    ["checkWriteAuthorizationOfUsers", false, "Saving worlds and parts will use the user's credentials to check if saving is allowed and stuff."],
+    {
+      "name": "userPermissions",
+      "type": "Object",
+      "doc": "Map of special user permissions used when checkWriteAuthorizationOfUsers is on.",
+      "get": {
+          "type": "function",
+          "code": "function() { return this._userPermissions || {}; }"
+      },
+      "set": {"type": "function", "code": "function() {}"}
+    },
+    {
+      "name": "globalPermissions",
+      "type": "Object",
+      "doc": "Global resource permissions.",
+      "get": {
+          "type": "function",
+          "code": "function() { return lively.Config._globalPermissions || []; }"
+      },
+      "set": {"type": "function", "code": "function() {}"}
+    }
   ],
 
   "lively.Storage": [
@@ -302,7 +355,7 @@
       "doc": "Tab width",
       "get": {
           "type": "function",
-          "code": "function() { return lively.Config.hasOwnProperty('_defaultTabSize') ? lively.Config._defaultTabSize : 4; }"
+          "code": "function() { return lively.Config.hasOwnProperty('_defaultTabSize') ? lively.Config._defaultTabSize : 2; }"
       },
       "set": {"type": "function", "code": "function(v) { lively.Config._defaultTabSize = v; module('lively.ide.CodeEditor').runWhenLoaded(function() { lively.morphic.CodeEditor.prototype.style.tabSize = v; lively.whenLoaded(function() { lively.ide.allCodeEditors().invoke('setTabSize', v); }); }); return v; }"}
     },
@@ -322,6 +375,32 @@
     ["aceDefaultTextMode", "javascript", "Ace text mode to use"],
     ["aceDefaultLineWrapping", true, "Wrap lines in ace?"],
     ["aceDefaultShowGutter", true, "Enables the line number gutter"],
+    {
+      "name": "aceShowGutterInObjectEditor",
+      "type": "Boolean",
+      "doc": "Enables the line number gutter in Object Editor",
+      "get": {
+        "type": "function",
+        "code": "function() { return Config._aceShowGutterInObjectEditor || false; }"
+      },
+      "set": {
+        "type": "function",
+        "code": "function(val) { var spec, path = lively.PropertyPath('attributeStore.submorphs.0.attributeStore.submorphs.0.attributeStore._ShowGutter');\n Config._aceShowGutterInObjectEditor = val;\n if (lively && lively.BuildSpec && (spec = lively.BuildSpec('lively.ide.tools.ObjectEditor'))) {\n path.set(spec, val); } }"
+      }
+    },
+    {
+      "name": "aceShowGutterInWorkspace",
+      "type": "Boolean",
+      "doc": "Enables the line number gutter in Workspace",
+      "get": {
+        "type": "function",
+        "code": "function() { return Config._aceShowGutterInWorkspace || false; }"
+      },
+      "set": {
+        "type": "function",
+        "code": "function(val) { var spec, path = lively.PropertyPath('attributeStore.submorphs.1.attributeStore._ShowGutter');\n Config._aceShowGutterInWorkspace = val;\n if (lively && lively.BuildSpec && (spec = lively.BuildSpec('lively.ide.tools.JavaScriptWorkspace'))) {\n path.set(spec, val); } }"
+      }
+    },
     ["aceDefaultShowInvisibles", false, "Indicators for whitespace / non-print chars."],
     ["aceDefaultShowPrintMargin", false, "Show a vertical line at the print margin column."],
     ["aceDefaultShowIndents", true, "Indicators for indents in the beginning of lines."],
@@ -339,6 +418,8 @@
     ["aceDefaultUseIyGotoChar", true, "Quickly jump to next / prev characters using Cmd/Ctrl-, and Cmd/Ctrl-. "],
     ["evalMarkersEnabled", true, "Eval markers are code selections that can be rerun by pressing a code. Useful for live development and quick testing."],
     ["codeEditorMenuShowsSettings", true, "Include the settings menu item in the codeeditor context menu"],
+    ["draggableCodeInCodeEditor", false, "Based on AST, make code draggable"],
+    ["aceDefaultScrubbingEnabled", false, "Make number sin code editors scrubbable or not"],
     {
       "name": "useEmacsyKeys",
       "type": "Boolean",
@@ -352,7 +433,7 @@
   ],
 
   "lively.ide.Search": [
-    ["codeSearchGrepExclusions", [".svn", ".git", "node_modules", "combined.js", "BootstrapDebugger.js"], "Patterns for files to exclude from grep code search."]
+    ["codeSearchGrepExclusions", [".svn", ".git", "node_modules", "combined.js", "BootstrapDebugger.js", ".optimized-loading-cache"], "Patterns for files to exclude from grep code search."]
   ],
 
   "lively.morphic.StyleSheets": [
@@ -420,6 +501,17 @@
 
   "lively.morphic.tools.MenuBar": [
     ["showMenuBar", true, "Should a menu bar be opened on world load?"],
+    {
+      "name": "menuBarEntries",
+      "type": "Array",
+      "doc": "The actual menubar entries currently loaded",
+      "get": {
+          "type": "function",
+          "code": "function() { return lively.Config._menuBarEntries || (lively.Config._menuBarEntries = lively.Config.get('menuBarDefaultEntries')); }"
+      },
+      "set": {"type": "function", "code": "function(v) { lively.Config._menuBarEntries = v; module('lively.morphic.tools.MenuBar').runWhenLoaded(function() { lively.morphic.tools.MenuBar.openOnWorldLoad(); }); return v; }"}
+    },
+
     ["menuBarDefaultEntries", [
       "lively.net.tools.Lively2Lively",
       "lively.morphic.tools.LivelyMenuBarEntry",
@@ -434,5 +526,9 @@
     ["useJsx", true, "jsx is a JS language extension for the react framework. When enabled code editors will know how to parse jsx."],
     ["useBabelJsForEval", false, "babel.js is an ES6 / JSX transformer. When enabled will be used to transform evaled code."],
     ["useBabelJsForScriptLoad", false, "babel.js is an ES6 / JSX transformer. When enabled will be used to transform evaled code."]
+  ],
+
+  "lively.lang.Runtime": [
+    ["lively.lang.Runtime.active", true, "Should lively.lang.Runtime look for lively-runtime.js files in external projects and run those as well evaluate code in the external project's context when edited in Lively?"]
   ]
 }

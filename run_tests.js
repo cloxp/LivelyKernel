@@ -29,8 +29,12 @@ function getURLParam(name) {
     return match && unescape(match[1]);
 }
 
+function serverLog(msg) {
+    lively.Server && lively.Server.log(msg, {sync: true});
+}
 
 // some preparation
+
 var testRunId = getURLParam("testRunId");
 
 if (!testRunId) {
@@ -63,8 +67,6 @@ var baseTests = [
     // AST / OMeta
     "ometa.tests.OmetaTests",
     "lively.ast.tests.AcornTests",
-    "lively.ast.tests.InterpreterTests",
-    "lively.ast.tests.RewriterTests",
 
     // persistence
     "lively.persistence.tests.BuildSpec",
@@ -96,6 +98,8 @@ var browserTests = [
 
     // persistence
     "lively.persistence.tests.MassMorphCreation",
+    'lively.persistence.tests.MorphicState',
+    'lively.persistence.tests.MorphicProperties',
 
     // presentation
     "lively.presentation.tests.Builds",
@@ -121,6 +125,8 @@ var browserTests = [
     // connection needed for the shell tests and the shell environment itself
     // 'lively.ide.tests.CommandLineInterface',
     "lively.ide.codeeditor.tests.JumpChar",
+    "lively.ide.codeeditor.tests.DraggableCode",
+    "lively.ide.codeeditor.tests.MorphicOverlays",
     "lively.ide.codeeditor.tests.TextOverlays",
     'lively.ide.codeeditor.tests.DiffMode',
     'lively.ide.codeeditor.tests.TreeMode',
@@ -141,6 +147,7 @@ var browserTests = [
     "lively.morphic.tests.Connectors",
     "lively.morphic.tests.CoreToolsTests",
     "lively.morphic.tests.DataGridTests",
+    "lively.morphic.tests.DraggableJavaScript",
     "lively.morphic.tests.DiffMerge",
     "lively.morphic.tests.EventTests",
     "lively.morphic.tests.Graphics",
@@ -152,6 +159,7 @@ var browserTests = [
     "lively.morphic.tests.Morphic2",
     "lively.morphic.tests.MorphAddons",
     "lively.morphic.tests.PathTests",
+    "lively.morphic.tests.Scrubbing",
     "lively.morphic.tests.Serialization",
     "lively.morphic.tests.ShapeTests",
     "lively.morphic.tests.StyleSheets",
@@ -160,6 +168,8 @@ var browserTests = [
     "lively.morphic.tests.Text",
     "lively.morphic.tests.TextUndoTests",
     "lively.morphic.tests.Tree",
+
+    "lively.users.tests.Tests",
 
     // cop
     "cop.tests.LayerTests"
@@ -194,13 +204,15 @@ prepareConfig();
 })();
 
 if (lively.Config.get("serverTestDebug")) {
+    // So we can connect to the test server via l2l
     function sendLogMessage() {
-        var code = "console.log('debugging the tests in progress');";
-        URL.nodejsBase.withFilename("NodeJSEvalServer/").asWebResource().post(code).content;
+        lively.Server && lively.Server.logThrottled('debugging the tests in progress');
     }
-    Global.travisDebugLogInterval = setInterval(sendLogMessage, 10*1000);
+    Global.travisDebugLogInterval = setInterval(sendLogMessage, 30*1000);
 } else {
-    require(['lively.TestFramework'].concat(testList)).toRun(function() {
+    require(['lively.TestFramework', 'lively.Server'].concat(testList)).toRun(function() {
+        serverLog("Automatic test process will run " + testList.length + " tests.");
+        lively.Server.enableSendingConsoleLogsToServer({timeout: 1500});
         var suite = TestSuite.forAllAvailableTests(suiteFilter);
         suite.runFinished = function() {
             if (Global.testRun) {

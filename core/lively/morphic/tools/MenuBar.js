@@ -45,6 +45,11 @@ lively.BuildSpec("lively.morphic.tools.MenuBar", {
     },
 
     add: function add(morph) {
+      if (morph.name) {
+        var existing = this.get(morph.name);
+        existing && existing.remove();
+      }
+
       var align = morph.menuBarAlign || "left";
       var posGroups = this.leftsAndRights();
 
@@ -96,8 +101,8 @@ lively.BuildSpec("lively.morphic.tools.MenuBar", {
     },
 
     onLoad: function onLoad() {
-      this.alignInWorld();
       this.enableFixedPositioning();
+      this.alignInWorld();
       return this;
     }
 
@@ -114,7 +119,7 @@ lively.BuildSpec("lively.morphic.tools.MenuBarEntry", {
   style: {
     enableGrabbing: false,
     enableDragging: false,
-    padding: lively.Rectangle.inset(6,3,6,0),
+    padding: lively.Rectangle.inset(6,2,6,0),
     align: "center",
     selectable: false,
     allowInput: false,
@@ -122,7 +127,7 @@ lively.BuildSpec("lively.morphic.tools.MenuBarEntry", {
     extent: lively.pt(130,20),
     fixedHeight: true,
     fixedWidth: true,
-    fontFamily: "Geneva,Helvetica,sans-serif",
+    fontFamily: "'Helvetica Neue',Helvetica,sans-serif",
     whiteSpaceHandling: "pre",
     handStyle: "pointer",
     fill: null,
@@ -204,19 +209,8 @@ Object.extend(lively.morphic.tools.MenuBar, {
       return;
     }
 
-    lively.lang.arr.mapAsyncSeries(lively.Config.get("menuBarDefaultEntries"),
-      function(ea, _, n) {
-        lively.require(ea).toRun(function() {
-          var entries = [];
-          try { entries = module(ea).getMenuBarEntries(); } catch (e) {}
-          n(null, entries);
-        });
-    }, function(err, entries) {
-        var bar = lively.morphic.tools.MenuBar.open();
-        bar.removeAllMorphs();
-        entries.flatten().forEach(bar.add.bind(bar));
-        (function() {bar.relayout();}).delay(0);
-      });
+    lively.morphic.tools.MenuBar.addEntries(
+      lively.Config.get("menuBarEntries"));
   },
 
   open: function() {
@@ -233,7 +227,31 @@ Object.extend(lively.morphic.tools.MenuBar, {
     var menuBar = $world.get(/^MenuBar/);
     if (menuBar && menuBar.isGlobalMenuBar) menuBar.remove();
   },
-  
+
+  addEntries: function(entries) {
+    if (!$world) {
+      (function() {
+        lively.morphic.tools.MenuBar.addEntries(entries)
+      }).delay(0.5);
+      return;
+    }
+
+    lively.lang.arr.mapAsyncSeries(entries,
+      function(ea, _, n) {
+        if (typeof ea === "string") {
+          lively.require(ea).toRun(function() {
+            var entries = [];
+            try { entries = module(ea).getMenuBarEntries(); } catch (e) {}
+            n(null, entries);
+          });
+        } else { n(null, ea); }
+    }, function(err, entries) {
+        var bar = lively.morphic.tools.MenuBar.open();
+        entries.flatten().forEach(bar.add.bind(bar));
+        (function() { bar.relayout(); }).delay(0);
+      });
+  },
+
   addEntry: function(menuBarEntry) { return this.open().add(menuBarEntry); }
 });
 

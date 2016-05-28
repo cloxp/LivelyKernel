@@ -25,15 +25,15 @@ Lively should now be running at [localhost:9001](http://localhost:9001/welcome.h
 
 ### Mac OS and Linux
 
-1. Make sure you have [node.js](http://nodejs.org/download/) installed.
+1. Make sure you have [node.js](https://nodejs.org/en/download/) installed.
 2. Checkout this repository: `$ git clone https://github.com/LivelyKernel/LivelyKernel`.
 3. Start the server: `$ cd LivelyKernel; npm start`
 
 Lively should now be running at [localhost:9001](http://localhost:9001/welcome.html).
 
-### VM distro (debian 7)
+### Docker
 
-Alternatively to the install instructions above you can run Lively via VirtualBox/Vagrant. See [LivelyKernel/lively-vagrant](https://github.com/LivelyKernel/lively-vagrant/blob/master/README.md) for setup instructions.
+Alternatively to the install instructions above you can run Lively via docker. See [LivelyKernel/lively-docker](https://github.com/LivelyKernel/lively-docker/blob/master/README.md) for setup instructions.
 
 ## Running the tests
 

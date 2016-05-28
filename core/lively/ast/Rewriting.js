@@ -201,8 +201,9 @@ Object.subclass("lively.ast.Rewriting.Rewriter",
     },
 
     createVisitor: function(registryIndex) {
-      return new lively.ast.Rewriting.RewriteVisitor(registryIndex);
+        return new lively.ast.Rewriting.RewriteVisitor(registryIndex);
     }
+
 },
 'ast helpers', {
 
@@ -650,6 +651,7 @@ lively.ast.Rewriting.Rewriter.subclass("lively.ast.Rewriting.RecordingRewriter",
 "interface", {
 
     rewrite: function(node) {
+        // show("%s %s %s", escodegen.generate(node), 0, (new Error()).stack);
         this.enterScope();
         acorn.walk.addAstIndex(node);
         // FIXME: make astRegistry automatically use right namespace
@@ -700,13 +702,22 @@ lively.ast.Rewriting.Rewriter.subclass("lively.ast.Rewriting.RecordingRewriter",
   },
 
   storeComputationResult: function($super, node, start, end, astIndex, postfix) {
+    if (node._isRecordedExpression) return node; // already recorded
+    if (node.type === "Literal"
+     || node.type === "ObjectExpression"
+     || node.type === "ArrayExpression") return node;
     // show("%s %s %s", escodegen.generate(node), postfix, (new Error()).stack);
-    return node._isRecordedExpression ?
-      node : this.recordExpression($super(node, start, end, astIndex, postfix));
+    // show("%s\n------\n%s", escodegen.generate(node), escodegen.generate(this.recordExpression($super(node, start, end, astIndex, postfix), null, astIndex)));
+    return this.recordExpression($super(node, start, end, astIndex, postfix), null, astIndex);
   },
 
   createPreamble: function(args, decls, level) {
       var lastFnLevel = this.lastFunctionScopeId();
+      decls = decls || [];
+      decls.unshift({
+        key: this.newNode('Literal', {value: "this"}),
+        type: "Property", kind: 'init', value: this.newNode('Identifier', {name: 'this'})
+      });
       return [
           this.newNode('VariableDeclaration', {
               kind: 'var',
@@ -928,7 +939,7 @@ Object.subclass("lively.ast.Rewriting.BaseVisitor",
             node.handler = this.accept(node.handler, state);
         }
 
-        node.guardedHandlers = node.guardedHandlers.map(function(ea) {
+        node.guardedHandlers = node.guardedHandlers && node.guardedHandlers.map(function(ea) {
             // ea is of type CatchClause
             return this.accept(ea, state);
         }, this);
@@ -1099,7 +1110,11 @@ Object.subclass("lively.ast.Rewriting.BaseVisitor",
     },
 
     visitArrowExpression: function(node, state) {
-        node.params = node.params.map(function(ea) {
+        this.visitArrowFunctionExpression(node, state);
+    },
+
+    visitArrowFunctionExpression: function(node, state) {
+       node.params = node.params.map(function(ea) {
             // ea is of type Pattern
             return this.accept(ea, state);
         }, this);
@@ -1841,9 +1856,12 @@ lively.ast.Rewriting.BaseVisitor.subclass("lively.ast.Rewriting.RewriteVisitor",
         }
 
         rewriter.enterScope();
-        var args = rewriter.registerVars(n.params), // arguments
-            decls = rewriter.registerDeclarations(n.body, this), // locals
-            rewritten = this.accept(n.body, rewriter);
+        // Arrow functions can have a single node as body:
+        var body = n.body.type === "BlockStatement" ? n.body :
+              {type: "BlockStatement", body: [{type: "ReturnStatement", argument: n.body}]},
+            args = rewriter.registerVars(n.params), // arguments
+            decls = rewriter.registerDeclarations(body, this), // locals
+            rewritten = this.accept(body, rewriter);
         rewriter.exitScope();
         var wrapped = rewriter.wrapClosure({
             start: n.start, end: n.end, type: 'FunctionExpression',
@@ -1857,6 +1875,10 @@ lively.ast.Rewriting.BaseVisitor.subclass("lively.ast.Rewriting.RewriteVisitor",
             id: n.id
         });
         return wrapped;
+    },
+
+    visitArrowFunctionExpression: function(n, rewriter) {
+        return this.visitFunctionExpression(n, rewriter);
     },
 
     visitVariableDeclaration: function(n, rewriter) {
@@ -1926,7 +1948,8 @@ lively.ast.Rewriting.BaseVisitor.subclass("lively.ast.Rewriting.RewriteVisitor",
                     value: (value.type == 'ExpressionStatement') ?
                         value.expression : // unwrap
                         value,
-                    kind: prop.kind
+                    kind: prop.kind,
+                    astIndex: prop.astIndex
                 };
             }, this)
         };
@@ -2112,10 +2135,13 @@ lively.ast.Rewriting.BaseVisitor.subclass("lively.ast.Rewriting.RewriteVisitor",
         var block = this.accept(n.block, rewriter),
             handler = n.handler,
             finalizer = n.finalizer,
-            guardedHandlers = n.guardedHandlers.map(function(node) {
-                // node is of type CatchClause
-                return this.accept(node, rewriter);
-            }, this);
+            guardedHandlers;
+        if (n.guardedHandlers) {
+          guardedHandlers = n.guardedHandlers.map(function(node) {
+              // node is of type CatchClause
+              return this.accept(node, rewriter);
+          }, this);
+        }
         if (!handler)
             handler = rewriter.newNode('CatchClause', {
                 param: rewriter.newNode('Identifier', { name: 'e' }),
@@ -2357,21 +2383,80 @@ lively.ast.Rewriting.RewriteVisitor.subclass("lively.ast.Rewriting.RecordingVisi
         return rewriter.storeComputationResult(callNode, start, end, astIndex, true);
     },
 
-    visitReturnStatement: function(n, rewriter) {
-        // argument is a node of type Expression
-        var arg = n.argument ?
-            this.accept(n.argument, rewriter) : null;
-        if (arg && arg.type == 'ExpressionStatement')
-            arg = arg.expression;
+    visitBinaryExpression: function($super, n, rewriter) {
+        return rewriter.storeComputationResult(
+          $super(n, rewriter), n.start, n.end, n.astIndex, true);
+    },
 
-        arg = rewriter.storeComputationResult(
-          arg,arg.start,arg.end,arg.astIndex, true);
+    visitMemberExpression: function($super, n, rewriter) {
+        var rewritten = $super(n, rewriter);
+        rewritten._isRecordedExpression = n._isRecordedExpression;
+        return rewritten.computed ? 
+          rewriter.storeComputationResult(
+            rewritten, rewritten.start, rewritten.end, rewritten.astIndex, true) :
+          rewritten;
+    },
 
+    visitExpressionStatement: function($super, n, rewriter) {
+        // expression is a node of type Expression
+        var expr = $super(n, rewriter);
+        expr = expr.expression; // unwrap
+        expr = rewriter.storeComputationResult(
+          expr, expr.start, expr.end, expr.astIndex, true);
         return {
-            start: n.start, end: n.end, type: 'ReturnStatement',
-            argument: arg, astIndex: n.astIndex
+            start: n.start, end: n.end, type: 'ExpressionStatement',
+            expression: expr, astIndex: n.astIndex
         };
+    },
+
+    visitAssignmentExpression: function(n, rewriter) {  // Set, ModifyingSet
+        // n.operator is an AssignmentOperator enum:
+        // "=" | "+=" | "-=" | "*=" | "/=" | "%=" | | "<<=" | ">>=" | ">>>=" | | "|=" | "^=" | "&="
+        // left is a node of type Expression
+        // right is a node of type Expression
+        var start = n.start, end = n.end, astIndex = n.astIndex;
+        var right = this.accept(n.right, rewriter);
+        if (right.type == 'ExpressionStatement')
+            right = right.expression; // unwrap
+        n.left._isRecordedExpression = true; // rk 2016-03-22, FIXME! add this to not produce illegal assignments
+        return {
+            start: start, end: end, astIndex: astIndex,
+            type: 'AssignmentExpression',
+            operator: n.operator,
+            left: this.accept(n.left, rewriter),
+            right: right
+        }
+        // return rewriter.storeComputationResult({
+        //     type: 'AssignmentExpression',
+        //     operator: n.operator,
+        //     left: left,
+        //     right: right
+        // }, start, end, astIndex);
     }
+
+    // visitReturnStatement: function($super, n, rewriter) {
+    //     var rewritten = $super(n, rewriter);
+    //     var arg = rewritten.argument;
+    //     if (arg) {
+    //       if (arg && arg.type == 'ExpressionStatement')
+    //           arg = arg.expression;
+    //       arg = rewriter.storeComputationResult(
+    //         arg,arg.start,arg.end,arg.astIndex, true);
+    //     }
+    //     // argument is a node of type Expression
+    //     var arg = n.argument ?
+    //         this.accept(n.argument, rewriter) : null;
+    //     if (arg && arg.type == 'ExpressionStatement')
+    //         arg = arg.expression;
+
+    //     arg = rewriter.storeComputationResult(
+    //       arg,arg.start,arg.end,arg.astIndex, true);
+
+    //     return {
+    //         start: n.start, end: n.end, type: 'ReturnStatement',
+    //         argument: arg, astIndex: n.astIndex
+    //     };
+    // }
 });
 (function setupUnwindException() {
 

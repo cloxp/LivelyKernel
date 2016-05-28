@@ -16,6 +16,7 @@ lively.morphic.Morph.addMethods(
         this.halos.invoke('alignAtTarget');
         this.focus.bind(this).delay(0);
     },
+
     showSelectedHalos: function(haloItems) {
         if (!this.world()) return;
         this.showsHalos = true;
@@ -123,12 +124,26 @@ lively.morphic.World.addMethods(
 
 lively.morphic.Path.addMethods(
 'halos', {
-    getHalos: function($super) {
-        return $super()
-            .concat(this.getControlPointHalos())
-            .concat(this.getInsertPointHalos())
-            // .reject(function(halo) { return halo instanceof lively.morphic.OriginHalo });
+
+    controlPointHalosEnabled: true,
+
+    areControlPointHalosEnabled: function() {
+        return this.controlPointHalosEnabled;
     },
+    
+    setControlPointHalosEnabled: function(bool) {
+        return this.controlPointHalosEnabled = bool;
+    },
+
+    getHalos: function($super) {
+        var haloItems = $super();
+        return this.areControlPointHalosEnabled() ?
+          haloItems
+            .concat(this.getControlPointHalos())
+            .concat(this.getInsertPointHalos()) :
+        haloItems;
+    },
+
     getHaloClasses: function($super) {
         return $super()
             .without(lively.morphic.NewResizeHalo);
@@ -162,7 +177,8 @@ lively.morphic.Box.subclass('lively.morphic.Halo',
     verticalPos: 0,
     isEpiMorph: true,
     isHalo: true,
-    iconBaseURL: Global.URL.codeBase + 'media/halos/'
+    iconBaseURL: Global.URL.codeBase + 'media/halos/',
+    standalone: false
 },
 'initializing', {
     initialize: function($super, targetMorph, shiftedActivation) {
@@ -217,13 +233,13 @@ lively.morphic.Box.subclass('lively.morphic.Halo',
                     // here come the magic numbers!
                     t.owner.worldPoint(t.bounds().topLeft().addXY(-3,15)));
             });
-            this.targetMorph.halos.push(this.infoLabel);
+            this.targetMorph.halos && this.targetMorph.halos.push(this.infoLabel);
             if (!this.world()) return this.infoLabel;
         }
         this.infoLabel.targetMorph = this.targetMorph;
         if (!this.infoLabel.owner) this.world().addMorph(this.infoLabel);
         // Why needed?? - Dan --- rkrk - because of alignment at targetMorph
-        this.infoLabel.alignAtTarget();
+        this.infoLabel && this.infoLabel.alignAtTarget();
         return this.infoLabel;
     }
 },
@@ -233,7 +249,7 @@ lively.morphic.Box.subclass('lively.morphic.Halo',
         this.ensureInfoLabel().setTextString(str);
     },
     getBoundsHalo: function() {
-        return this.targetMorph && this.targetMorph.halos.detect(function(ea) { return ea.isBoundsHalo });
+        return this.targetMorph && this.targetMorph.halos.detect(function(ea) { return ea && ea.isBoundsHalo });
     }
 },
 'layout', {
@@ -335,11 +351,10 @@ lively.morphic.Box.subclass('lively.morphic.Halo',
     compensateDragTriggerDistance: function(evt) {
         var target = this.targetMorph;
         var world = this.targetMorph.world();
-        if (!target || !world || !world.eventStartPos) {
-            return
-        }
-        target.moveBy(evt.getPosition().subPt(evt.hand.eventStartPos));
-        target.halos.invoke('alignAtTarget');
+        var startPos = evt.hand.eventStartPos || world.eventStartPos
+        if (!target || !world || !startPos) { return; }
+        target.moveBy(evt.getPosition().subPt(startPos));
+        target.halos && target.halos.invoke('alignAtTarget');
     },
 },
 'key events', {
@@ -389,7 +404,7 @@ lively.morphic.Halo.subclass('lively.morphic.ResizeHalo',
 'initialization', {
     setTarget: function($super, morph) {
         $super(morph);
-        this.iconMorph && this.toggleIcon(Global.event && Global.event.isShiftDown());
+        this.iconMorph && this.toggleIcon(Global.event && Global.event.isShiftDown && Global.event.isShiftDown());
     },
     iconName: function (bool) {
         return bool ? 'resize_shift' : 'resize'
@@ -413,15 +428,17 @@ lively.morphic.Halo.subclass('lively.morphic.ResizeHalo',
         if (evt.isAltDown()) {
             newExtent = newExtent.griddedBy(this.targetMorph.getGridPoint());
         }
-		this.setInfo('extent: ' + newExtent);
+		this.setInfo('extent: ' + newExtent.toShortString());
         this.targetMorph.setExtent(newExtent.scaleBy(1/this.targetMorph.getScale()));
         this.targetMorph.halos.invoke('alignAtTarget');
     },
     dragEndAction: function(evt) {
         this.targetMorph.removeHalos();
         this.targetMorph.showHalos();
+        this.targetMorph.logTransformationForUndo('bounds', 'end');
     },
     dragStartAction: function(evt) {
+        this.targetMorph.logTransformationForUndo('bounds', 'start');
         this.targetMorph.removeHalosWithout(this.world(), [this, this.getBoundsHalo()]);
     }
 });
@@ -445,11 +462,12 @@ lively.morphic.Halo.subclass('lively.morphic.RescaleHalo',
         var nowHandDist = evt.getPosition().subPt(globalPosition).r();
         var newScale = (this.startScale * nowHandDist / Math.max(this.startHandDist, 40));
         newScale = newScale.detent(0.1, 0.5);
-        this.setInfo('scale: ' + newScale.toPrecision(5));
+        this.setInfo('scale: ' + newScale.toPrecision(4));
         this.targetMorph.setScale(newScale);
         this.targetMorph.halos.invoke('alignAtTarget');  // Seems not to be needed?? - Dan
     },
     dragStartAction: function(evt) {
+        this.targetMorph.logTransformationForUndo('scale', 'start');
         var target = this.targetMorph,
             globalPosition = target.getGlobalTransform().transformPoint(pt(0,0));
         this.startScale = this.targetMorph.getScale();
@@ -461,6 +479,7 @@ lively.morphic.Halo.subclass('lively.morphic.RescaleHalo',
         this.haloIsBeingDragged = false;
         this.targetMorph.removeHalos();
         this.targetMorph.showHalos();
+        this.targetMorph.logTransformationForUndo('scale', 'end');
     },
 });
 lively.morphic.Halo.subclass('lively.morphic.DragHalo',
@@ -489,11 +508,11 @@ lively.morphic.Halo.subclass('lively.morphic.DragHalo',
         if (evt.isAltDown()) {
             newTargetPos = newTargetPos.griddedBy(this.targetMorph.getGridPoint())
         }
-        this.setInfo('pos: ' + newTargetPos)
+        this.setInfo('pos: ' + newTargetPos.toShortString())
         this.lastHaloPosition = this.getPosition();
         this.targetMorph.setPosition(newTargetPos);
 
-        this.targetMorph.halos.invoke('alignAtTarget');
+        if (!this.standalone) this.targetMorph.halos.invoke('alignAtTarget');
 
         // we might think about only moving the halos when targetMorph.onDrag returns true
         // morphs could return false to indicate that they don't want to be moved on every
@@ -502,14 +521,23 @@ lively.morphic.Halo.subclass('lively.morphic.DragHalo',
     },
     dragEndAction: function(evt) {
         // this.targetMorph.onDragEnd(evt);
+        if (this.standalone) return;
+        this.targetMorph.logTransformationForUndo('drag', 'end');
         this.targetMorph.removeHalos();
         this.targetMorph.showHalos();
     },
     dragStartAction: function(evt) {
         // this.startPos = evt.getPosition();
+        if (this.standalone) {
+          if ($world.eventStartPos) {
+            this.moveBy(this.hand.eventStartPos.subPt(this.getPosition()));
+          }
+          return;
+        }
         this.compensateDragTriggerDistance(evt);
+        this.targetMorph.logTransformationForUndo('drag', 'start');
         this.targetMorph.distanceToDragEvent = evt.getPosition().subPt(this.targetMorph.getPositionInWorld());
-        this.targetMorph.removeHalosWithout(this.world(), [this, this.getBoundsHalo()]);
+        this.targetMorph.removeHalosWithout(this.world(), [this, this.getBoundsHalo()].compact());
     },
 });
 
@@ -535,11 +563,13 @@ lively.morphic.Halo.subclass('lively.morphic.GrabHalo',
     },
     dragEndAction: function(evt) {
         evt.world.dispatchDrop(evt);
+        this.targetMorph.logTransformationForUndo('grab', 'end');
         this.targetMorph.removeHalos();
         this.targetMorph.showHalos();
     },
     dragStartAction: function(evt) {
         this.compensateDragTriggerDistance(evt);
+        this.targetMorph.logTransformationForUndo('grab', 'start');
         evt.hand.grabMorph(this.targetMorph, evt);
         this.targetMorph.showSelectedHalos([this]);
     },
@@ -590,6 +620,9 @@ lively.morphic.Halo.subclass('lively.morphic.CopyHalo',
             this.targetMorph.worldPoint(pt(0,0)))
 
         evt.hand.grabMorph(this.copiedTarget, evt);
+        var undoSpec = $world.getUndoQueue().last();  // this is a hack :-(
+        undoSpec.startOwner = null;  // signals that undo/redo should remove/addWorld
+
         this.copiedTarget.showSelectedHalos([this]);
     },
     dragEndAction: function(evt) {
@@ -616,7 +649,7 @@ lively.morphic.Halo.subclass('lively.morphic.RotateHalo',
     },
     setTarget: function($super, morph) {
         $super(morph);
-        this.iconMorph && this.toggleIcon(Global.event && Global.event.isShiftDown());
+        this.iconMorph && this.toggleIcon(Global.event && Global.event.isShiftDown && Global.event.isShiftDown());
     },
     toggleIcon: function(bool) {
         this.iconMorph.setImageURL(this.iconBaseURL + this.iconName(bool) + '.svg')
@@ -631,14 +664,14 @@ lively.morphic.Halo.subclass('lively.morphic.RotateHalo',
             var nowHandAngle = evt.getPosition().subPt(globalPosition).theta();
             var newRotation = this.startRotation + (nowHandAngle - this.startHandAngle);
             newRotation = newRotation.toDegrees().detent(10, 45).toRadians();
-            this.setInfo(newRotation.toDegrees().toPrecision(5) + ' degrees');
+            this.setInfo("rot: " + newRotation.toDegrees().toPrecision(5) + ' degrees');
             this.targetMorph.setRotation(newRotation);
         } else {
             // If shift key, scale it with detents at multiples of 0.5
             var nowHandDist = evt.getPosition().subPt(globalPosition).r();
             var newScale = (this.startScale * nowHandDist / Math.max(this.startHandDist, 40));
             newScale = newScale.detent(0.1, 0.5);
-            this.setInfo('scale: ' + newScale.toPrecision(5));
+            this.setInfo('scale: ' + newScale.toPrecision(4));
             this.targetMorph.setScale(newScale);
         }
         this.targetMorph.halos.invoke('alignAtTarget');  // Seems not to be needed?? - Dan
@@ -650,11 +683,13 @@ lively.morphic.Halo.subclass('lively.morphic.RotateHalo',
         this.removeAngleIndicator();
         this.targetMorph.removeHalos();
         this.targetMorph.showHalos();
+        this.targetMorph.logTransformationForUndo('rotate', 'end');
     },
 
     dragStartAction: function(evt) {
         var target = this.targetMorph,
             globalPosition = target.getGlobalTransform().transformPoint(pt(0,0));
+        this.targetMorph.logTransformationForUndo('rotate', 'start');
         this.startRotation = this.targetMorph.getRotation();
         this.startScale = this.targetMorph.getScale();
         this.startHandAngle = evt.getPosition().subPt(globalPosition).theta();
@@ -712,8 +747,13 @@ lively.morphic.Halo.subclass('lively.morphic.CloseHalo',
 'halo actions', {
     clickAction: function(evt) {
         this.targetMorph.removeHalos();
-        if (this.targetMorph.isWindow) this.targetMorph.initiateShutdown();
-        else this.targetMorph.remove();
+        if (this.targetMorph.isWindow)
+            this.targetMorph.initiateShutdown();  // has its own undo
+        else {
+            this.targetMorph.logTransformationForUndo('remove', 'start');
+            this.targetMorph.remove();
+            this.targetMorph.logTransformationForUndo('remove', 'end');
+        }
     },
 });
 lively.morphic.Halo.subclass('lively.morphic.MenuHalo',
@@ -950,6 +990,9 @@ lively.morphic.Halo.subclass('lively.morphic.OriginHalo',
 },
 'halo actions', {
     clickAction: function(evt) {},
+    dragStartAction: function(evt, moveDelta) {
+        this.targetMorph.logTransformationForUndo('origin', 'start');
+    },
     dragAction: function(evt, moveDelta) {
         var transform = this.targetMorph.getGlobalTransform();
         var oldOrigin = transform.transformPoint(this.targetMorph.getOrigin()),
@@ -957,7 +1000,9 @@ lively.morphic.Halo.subclass('lively.morphic.OriginHalo',
         this.targetMorph.adjustOrigin(transform.inverse().transformPoint(newOrigin));
         this.targetMorph.halos.invoke('alignAtTarget')
     },
-
+    dragEndAction: function(evt, moveDelta) {
+        this.targetMorph.logTransformationForUndo('origin', 'end');
+    }
 },
 'positioning', {
     computePositionAtTarget: function() {
@@ -1113,7 +1158,7 @@ lively.morphic.PathControlPointHalo.subclass('lively.morphic.PathVertexControlPo
         if (this.targetMorph.halos)
             this.targetMorph.halos.invoke('alignAtTarget');
 
-        if (lively.Config.get('enableMagneticConnections') && this.magnetSet) {
+        if (lively.Config.get('enableMagneticConnections') && this.magnetSet && evt.isCommandKey()) {
             var nearestMagnets = this.magnetSet.nearestMagnetsToControlPoint(this.controlPoint)
             if (nearestMagnets.length == 0) {
                 this.controlPoint.setConnectedMagnet(null);
@@ -1140,10 +1185,9 @@ lively.morphic.PathControlPointHalo.subclass('lively.morphic.PathVertexControlPo
         this.targetMorph.showHalos();
 
         if (!this.overOther) return;
-        if (this.controlPoint.next() !== this.overOther.controlPoint &&
-            this.controlPoint.prev() !== this.overOther.controlPoint) return;
+        // if (this.controlPoint.next() !== this.overOther.controlPoint &&
+        //     this.controlPoint.prev() !== this.overOther.controlPoint) return;
         if (this.controlPoint.isLast() || this.controlPoint.isFirst()) return;
-
         this.controlPoint.remove();
 
         if (lively.Config.get('enableMagneticConnections') && this.magnetSet) {
@@ -1154,13 +1198,17 @@ lively.morphic.PathControlPointHalo.subclass('lively.morphic.PathVertexControlPo
     },
 
     findIntersectingControlPoint: function() {
-        var halos = this.targetMorph.halos;
-        if (!halos) return;
-        for (var i = 0; i < halos.length; i++)
-            if (halos[i].isVertexControlHalo &&
-                halos[i] !== this &&
-                this.bounds().intersects(halos[i].bounds()))
+        // var halos = this.targetMorph.halos;
+        if(this.controlPoint.isFirst()||this.controlPoint.isLast()) return;
+        var halos = this.targetMorph.getControlPointHalos();
+        if (!halos.length) return;
+        for (var i = 0; i < halos.length; i++){
+            if (halos[i].isVertexControlHalo && 
+                halos[i].controlPoint !== this.controlPoint &&
+                this.bounds().containsPoint(halos[i].controlPoint.getGlobalPos())){
                     return halos[i];
+            }
+        }
     },
 
     highlightIfOverOther: function() {
@@ -1173,7 +1221,7 @@ lively.morphic.PathControlPointHalo.subclass('lively.morphic.PathVertexControlPo
 
 lively.morphic.PathControlPointHalo.subclass('lively.morphic.PathInsertPointHalo',
 'settings', {
-    style: {borderRadius: 6},
+    style: {borderRadius: 0},
 },
 'properies', {
     isPathControlPointHalo: true,

@@ -49,8 +49,31 @@ Object.extend(lively.ide, {
                 if (!this.wasStored && !this.closeVetoed) whenEditDone(null, 'aborted');
             };
         });
+    },
+
+    withLoadingIndicatorDo:  function(label, doFunc) {
+      return lively.module('lively.morphic.tools.LoadingIndicator').load()
+        .then(mod => mod.open(label))
+        .then(indicator => {
+          doFunc && doFunc(null, indicator, indicator.remove.bind(indicator));
+          return indicator; });
     }
 
+});
+
+// Lazy loading of debugging related things... should go somewhere else, I guess
+function lazyLoadDebugging(method) {
+  return function() {
+    var args = Array.from(arguments);
+    lively.require("lively.ide.codeeditor.JavaScriptDebugging").toRun(function() {
+      lively[method].apply(lively, args);
+    })
+  }
+}
+
+Object.extend(lively, {
+  debugCall: lively.debugCall || lazyLoadDebugging("debugCall"),
+  debugNextMethodCall: lively.debugNextMethodCall || lazyLoadDebugging("debugNextMethodCall")
 });
 
 }); // end of module

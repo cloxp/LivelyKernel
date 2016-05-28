@@ -70,13 +70,6 @@ lively.BuildSpec('lively.ide.tools.ShellCommandRunner', {
             focus: function focus() {
               this.get("ShellCommandRunner").lastFocused = this;
               return $super();
-            },
-
-            detectMode: function detectMode() {
-              var mode = this.getTextMode(), newMode;
-              if (this.textString.startsWith('diff ')) newMode = "diff";
-              else newMode = "text";
-              if (mode !== newMode) this.setTextMode(newMode);
             }
         },
         lively.BuildSpec('lively.ide.tools.CommandLine').customize({
@@ -216,11 +209,20 @@ lively.BuildSpec('lively.ide.tools.ShellCommandRunner', {
         if (!this.lastFocused) this.lastFocused = this.get('commandLine')
         this.lastFocused.focus();
     },
+
         print: function print(string) {
           var ed = this.get('output');
-        ed.append(string);
-        ed.withAceDo(function() { ed.detectMode(); })
-    },
+          var isAtFileEnd = ed.isAtDocumentEnd();
+          ed.append(string);
+          ed.withAceDo(function(e) {
+            ed.guessAndSetTextMode();
+            if (isAtFileEnd) {
+              e.navigateFileEnd()
+              e.renderer.scrollCursorIntoView()
+            }
+          });
+        },
+
         onKeyDown: function onKeyDown(evt) {
         if (this.showsHalos) return $super(evt);
         var prevSig = this.prevSig; // for signaling the process

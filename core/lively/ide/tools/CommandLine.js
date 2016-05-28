@@ -176,6 +176,7 @@ lively.BuildSpec('lively.ide.tools.CommandLine', {
         ed.renderer.scrollBar.element.style.display = 'none';
         ed.renderer.scrollBar.width = 0;
         ed.resize(true);
+        this.setLabel(this.labelString);
     },
     reset: function reset() {
         this.commandHistory = {items: [], max: 30, index: 0};
@@ -200,13 +201,17 @@ lively.BuildSpec('lively.ide.tools.CommandLine', {
 Object.extend(lively.ide.tools.CommandLine, {
     histories: {},
     get: function(id) {
-        var cmdLine = lively.BuildSpec('lively.ide.tools.CommandLine').createMorph();
-        if (id) cmdLine.commandHistory = this.getHistory(id);
-        return cmdLine;
+      var cmdLine = lively.BuildSpec('lively.ide.tools.CommandLine').createMorph();
+      if (id) cmdLine.commandHistory = this.getHistory(id);
+      return cmdLine;
     },
     getHistory: function(id) {
-        if (!this.histories[id]) this.histories[id] = {items: [], max: 30, index: 0};
-        return this.histories[id];
+      if (!this.histories[id]) this.histories[id] = {items: [], max: 30, index: 0};
+      return this.histories[id];
+    },
+    getLastHistoryItem: function(id) {
+      var h = this.histories[id];
+      return h && h.items.last();
     }
 });
 

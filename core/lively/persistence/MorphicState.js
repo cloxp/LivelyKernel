@@ -6,30 +6,49 @@ module('lively.persistence.MorphicState').requires().toRun(function() {
 // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 // recording
 
-function getMorphs(root) {
+function getMorphs(root, exceptions) {
+  exceptions = exceptions || [];
   return root.submorphs
-    .filter(function(ea) { return !ea.isWindow && !ea.isEpiMorph && ea.isVisible() && !ea.isHand; })
-    .invoke("withAllSubmorphsSelect", function(ea) { return !ea.isWindow && !ea.isEpiMorph && ea.isVisible() && !ea.isHand; })
+    .filter(function(ea) { return !ea.isWindow && !ea.isEpiMorph && ea.isVisible() && !ea.isHand && !exceptions.include(ea); })
+    .invoke("withAllSubmorphsSelect", function(ea) { return !ea.isWindow && !ea.isEpiMorph && ea.isVisible() && !ea.isHand && !exceptions.include(ea); })
     .flatten();
 }
 
-function captureMorphicState(root) {
-  return getMorphs(root).map(morphicStateOf);
+function captureMorphicState(root, exceptions) {
+  return getMorphs(root, exceptions).map(morphicStateOf);
 }
+
+var defaultProps = [
+        // grabbingEnabled,
+        // draggingEnabled,
+        // droppingEnabled,
+        // halosEnabled,
+        // "ClipMode",
+  "Name",
+  "StyleSheet",
+  "StyleClassNames",
+  "Position",
+  "Extent",
+  "Fill",
+  "BorderColor",
+  "BorderWidth",
+  "BorderStyle",
+  "BorderRadius",
+  "Opacity",
+  "Rotation",
+  "Scale",
+]
 
 function morphicStateOf(m) {
   var state = {
     morph: m,
     owner: m.owner,
     submorphIndex: m.owner && m.owner.submorphs.indexOf(m),
-    props: Object.keys(m).filter(function(prop) {
-        return prop.startsWith("_") && m['get' + prop.slice(1)];
-      }).map(function (prop) {
-        return prop.slice(1);
-      }).reduce(function (props, prop) {
-        props[prop] = m['get' + prop]();
-        return props;
-      }, {})
+    props: Object.keys(m)
+      .filter(function(prop) { return prop.startsWith("_") && m['get' + prop.slice(1)]; })
+      .map(function (prop) { return prop.slice(1); })
+      .concat(defaultProps).uniq()
+      .reduce(function (props, prop) { props[prop] = m['get' + prop](); return props; }, {})
   }
 
   if (m.isPath) state.path = {vertices: m.vertices().clone()};
@@ -40,13 +59,15 @@ function morphicStateOf(m) {
 // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 // apply
 
-function applyMorphicState(root, morphicState) {
+function applyMorphicState(root, morphicState, exceptions) {
   if (!morphicState) return;
+
+  exceptions = exceptions || [];
 
   morphicState.forEach(function(state) {
     var m = state.morph;
 
-    if (!m) return;
+    if (!m || exceptions.include(m)) return;
     if (!m.owner || m.owner.submorphs.indexOf(m) !== state.submorphIndex)
       state.owner.addMorph(m, state.owner.submorphs[state.submorphIndex]);
       
@@ -61,7 +82,7 @@ function applyMorphicState(root, morphicState) {
 
   // removal
   var morphsInState = morphicState.pluck("morph");
-  var actualMorphs = getMorphs(root);
+  var actualMorphs = getMorphs(root, exceptions);
   actualMorphs.withoutAll(morphsInState).invoke("remove");
 }
 

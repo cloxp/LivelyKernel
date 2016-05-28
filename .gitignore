@@ -2,6 +2,7 @@
 .DS_Store
 
 # optimized loading #
+.optimized-loading-cache/
 combined.js*
 
 # Scripts #
@@ -31,6 +32,22 @@ objects.sqlite
 
 # Debugging -- for development, will go away soon #
 DBG_*.js
+
+*.js~
+
+# module debugging
+*.html.dot
+*.html.svg
+
+# backup
+.exclude-from-backup
+
+# ignore lively-web specific subservers
+core/servers/
+
+# HTTP / server #
+htpasswd
+.htpasswd
 
 # cloxp
 /cloxp/
