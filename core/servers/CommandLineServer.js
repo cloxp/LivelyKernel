@@ -83,7 +83,7 @@ var doKill = defaultKill;
 function startSpawn(cmdInstructions) {
     var commandEnv = cmdInstructions.env || {};
     commandEnv.__proto__ = env;
-    var options = {env: commandEnv, cwd: cmdInstructions.cwd || dir, stdio: 'pipe', detached: true},
+    var options = {env: commandEnv, cwd: cmdInstructions.cwd || dir, stdio: 'pipe', detached: !isWindows},
         commandString = cmdInstructions.command,
         stdin = cmdInstructions.stdin;
     if (util.isArray(command)) {
