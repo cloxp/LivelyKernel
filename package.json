@@ -20,7 +20,6 @@
     "lively-loader": "^0.3.2",
     "lively.ast": "^0.2.19",
     "lively.lang": "^0.7",
-    "mysql": "^2.9.0",
     "nrepl-client": "git://github.com/rksm/node-nrepl-client.git#master",
     "optparse": "~1.0",
     "paredit.js": "git://github.com/rksm/paredit.js.git#master",
